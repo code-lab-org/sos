@@ -118,7 +118,7 @@ for i, (file_path, date) in enumerate(zip(file_paths, available_dates)):
         latitudes = hdf_file.select('Latitude')[:]
         longitudes = hdf_file.select('Longitude')[:]
         if latitudes[0, 0] > latitudes[-1, 0]:
-            print(f"Flipping latitude for file {file_path}")
+            #print(f"Flipping latitude for file {file_path}")
             latitudes = np.flip(latitudes, axis=0)
             temp_data_array = temp_data_array.isel({'YDim:ascending': slice(None, None, -1)})
         ds = xr.Dataset({'SurfAirTemp_A': temp_data_array})
@@ -142,8 +142,8 @@ mask = create_basin_mask(combined_dataset['lat'].values, combined_dataset['lon']
 mask_da = xr.DataArray(
     mask,
     coords={
-        'YDim:ascending': combined_dataset['lat']['YDim:ascending'],
-        'XDim:ascending': combined_dataset['lon']['XDim:ascending'],
+        'y': combined_dataset['lat']['YDim:ascending'],
+        'x': combined_dataset['lon']['XDim:ascending'],
     },
     dims=['YDim:ascending', 'XDim:ascending'],
 )
@@ -154,8 +154,8 @@ output_path = '/Users/hbanafsh/ASU Dropbox/Hadis Banafsheh/SOS Planning/Efficien
 masked_combined_dataset.to_netcdf(os.path.join(output_path, 'Temperature_dataset.nc'))
 print("Temperature dataset saved successfully.")
 
+###############################################################
 #Efficiency
-
 files_to_download = [
     ("https://www.dropbox.com/scl/fi/jfgcwmav28oylggr9ezci/Temperature_dataset.nc?rlkey=fo31b5vkphei1rm4o6urupj3w&st=gvauxdo0&dl=1", "Temperature_dataset.nc"),
 ]
@@ -184,9 +184,29 @@ k = 0.5  # Increased steepness parameter
 b = 0  # No horizontal shift
 
 # Load the masked dataset
-masked_combined_dataset = xr.open_dataset('Temperature_dataset.nc')
-print("Time Dimension:")
-print(masked_combined_dataset['time'])
+ds = xr.open_dataset('Temperature_dataset.nc')
+
+
+# Rename dimensions to `x` and `y` if necessary
+if "XDim:ascending" in ds.dims and "YDim:ascending" in ds.dims:
+    ds = ds.rename({"XDim:ascending": "x", "YDim:ascending": "y"})
+
+# Ensure the spatial dimensions are correctly set
+if not ds.rio.crs:
+    ds = ds.rio.set_spatial_dims(x_dim="x", y_dim="y", inplace=True).rio.write_crs("EPSG:4326")
+
+# Load the watershed boundary shapefile as a GeoDataFrame
+mo_basin = gpd.read_file("WBD_10_HU2.shp")
+
+# Construct a GeoSeries with the exterior of the basin and WGS84 coordinates
+mo_basin = gpd.GeoSeries(Polygon(mo_basin.iloc[0].geometry.exterior), crs="EPSG:4326")
+
+# Apply a buffer to the Missouri River Basin geometry
+buffer_size = 2  # Buffer size in degrees; adjust as needed
+mo_basin_buffered = mo_basin.buffer(buffer_size)
+
+# Clip dataset to the buffered Missouri River Basin
+masked_combined_dataset = ds.rio.clip(mo_basin_buffered.geometry, mo_basin_buffered.crs)
 
 # Initialize an array to hold the eta0 values
 eta0_values = np.empty_like(masked_combined_dataset['SurfAirTemp_A'].values)
@@ -215,14 +235,27 @@ eta0_dataset = eta0_dataarray.to_dataset(name='eta0')
 eta0_dataset.attrs = masked_combined_dataset.attrs
 eta0_dataset['eta0'].attrs = masked_combined_dataset['SurfAirTemp_A'].attrs
 
-# Save the new dataset
-#eta0_dataset.to_netcdf('eta0_dataset.nc')
+# Load the coarsened eta dataset (20 km by 20 km grid)
+coarsened_eta_ds = xr.open_dataset('coarsened_eta_output_GCOM.nc')
+
+# Extract the exact latitude and longitude grid from the coarsened dataset
+target_lat = coarsened_eta_ds['y']
+target_lon = coarsened_eta_ds['x']
+
+# Resample the eta0 data to match the coarsened dataset grid using interpolation
+eta0_resampled = eta0_dataset['eta0'].interp(
+    y=target_lat,
+    x=target_lon,
+    method='linear'  # You can also try 'nearest' if that's preferred
+)
+
+# Create a new dataset with the resampled eta0 values
+resampled_ds = xr.Dataset({'eta0': eta0_resampled})
 
 output_path = '/Users/hbanafsh/ASU Dropbox/Hadis Banafsheh/SOS Planning/Efficiency_files/Efficiency_resolution20_Optimization/'
-eta0_dataset.to_netcdf(os.path.join(output_path, 'Efficiency_Temperature_dataset.nc'))
+resampled_ds.to_netcdf(os.path.join(output_path, 'Efficiency_Temperature_dataset.nc'))
 print("Efficiency_Temperature_dataset saved successfully.")
 
-print("eta0_dataset saved successfully.")
 # Clean up temporary files
 for file_path in file_paths:
     try:

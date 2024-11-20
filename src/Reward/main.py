@@ -6,7 +6,6 @@ import gc
 import geopandas as gpd
 from shapely import Polygon, box
 import matplotlib.pyplot as plt
-import rioxarray as xr
 import os
 from datetime import datetime, timezone, timedelta
 from tatc import utils
@@ -14,11 +13,12 @@ from tatc.schemas import Instrument, Satellite, SunSynchronousOrbit, TwoLineElem
 import pandas as pd
 from tatc.analysis import compute_ground_track
 from joblib import Parallel, delayed
-
 from dotenv import load_dotenv
 import os
 import geopandas as gpd
 from shapely import Polygon
+import xarray as xr
+import rioxarray
 
 # Load environment variables from the .env file
 load_dotenv('/Users/hbanafsh/Documents/GitHub/Code-lab/src/a.env')
@@ -220,12 +220,15 @@ print(ground_tracks_GCOM.head())
 import requests
 
 # List of Dropbox links and corresponding output filenames
+import requests
+
+# List of Dropbox links and corresponding output filenames
 files_to_download = [
     ("https://www.dropbox.com/scl/fi/00bsx7padbmmgozegdixh/coarsened_eta_output_GCOM.nc?rlkey=75tzzsaanoagf6gu83s09w4g7&st=jc5c2eba&dl=1", "coarsened_eta_output_GCOM.nc"),
     ("https://www.dropbox.com/scl/fi/i90p1hazy6ns5q74me3vh/coarsened_eta_output_Capella.nc?rlkey=hzq8coi5nu7oeasb9t1gxvif8&st=mnuh4cy3&dl=1", "coarsened_eta_output_Capella.nc"),
-    ("https://www.dropbox.com/scl/fi/grz39z1epi25fu49orljw/Efficiency_Temperature_dataset.nc?rlkey=no6ph07vczazq1vv5tjv85iq9&st=6clk2h5d&dl=1", "Efficiency_Temperature_dataset.nc"),
-    ("https://www.dropbox.com/scl/fi/ilbqlqkjm8y7r5banju42/efficiency_snow_cover.nc?rlkey=e7om7mdpvhzaz7ai2hxdrffvc&st=5sv23wu7&dl=1", "efficiency_snow_cover.nc"),
-    ("https://www.dropbox.com/scl/fi/8pifpc8szlcti7xysu666/efficiency_resolution.nc?rlkey=cforz13q1c73p2bnyh88we5ej&st=2nimwmtl&dl=1", "efficiency_resolution_layer.nc")
+    ("https://www.dropbox.com/scl/fi/grz39z1epi25fu49orljw/Efficiency_Temperature_dataset.nc?rlkey=no6ph07vczazq1vv5tjv85iq9&st=rojui3tu&dl=1", "Efficiency_Temperature_dataset.nc"),
+    ("https://www.dropbox.com/scl/fi/7ie9jhj5d5m00y96cad8l/efficiency_snow_cover.nc?rlkey=44vgvzwixr92cmkhycqivz8i7&st=ig665qqo&dl=1", "efficiency_snow_cover.nc"),
+    ("https://www.dropbox.com/scl/fi/op0nflt34tv4pd8fahl1r/efficiency_resolution_layer.nc?rlkey=0u1qa7d9xi3atvden4qa2sxnv&st=3g69r43a&dl=1", "efficiency_resolution_layer.nc")
 ]
 
 for url, output_file in files_to_download:
@@ -245,8 +248,7 @@ for url, output_file in files_to_download:
     except Exception as err:
         print(f"An error occurred for {output_file}: {err}")
 
-import xarray as xr
-import rioxarray
+
 
 def process_satellite_data(coarsened_eta_file, eta0_resampled_file, snow_cover_file, resolution_layer_file, weights, output_filename):
     """
@@ -285,7 +287,7 @@ def process_satellite_data(coarsened_eta_file, eta0_resampled_file, snow_cover_f
     # Ensure CRS is set for all datasets (eta0, snow cover, and resolution)
     datasets = [
         (eta0_resampled_ds, 'eta0'),
-        (snow_cover_ds, 'Weekly_Snow_Cover'),
+        (snow_cover_ds, 'Day_CMG_Snow_Cover'),
         (resolution_layer_ds, 'Monthly_Resolution_Abs')
     ]
     
@@ -301,7 +303,7 @@ def process_satellite_data(coarsened_eta_file, eta0_resampled_file, snow_cover_f
 
     # Match the date in snow cover dataset
     matching_snow_cover = snow_cover_ds.sel(time=corresponding_date, method='nearest')
-    snow_cover_scaled = matching_snow_cover['Weekly_Snow_Cover'] * weights['snow_cover']
+    snow_cover_scaled = matching_snow_cover['Day_CMG_Snow_Cover'] * weights['snow_cover']
 
     # Scale the resolution layer (no need for time dimension matching here)
     resolution_layer_scaled = resolution_layer_ds['Monthly_Resolution_Abs'] * weights['resolution_layer']
@@ -318,7 +320,6 @@ def process_satellite_data(coarsened_eta_file, eta0_resampled_file, snow_cover_f
     final_combined_ds = final_eta_combined.to_dataset(name='final_eta_result')
 
     # Save the final combined dataset to a new NetCDF file
-    # final_combined_ds.to_netcdf(output_filename)
     path = '/Users/hbanafsh/ASU Dropbox/Hadis Banafsheh/SOS Planning/Efficiency_files/Efficiency_resolution20_Optimization/'
     final_combined_ds.to_netcdf(path + output_filename)
 
@@ -327,7 +328,7 @@ def process_satellite_data(coarsened_eta_file, eta0_resampled_file, snow_cover_f
     return final_combined_ds
 
 # Filepaths shared between both satellites
-Efficiency_Temperature_file = 'Efficiency_Temperature_dataset.nc'
+eta0_resampled_file = 'Efficiency_Temperature_dataset.nc'
 snow_cover_file = 'efficiency_snow_cover.nc'
 resolution_layer_file = 'efficiency_resolution_layer.nc'
 
@@ -342,7 +343,7 @@ weights = {
 # Processing GCOM
 gcom_result = process_satellite_data(
     coarsened_eta_file='coarsened_eta_output_GCOM.nc', 
-    eta0_resampled_file=Efficiency_Temperature_file,
+    eta0_resampled_file=eta0_resampled_file,
     snow_cover_file=snow_cover_file,
     resolution_layer_file=resolution_layer_file,
     weights=weights,
@@ -352,14 +353,14 @@ gcom_result = process_satellite_data(
 # Processing Capella
 capella_result = process_satellite_data(
     coarsened_eta_file='coarsened_eta_output_Capella.nc', 
-    eta0_resampled_file=Efficiency_Temperature_file,
+    eta0_resampled_file=eta0_resampled_file,
     snow_cover_file=snow_cover_file,
     resolution_layer_file=resolution_layer_file,
     weights=weights,
     output_filename='final_eta_snow_cover_output_Capella.nc'
 )
 
-
+##############
 # List of Dropbox links and corresponding output filenames
 files_to_download = [
     ("https://www.dropbox.com/scl/fi/5uyh6gkfnk6iqksnbqm21/final_eta_snow_cover_output_Capella.nc?rlkey=h3fhqv22a45xfzdjbrmetxk27&st=g1l8uehy&dl=1", "final_eta_snow_cover_output_Capella.nc"),
@@ -389,13 +390,16 @@ capella_ds = xr.open_dataset('final_eta_snow_cover_output_Capella.nc')
 gcom_ds = xr.open_dataset('final_eta_snow_cover_output_GCOM.nc')
 
 # Extract Capella and GCOM reward values for January (adjust month index as needed)
-capella_reward_data = capella_ds['final_eta_result'].isel(time=0).values  
-gcom_reward_data = gcom_ds['final_eta_result'].isel(time=0).values 
+capella_reward_data = capella_ds['final_eta_result'].isel(month=0).values  
+gcom_reward_data = gcom_ds['final_eta_result'].isel(month=0).values 
 
 # Get x and y coordinates (assuming both Capella and GCOM have the same coordinates)
 x_coords = capella_ds['x'].values  
 y_coords = capella_ds['y'].values
 
+# Load Missouri River Basin boundary as a mask
+mo_basin = gpd.read_file("WBD_10_HU2.shp")
+mo_basin = gpd.GeoSeries(mo_basin.iloc[0].geometry, crs="EPSG:4326")
 
 # Load ground tracks for Capella and GCOM
 ground_tracks_Capella['time'] = pd.to_datetime(ground_tracks_Capella['time']).dt.tz_localize(None)
@@ -414,6 +418,7 @@ if capella_tracks.empty or gcom_tracks.empty:
 # Convert all grid cells into polygons for reward calculation
 valid_blocks = []
 n_y, n_x = capella_reward_data.shape  # Get the correct shape for looping
+
 for i in range(n_y - 1):
     for j in range(n_x - 1):
         # Create a rectangular polygon (bounding box) for the grid cell, ensuring you don't go out of bounds
@@ -455,7 +460,8 @@ for idx, row in valid_blocks_gdf.iterrows():
     in_gcom = row['geometry'].intersects(gcom_tracks.unary_union)
     
     # If the block is only in Capella's ground track, it retains the Capella reward
-    if in_capella and not in_gcom:final_reward = capella_reward
+    if in_capella and not in_gcom:
+        final_reward = capella_reward
     # If the block is in both Capella and GCOM's ground track, calculate the reward as Capella - GCOM
     elif in_capella and in_gcom:
         final_reward = max(0, capella_reward - gcom_reward)
@@ -477,8 +483,7 @@ print(final_blocks_gdf.head())
 print(f"Final reward stats: \n{final_blocks_gdf['final_reward'].describe()}")
 
 # Save this dataset for further analysis or visualization
-# final_blocks_gdf.to_file('final_blocks_rewards.geojson', driver="GeoJSON")
-
+#final_blocks_gdf.to_file('final_blocks_rewards.geojson', driver="GeoJSON")
 # Path to Dropbox directory
 path = '/Users/hbanafsh/ASU Dropbox/Hadis Banafsheh/SOS Planning/Efficiency_files/Efficiency_resolution20_Optimization/'
 file_name_geojson = 'final_blocks_rewards.geojson'

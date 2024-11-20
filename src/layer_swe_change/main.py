@@ -102,7 +102,7 @@ for var in new_ds.variables:
 
 # Save the new dataset to a NetCDF file
 path = '/Users/hbanafsh/ASU Dropbox/Hadis Banafsheh/SOS Planning/Efficiency_files/Efficiency_resolution20_Optimization/'
-file_name_preprocessed = 'Efficiency_Sensor_dataset.nc'
+file_name_preprocessed = 'Efficiency_SWE_Change_dataset.nc'
 
 new_ds.to_netcdf(path + file_name_preprocessed)
 
