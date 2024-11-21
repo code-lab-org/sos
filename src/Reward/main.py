@@ -224,8 +224,8 @@ import requests
 
 # List of Dropbox links and corresponding output filenames
 files_to_download = [
-    ("https://www.dropbox.com/scl/fi/00bsx7padbmmgozegdixh/coarsened_eta_output_GCOM.nc?rlkey=75tzzsaanoagf6gu83s09w4g7&st=jc5c2eba&dl=1", "coarsened_eta_output_GCOM.nc"),
-    ("https://www.dropbox.com/scl/fi/i90p1hazy6ns5q74me3vh/coarsened_eta_output_Capella.nc?rlkey=hzq8coi5nu7oeasb9t1gxvif8&st=mnuh4cy3&dl=1", "coarsened_eta_output_Capella.nc"),
+    ("https://www.dropbox.com/scl/fi/i3zy1wevfjlv69q9q2agk/coarsened_eta_output_GCOM.nc?rlkey=ab3n47475p1w34tsqwy5di5x9&st=vfa7l4a1&dl=1", "coarsened_eta_output_GCOM.nc"),
+    ("https://www.dropbox.com/scl/fi/pwc3lw5wugwvcllqtstju/coarsened_eta_output_Capella.nc?rlkey=od2921pamwx7k88sntjb4ja4t&st=4r8g38ud&dl=1", "coarsened_eta_output_Capella.nc"),
     ("https://www.dropbox.com/scl/fi/grz39z1epi25fu49orljw/Efficiency_Temperature_dataset.nc?rlkey=no6ph07vczazq1vv5tjv85iq9&st=rojui3tu&dl=1", "Efficiency_Temperature_dataset.nc"),
     ("https://www.dropbox.com/scl/fi/7ie9jhj5d5m00y96cad8l/efficiency_snow_cover.nc?rlkey=44vgvzwixr92cmkhycqivz8i7&st=ig665qqo&dl=1", "efficiency_snow_cover.nc"),
     ("https://www.dropbox.com/scl/fi/op0nflt34tv4pd8fahl1r/efficiency_resolution_layer.nc?rlkey=0u1qa7d9xi3atvden4qa2sxnv&st=3g69r43a&dl=1", "efficiency_resolution_layer.nc")
@@ -274,7 +274,7 @@ def process_satellite_data(coarsened_eta_file, eta0_resampled_file, snow_cover_f
         coarsened_eta_ds = coarsened_eta_ds.rio.write_crs("EPSG:4326")
 
     # Select the second time step (timestep=1)
-    coarsened_eta_timestep = coarsened_eta_ds['coarsened_eta_result'].isel(time=1)
+    coarsened_eta_timestep = coarsened_eta_ds['eta_result'].isel(time=1)
 
     # Scale the selected time step by the weight
     coarsened_eta_scaled = coarsened_eta_timestep * weights['coarsened_eta']
@@ -396,10 +396,6 @@ gcom_reward_data = gcom_ds['final_eta_result'].isel(month=0).values
 # Get x and y coordinates (assuming both Capella and GCOM have the same coordinates)
 x_coords = capella_ds['x'].values  
 y_coords = capella_ds['y'].values
-
-# Load Missouri River Basin boundary as a mask
-mo_basin = gpd.read_file("WBD_10_HU2.shp")
-mo_basin = gpd.GeoSeries(mo_basin.iloc[0].geometry, crs="EPSG:4326")
 
 # Load ground tracks for Capella and GCOM
 ground_tracks_Capella['time'] = pd.to_datetime(ground_tracks_Capella['time']).dt.tz_localize(None)
