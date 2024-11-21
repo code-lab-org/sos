@@ -166,3 +166,4 @@ cython_debug/
 *.nc
 *.env
 *.hdf
+*.env
