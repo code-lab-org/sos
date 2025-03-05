@@ -2,7 +2,7 @@
 
 This repository contains the codebase for SOS applications integrated within the [Novel Observing Strategies Testbed (NOS-T)](https://github.com/code-lab-org/nost-tools).
 
-## Installation
+## NOS-T Installation
 
 ### Install the NOS-T Library
 
@@ -11,6 +11,14 @@ Clone the GitHub repo:
 ```bash
 git clone git@github.com:emmanuelgonz/nost-tools.git
 ```
+
+If the above command fails, you are not authenticated into Git correctly. In this case, try cloning using HTTPS:
+
+```bash
+git clone https://github.com/emmanuelgonz/nost-tools.git
+```
+
+> Note: The above links will clone a forked version of the NOS-T Tools library.
 
 Change directory:
 
@@ -21,13 +29,13 @@ cd nost-tools
 Create Conda environment:
 
 ```bash
-conda create --name sos python=3.11
+conda create --name nost python=3.11
 ```
 
 Activate Conda environment:
 
 ```bash
-conda activate sos
+conda activate nost
 ```
 
 Install NOS-T with dependencies for our SOS applications:
@@ -146,20 +154,64 @@ Enter the Access Key ID and Secret Access Key provided by the NOS-T operator.
 
 A single manager application is responsible for orchestrating the various applications and keeping a consistent time across applications. Upon initiation of the manager, various managed applications are triggered, each responsible for generating derived, merged datasets or raster layers sent as base64-encoded strings. Below is a table describing each application:
 
-|Application|Category|Purpose|Data Source|Threshold|Aggregation|Developed|Containerized|
-|:---------:|:------:|:-----:|:---------:|:-------:|:---------:|:-------:|:-----------:|
-|Manager|Manager|Orchestrates applications, maintains time|NA|NA|NA|Y|Y|
-|SNODAS|Merged Dataset Generator|Merges data into a single, aggregated dataset|NA|NA|NA|Y|N|
-|MOD10C1|Merged Dataset Generator|Merges data into a single, aggregated dataset|NA|NA|NA|Y|Y|
-|Snow Cover|Raster Layer Generator|Generates snow cover layer|MOD10C1|30% (snow cover)|Weekly|Y|Y|
-|Resolution|Raster Layer Generator|Generates resolution layer|SNODAS|50 mm (Abs. SWE difference)|Monthly|Y|N|
-|Sensor Saturation|Raster Layer Generator|Generates sensor saturation layer|SNODAS|150 mm|Daily|N|N|
-|SWE Change|Raster Layer Generator|Generates SWE change layer|SNODAS|10 mm|Daily|Y|N|
-|Surface Temperature|Raster Layer Generator|Generates surface temperature layer|AIRS Version 7 Level 3 Product|0 &deg;C|Daily|N|N|
+|Application|Purpose|Data Source|Developed|Containerized|
+|:---------:|:-----:|:---------:|:-------:|:-----------:|
+|Manager|Orchestrates applications, maintains time|NA|Y|Y|
+|Planner|Selects best taskable observations on the basis of reward|LIS|Y|N|
+|Appender|Aggregates planned taskable observations, filtering duplicates|Planner|Y|N|
+|Simulator|Simulates satellite operations and determines when and where observations are collected|Appender|Y|N|
+
 
 Applications send status messages and base64-encoded images via a RabbitMQ message broker utilizing the Advanced Message Queuing Protocol (AMQP). The figure below illustrates the overall workflow:
 
-<img src="https://docs.google.com/drawings/d/e/2PACX-1vRb4C-NVOJblonVF0rZEC7BxwTX_6KmPXXnGQBV3DdvzSWTwJi-1SFxFE2HkTDZawDe-GBZnitIG2lq/pub?w=1489&amp;h=669">
+<img src='https://g.gravizo.com/svg? 
+digraph G {
+    subgraph cluster0 {
+        style=invis;
+        s3 [label="S3 Bucket", shape=oval, style=filled,color=lightgrey];
+    }
+    subgraph cluster1 {
+        style=dashed;
+        label="Applications";
+        labeljust="l";
+        fontsize=16;
+        fontname="Helvetica-Bold";
+        planner [label="Planner", shape=rect, style=filled, color=red];
+        appender [label="Appender", shape=rect, style=filled, color=blue];
+        simulator [label="Simulator", shape=rect, style=filled, color=green];
+    }
+    subgraph cluster2 {
+        style=dashed;
+        label="Outputs";
+        labeljust="l";
+        fontsize=16;
+        fontname="Helvetica-Bold";
+        sc_geojson [label="Selected Cells\nGeoJSON", shape=oval, style=filled, color=lightgrey];
+        ag_geojson [label="Aggregated Selected\nCells GeoJSON", shape=oval, style=filled, color=lightgrey];
+    }
+    subgraph cluster3 {
+        style=dashed;
+        label="Visualization";
+        labeljust="l";
+        fontsize=16;
+        fontname="Helvetica-Bold";
+        cesium [label="Cesium Web\nApplication", shape=oval, style=filled, color=lightgrey];
+    }
+    // Bucket to Applications
+    s3 -> planner;
+    s3 -> appender [style=invis];
+    s3 -> simulator [style=invis];
+    // Applications to Outputs
+    planner -> sc_geojson [label="Write", fontcolor=black, fontsize=10, color=black];
+    appender -> ag_geojson [label="Write", fontcolor=black, fontsize=10, color=black];
+    simulator -> ag_geojson [label="Append\nResults", fontcolor=red, fontsize=10, style=dashed, color=red];
+    // Output to data store
+    ag_geojson -> s3 [label="Upload", fontcolor=red, fontsize=10, style=dashed, color=red];
+    // Visualization
+    ag_geojson -> cesium;
+}
+'/>
+
 
 The input data and data generated by applications is uploaded onto an Amazon Web Services (AWS) Simple Storage Service (S3) bucket with the following data structure:
 
