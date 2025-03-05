@@ -163,3 +163,17 @@ cython_debug/
 
 .env
 .netrc
+data/
+data_*/
+#data_download.sh
+input_data/
+snow_raster_layer.png
+credentials
+resolution_raster_layer.png
+*.ipynb
+backup/
+*.nc
+*.png
+*.geojson
+*.yml
+*.yaml

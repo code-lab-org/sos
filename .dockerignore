@@ -1,0 +1,6 @@
+data/
+backup/
+.env
+data_download.sh
+entrypoint.sh
+credentials

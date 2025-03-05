@@ -1,0 +1,22 @@
+services:
+  sos_manager:
+    image: emmanuelgonzalez/sos_manager:latest
+    env_file: .env
+    volumes:
+      - ./data:/opt/data
+  sos_satellites:
+    image: emmanuelgonzalez/sos_satellites:latest
+    env_file: .env
+    volumes:
+      - ./input_data:/opt/input_data
+      - ./data:/opt/data
+  sos_snow_cover_layer:
+    image: emmanuelgonzalez/sos_snow_cover_layer:latest
+    env_file: .env
+    volumes:
+      - ./data:/opt/data
+  sos_resolution_layer:
+    image: emmanuelgonzalez/sos_resolution_layer:latest
+    env_file: .env
+    volumes:
+      - ./data:/opt/data
