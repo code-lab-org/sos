@@ -165,47 +165,47 @@ A single manager application is responsible for orchestrating the various applic
 Applications send status messages and base64-encoded images via a RabbitMQ message broker utilizing the Advanced Message Queuing Protocol (AMQP). The figure below illustrates the overall workflow:
 
 <img src='https://g.gravizo.com/svg? 
-    digraph G {
-        subgraph cluster0 {
-            style=invis;
-            s3 [label="S3 Bucket", shape=oval, style=filled,color=lightgrey];
-        }
-        subgraph cluster1 {
-            style=dashed;
-            label="Applications";
-            labeljust="l";
-            fontsize=16;
-            fontname="Helvetica-Bold";
-            planner [label="Planner", shape=rect, style=filled, color=red];
-            appender [label="Appender", shape=rect, style=filled, color=blue];
-            simulator [label="Simulator", shape=rect, style=filled, color=green];
-        }
-        subgraph cluster2 {
-            style=dashed;
-            label="Outputs";
-            labeljust="l";
-            fontsize=16;
-            fontname="Helvetica-Bold";
-            sc_geojson [label="Selected Cells\nGeoJSON", shape=oval, style=filled, color=lightgrey];
-            ag_geojson [label="Aggregated Selected\nCells GeoJSON", shape=oval, style=filled, color=lightgrey];
-        }
-        subgraph cluster3 {
-            style=dashed;
-            label="Visualization";
-            labeljust="l";
-            fontsize=16;
-            fontname="Helvetica-Bold";
-            cesium [label="Cesium Web\nApplication", shape=oval, style=filled, color=lightgrey];
-        }
-        s3 -> planner;
-        s3 -> appender [style=invis];
-        s3 -> simulator [style=invis];
-        planner -> sc_geojson [label="Write", fontcolor=black, fontsize=10, color=black];
-        appender -> ag_geojson [label="Write", fontcolor=black, fontsize=10, color=black];
-        simulator -> ag_geojson [label="Append", fontcolor=red, fontsize=10, style=dashed, color=red];
-        ag_geojson -> s3 [label="Upload", fontcolor=red, fontsize=10, style=dashed, color=red];
-        ag_geojson -> cesium
+digraph G {
+    subgraph cluster0 {
+        style=invis;
+        s3 [label="S3 Bucket", shape=oval, style=filled,color=lightgrey];
     }
+    subgraph cluster1 {
+        style=dashed;
+        label="Applications";
+        labeljust="l";
+        fontsize=16;
+        fontname="Helvetica-Bold";
+        planner [label="Planner", shape=rect, style=filled, color=red];
+        appender [label="Appender", shape=rect, style=filled, color=blue];
+        simulator [label="Simulator", shape=rect, style=filled, color=green];
+    }
+    subgraph cluster2 {
+        style=dashed;
+        label="Outputs";
+        labeljust="l";
+        fontsize=16;
+        fontname="Helvetica-Bold";
+        sc_geojson [label="Selected Cells\nGeoJSON", shape=oval, style=filled, color=lightgrey];
+        ag_geojson [label="Aggregated Selected\nCells GeoJSON", shape=oval, style=filled, color=lightgrey];
+    }
+    subgraph cluster3 {
+        style=dashed;
+        label="Visualization";
+        labeljust="l";
+        fontsize=16;
+        fontname="Helvetica-Bold";
+        cesium [label="Cesium Web\nApplication", shape=oval, style=filled, color=lightgrey];
+    }
+    s3 -> planner;
+    s3 -> appender [style=invis];
+    s3 -> simulator [style=invis];
+    planner -> sc_geojson [label="Write", fontcolor=black, fontsize=10, color=black];
+    appender -> ag_geojson [label="Write", fontcolor=black, fontsize=10, color=black];
+    simulator -> ag_geojson [label="Append", fontcolor=red, fontsize=10, style=dashed, color=red];
+    ag_geojson -> s3 [label="Upload", fontcolor=red, fontsize=10, style=dashed, color=red];
+    ag_geojson -> cesium
+}
 '/>
 
 
