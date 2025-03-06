@@ -96,7 +96,7 @@ snow_observing_systems/
 <p align="center">
   <img src="https://pointillism.io/code-lab-org/sos/blob/main/docs/apps.dot.svg"/>
   <br>
-  <em>Amazon Web Services (AWS) resources used by the SOS applications within the NOS-T system include S3 and Lambda.</em>
+  <em>Flow of data between the various applications.</em>
 </p>
 
 ## Execution
