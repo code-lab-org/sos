@@ -11,7 +11,7 @@ digraph workflow {
         fontname="Helvetica-Bold";
         
         planner [label="Planner", shape=rect, style=filled, color=red];
-        appender [label="Appender", shape=rect, style=filled, color=blue];
+        appender [label="Appender", shape=rect, style=filled, color=dodgerblue];
         simulator [label="Simulator", shape=rect, style=filled, color=green];
     }
     subgraph cluster2 {
