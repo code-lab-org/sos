@@ -53,7 +53,7 @@ The SOS applications utilize the [Advanced Message Queuing Protocol (AMQP)](http
 |:-----------:|:--------:|:-----:|
 | **Planner** | Data availability messages from AWS Lambda function | Selected cells are saved as GeoJSON file and the contents of this file are also sent as an AMQP message to the appender application |
 | **Appender** | Message from planner containing the selected cells | Aggregates the selected cells into a record, filters duplicate rows, and sends an AMQP message to the simulator application |
-| **Simulator** | Message from the appender containing the aggregated selected cells record | Simulate satellite operations and determines when and where observations are collected |
+| **Simulator** | Message from the appender containing the aggregated selected cells record | Simulate satellite operations and determines when and where observations are collected, sends to Cesium web application |
 
 ### Output Data Structure
 
