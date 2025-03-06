@@ -1,20 +1,19 @@
-# SOS
+# SOS <!-- omit from toc -->
 
 This repository contains the codebase for Snow Observing Strategy (SOS) applications integrated within the [Novel Observing Strategies Testbed (NOS-T)](https://github.com/code-lab-org/nost-tools).
 
-- [SOS](#sos)
-  - [Installation](#installation)
-    - [NOS-T Tools Installation](#nos-t-tools-installation)
-    - [AWS CLI Installation](#aws-cli-installation)
-      - [Install AWS CLI](#install-aws-cli)
-        - [Linux](#linux)
-        - [Windows](#windows)
-        - [Mac](#mac)
-      - [Configure AWS CLI](#configure-aws-cli)
-  - [Introduction](#introduction)
-  - [Execution](#execution)
-    - [Docker (Development)](#docker-development)
-    - [Docker Compose](#docker-compose)
+- [Installation](#installation)
+  - [NOS-T Tools Installation](#nos-t-tools-installation)
+  - [AWS CLI Installation](#aws-cli-installation)
+    - [Install AWS CLI](#install-aws-cli)
+      - [Linux](#linux)
+      - [Windows](#windows)
+      - [Mac](#mac)
+    - [Configure AWS CLI](#configure-aws-cli)
+- [Introduction](#introduction)
+- [Execution](#execution)
+  - [Docker (Development)](#docker-development)
+  - [Docker Compose](#docker-compose)
 
 
 ## Installation
