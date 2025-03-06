@@ -1,98 +1,20 @@
-# Snow Observing Strategy (SOS)
+# SOS
 
-This repository contains the codebase for SOS applications integrated within the [Novel Observing Strategies Testbed (NOS-T)](https://github.com/code-lab-org/nost-tools).
+This repository contains the codebase for Snow Observing Strategy (SOS) applications integrated within the [Novel Observing Strategies Testbed (NOS-T)](https://github.com/code-lab-org/nost-tools).
 
-## NOS-T Installation
+These applications require:
+1. NOS-T Installation
+2. AWS CLI Installation
 
-### Install the NOS-T Library
+## Installation
 
-Clone the GitHub repo:
+### NOS-T Tools Installation
 
-```bash
-git clone git@github.com:emmanuelgonz/nost-tools.git
-```
+To install the NOS-T library, follow the directions [here](https://nost-tools-v2.readthedocs.io/en/latest/installation/installation.html).
 
-If the above command fails, you are not authenticated into Git correctly. In this case, try cloning using HTTPS:
+### AWS CLI Installation
 
-```bash
-git clone https://github.com/emmanuelgonz/nost-tools.git
-```
-
-> Note: The above links will clone a forked version of the NOS-T Tools library.
-
-Change directory:
-
-```bash
-cd nost-tools
-```
-
-Create Conda environment:
-
-```bash
-conda create --name nost python=3.11
-```
-
-Activate Conda environment:
-
-```bash
-conda activate nost
-```
-
-Install NOS-T with dependencies for our SOS applications:
-
-```bash
-python3 -m pip install .[examples]
-```
-
-### Credentials
-
-Credentials required by NOS-T can be defined in your bashrc file or using a .env file.
-
-#### Bashrc
-
-Open your bashrc file:
-
-```bash
-vim ~/.bashrc
-```
-
-Add the following lines:
-
-```bash
-export USERNAME=<NOS-T Keycloak Username>
-export PASSWORD=<NOS-T Keycloak Password>
-export CLIENT_ID=<Ask NOS-T Operator>
-export CLIENT_SECRET_KEY=<Ask NOS-T Operator>
-```
-
-Source the changes:
-
-```bash
-source ~/.bashrc
-```
-
-#### .env
-
-You can create a .env file using the same values as listed above:
-
-```bash
-vim .env
-```
-
-Add the following lines:
-
-```bash
-USERNAME=<NOS-T Keycloak Username>
-PASSWORD=<NOS-T Keycloak Password>
-CLIENT_ID=<Ask NOS-T Operator>
-CLIENT_SECRET_KEY=<Ask NOS-T Operator>
-```
-
-> NOTE: Restart your computer after defining environmental variables in your ~/.bashrc file.
-
-### AWS CLI
-
-The applications use the Amazon Web Services (AWS) command line interface (CLI).
+The SOS applications use the Amazon Web Services (AWS) command line interface (CLI).
 
 #### Install AWS CLI
 
@@ -224,65 +146,6 @@ The applications use the AWS SDK for Python, [Boto3](https://boto3.amazonaws.com
   <br>
   <em>Amazon Web Services (AWS) resources used by the SOS applications within the NOS-T system include S3 and Lambda.</em>
 </p>
-
-## Installation
-
-Applications can be deployed using a Conda environment. Please note that this method requires advanced experience working with GDAL, as it's installation can be quite tricky. If you run into issues here, please follow the [Docker](#docker-development) or [Docker compose](#docker-compose) sections.
-
-To set up conda, follow the steps below:
-
-1. Create a Conda environment using Python 3.10
-
-    ```bash
-    conda create --name sos python=3.10
-    ```
-
-1. Activate your Conda environment
-
-    ```bash
-    conda activate sos
-    ```
-
-1. Install dependencies for GDAL
-
-    ```bash
-    sudo add-apt-repository ppa:ubuntugis/ppa && sudo apt-get update
-    sudo apt-get update
-    sudo apt-get install gdal-bin
-    sudo apt-get install libgdal-dev
-    export CPLUS_INCLUDE_PATH=/usr/include/gdal
-    export C_INCLUDE_PATH=/usr/include/gdal
-    ```
-
-1. Install requirements
-
-    ```bash
-    python3 -m pip install -r requirements.txt
-    ```
-
-    > NOTE: If this final step fails, it is likely due to the incorrect GDAL version being listed in the [requirements.txt](./requirements.txt) file. To correct this, identify the correct GDAL version for your system:
-
-### Troubleshooting
-
-```bash
-gdalinfo --version
-```
-
-Your output should look similar to:
-```bash
-GDAL 3.6.4, released 2023/04/17
-```
-
-Finally, install the correct GDAL version by running:
-```bash
-python3 -m pip install GDAL==<insert version number>
-```
-
-For example,
-
-```bash
-python3 -m pip install GDAL==3.6.4
-```
 
 ## Execution
 
