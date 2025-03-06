@@ -1,269 +1,148 @@
-# Snow Observing Strategy (SOS)
+# SOS <!-- omit from toc -->
 
-This repository contains the codebase for SOS applications integrated within the [Novel Observing Strategies Testbed (NOS-T)](https://github.com/code-lab-org/nost-tools).
+This repository contains the codebase for Snow Observing Strategy (SOS) applications integrated within the [Novel Observing Strategies Testbed (NOS-T)](https://github.com/code-lab-org/nost-tools).
+
+- [Installation](#installation)
+  - [NOS-T Tools Installation](#nos-t-tools-installation)
+  - [AWS CLI Installation](#aws-cli-installation)
+- [Introduction](#introduction)
+  - [Applications Overview](#applications-overview)
+  - [Messaging Protocol](#messaging-protocol)
+  - [Data Structure \& Interfaces](#data-structure--interfaces)
+- [Execution](#execution)
+  - [Conda](#conda)
+  - [Docker](#docker)
+
 
 ## Installation
 
-### Install the NOS-T Library
+### NOS-T Tools Installation
 
-Clone the GitHub repo:
+To install the NOS-T library, follow the directions [here](https://nost-tools-v2.readthedocs.io/en/latest/installation/installation.html).
 
-```bash
-git clone git@github.com:emmanuelgonz/nost-tools.git
-```
+### AWS CLI Installation
 
-Change directory:
-
-```bash
-cd nost-tools
-```
-
-Create Conda environment:
-
-```bash
-conda create --name sos python=3.11
-```
-
-Activate Conda environment:
-
-```bash
-conda activate sos
-```
-
-Install NOS-T with dependencies for our SOS applications:
-
-```bash
-python3 -m pip install .[examples]
-```
-
-### Credentials
-
-Credentials required by NOS-T can be defined in your bashrc file or using a .env file.
-
-#### Bashrc
-
-Open your bashrc file:
-
-```bash
-vim ~/.bashrc
-```
-
-Add the following lines:
-
-```bash
-export USERNAME=<NOS-T Keycloak Username>
-export PASSWORD=<NOS-T Keycloak Password>
-export CLIENT_ID=<Ask NOS-T Operator>
-export CLIENT_SECRET_KEY=<Ask NOS-T Operator>
-```
-
-Source the changes:
-
-```bash
-source ~/.bashrc
-```
-
-#### .env
-
-You can create a .env file using the same values as listed above:
-
-```bash
-vim .env
-```
-
-Add the following lines:
-
-```bash
-USERNAME=<NOS-T Keycloak Username>
-PASSWORD=<NOS-T Keycloak Password>
-CLIENT_ID=<Ask NOS-T Operator>
-CLIENT_SECRET_KEY=<Ask NOS-T Operator>
-```
-
-> NOTE: Restart your computer after defining environmental variables in your ~/.bashrc file.
-
-### AWS CLI
-
-The applications use the Amazon Web Services (AWS) command line interface (CLI).
-
-#### Install AWS CLI
-
-Installation instructions are provided below. For further information on AWS CLI installation, [click here](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).
-
-##### Linux
-
-```bash
-curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-unzip awscliv2.zip
-sudo ./aws/install
-```
-
-##### Windows
-
-1. Download and run the AWSL CLI installer: 
-
-```powershell
-msiexec.exe /i https://awscli.amazonaws.com/AWSCLIV2.msi
-```
-
-2. Confirm successful installation
-
-```powershell
-aws --version
-```
-
-##### Mac
-
-1. Download AWS CLI installer:
-
-```bash
-curl "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o "AWSCLIV2.pkg"
-```
-
-2. Run the installer: 
-
-```bash
-sudo installer -pkg ./AWSCLIV2.pkg -target /
-```
-
-3. Confirm successful installation:
-
-```bash
-aws --version
-```
-
-#### Configure AWS CLI
-
-Once installed, the AWS CLI must be configured:
-
-```bash
-aws configure
-```
-
-Enter the Access Key ID and Secret Access Key provided by the NOS-T operator.
+To setup the Amazon Web Services (AWS) command line interface (CLI), follow the directions [here](https://nost-tools-v2.readthedocs.io/en/latest/operators_guide/modules/aws.html).
 
 ## Introduction
 
 A single manager application is responsible for orchestrating the various applications and keeping a consistent time across applications. Upon initiation of the manager, various managed applications are triggered, each responsible for generating derived, merged datasets or raster layers sent as base64-encoded strings. Below is a table describing each application:
 
-|Application|Category|Purpose|Data Source|Threshold|Aggregation|Developed|Containerized|
-|:---------:|:------:|:-----:|:---------:|:-------:|:---------:|:-------:|:-----------:|
-|Manager|Manager|Orchestrates applications, maintains time|NA|NA|NA|Y|Y|
-|SNODAS|Merged Dataset Generator|Merges data into a single, aggregated dataset|NA|NA|NA|Y|N|
-|MOD10C1|Merged Dataset Generator|Merges data into a single, aggregated dataset|NA|NA|NA|Y|Y|
-|Snow Cover|Raster Layer Generator|Generates snow cover layer|MOD10C1|30% (snow cover)|Weekly|Y|Y|
-|Resolution|Raster Layer Generator|Generates resolution layer|SNODAS|50 mm (Abs. SWE difference)|Monthly|Y|N|
-|Sensor Saturation|Raster Layer Generator|Generates sensor saturation layer|SNODAS|150 mm|Daily|N|N|
-|SWE Change|Raster Layer Generator|Generates SWE change layer|SNODAS|10 mm|Daily|Y|N|
-|Surface Temperature|Raster Layer Generator|Generates surface temperature layer|AIRS Version 7 Level 3 Product|0 &deg;C|Daily|N|N|
+|Application|Purpose|Data Source|Developed|Containerized|
+|:---------:|:-----:|:---------:|:-------:|:-----------:|
+|**Manager**|Orchestrates applications, maintains time|NA|Y|Y|
+|**Planner**|Selects best taskable observations on the basis of reward|LIS|Y|N|
+|**Appender**|Aggregates planned taskable observations, filtering duplicates|Planner|Y|N|
+|**Simulator**|Simulates satellite operations and determines when and where observations are collected|Appender|Y|N|
 
-Applications send status messages and base64-encoded images via a RabbitMQ message broker utilizing the Advanced Message Queuing Protocol (AMQP). The figure below illustrates the overall workflow:
+### Applications Overview
 
-<img src="https://docs.google.com/drawings/d/e/2PACX-1vRb4C-NVOJblonVF0rZEC7BxwTX_6KmPXXnGQBV3DdvzSWTwJi-1SFxFE2HkTDZawDe-GBZnitIG2lq/pub?w=1489&amp;h=669">
+Applications communicate via a RabbitMQ message broker utilizing the Advanced Message Queuing Protocol (AMQP) protocol. The figure below illustrates the overall workflow:
 
-The input data and data generated by applications is uploaded onto an Amazon Web Services (AWS) Simple Storage Service (S3) bucket with the following data structure:
+<p align="center">
+  <img src="https://pointillism.io/code-lab-org/sos/3-update-documentation-to-reflect-current-code/docs/workflow.dot.svg"/>
+  <br>
+  <em>Snow Observing Systems (SOS) application workflow.</em>
+</p>
+
+### Messaging Protocol
+
+The SOS applications utilize the [Advanced Message Queuing Protocol (AMQP)](https://www.amqp.org/) through a [RabbitMQ event broker](http://rabbitmq.com/). These messages include:
+
+| Application | Receives | Sends |
+|:-----------:|:--------:|:-----:|
+| **Planner** | Data availability messages from AWS Lambda function | Selected cells are saved as GeoJSON file and the contents of this file are also sent as an AMQP message to the appender application |
+| **Appender** | Message from planner containing the selected cells | Aggregates the selected cells into a record, filters duplicate rows, and sends an AMQP message to the simulator application |
+| **Simulator** | Message from the appender containing the aggregated selected cells record | Simulate satellite operations and determines when and where observations are collected, sends to Cesium web application |
+
+### Data Structure & Interfaces
+
+The input data and output data generated by applications are uploaded onto an Amazon Web Services (AWS) Simple Storage Service (S3) bucket.
+
+> **Note:** The applications use the AWS SDK for Python, [Boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html). Boto3 allows users to create, configure, and manage AWS services, including S3, Simple Notification Service (SNS), and Elastic Compute Cloud (EC2). Access to the AWS SDK is limited to SOS administrators as required by NASA's [Science Managed Cloud Environment (SMCE)](https://smce.nasa.gov/). 
+
+<p align="center">
+  <img src="https://pointillism.io/code-lab-org/sos/3-update-documentation-to-reflect-current-code/docs/aws.dot.svg"/>
+  <br>
+  <em>Amazon Web Services (AWS) resources used by the SOS applications within the NOS-T system include S3 and Lambda.</em>
+</p>
+
+The LIS inputs are stored in an S3 bucket, which the SOS applications access. The SOS applications then output data into an output directory, organized by the specific day and application. Below is an example:
 
 ```bash
 snow_observing_systems/
-├── daily
-│   ├── SWE Change
-│   │   ├── 2024-01-01
-│   │   ├── 2024-01-02
-│   │   ├── ...
-│   │   ├── 2024-03-30
-│   │   └── 2024-03-31
-│   ├── Sensor Saturation
-│   │   ├── 2024-01-01
-│   │   ├── 2024-01-02
-│   │   ├── ...
-│   │   ├── 2024-03-30
-│   │   └── 2024-03-31
-│   └── Surface Temperature
-│       ├── 2024-01-01
-│       ├── 2024-01-02
-│       ├── ...
-│       ├── 2024-03-30
-│       └── 2024-03-31
-├── weekly
-│   └── Snow Cover
-│       ├── 2024-W01
-│       ├── 2024-W02
-│       ├── ...
-│       ├── 2024-W13
-│       └── 2024-W14
-└── monthly
-    └── Resolution
-        ├── 2024-01
-        ├── 2024-02
-        └── 2024-03
-```
-
-The applications use the AWS SDK for Python, [Boto3](https://boto3.amazonaws.com/v1/documentation/api/latest/index.html). Boto3 allows users to create, configure, and manage AWS services, including S3, Simple Notification Service (SNS), and Elastic Compute Cloud (EC2). Access to the AWS SDK is limited to SOS administrators as required by NASA's [Science Managed Cloud Environment (SMCE)](https://smce.nasa.gov/). 
-
-<img src="https://docs.google.com/drawings/d/e/2PACX-1vTmZIFYDTr8kw22hmZzo7mpdfYMv_oKMk9DdagOu0ESL11nvcv374iLfNZTaMVI7LT1iGR6EyGKiY7A/pub?w=1318&amp;h=764" alt="Publish/Subscribe Workflow Diagram involving AWS resources including S3, Lambda, SNS, and SQS.">
-
-## Installation
-
-Applications can be deployed using a Conda environment. Please note that this method requires advanced experience working with GDAL, as it's installation can be quite tricky. If you run into issues here, please follow the [Docker](#docker-development) or [Docker compose](#docker-compose) sections.
-
-To set up conda, follow the steps below:
-
-1. Create a Conda environment using Python 3.10
-
-    ```bash
-    conda create --name sos python=3.10
-    ```
-
-1. Activate your Conda environment
-
-    ```bash
-    conda activate sos
-    ```
-
-1. Install dependencies for GDAL
-
-    ```bash
-    sudo add-apt-repository ppa:ubuntugis/ppa && sudo apt-get update
-    sudo apt-get update
-    sudo apt-get install gdal-bin
-    sudo apt-get install libgdal-dev
-    export CPLUS_INCLUDE_PATH=/usr/include/gdal
-    export C_INCLUDE_PATH=/usr/include/gdal
-    ```
-
-1. Install requirements
-
-    ```bash
-    python3 -m pip install -r requirements.txt
-    ```
-
-    > NOTE: If this final step fails, it is likely due to the incorrect GDAL version being listed in the [requirements.txt](./requirements.txt) file. To correct this, identify the correct GDAL version for your system:
-
-### Troubleshooting
-
-```bash
-gdalinfo --version
-```
-
-Your output should look similar to:
-```bash
-GDAL 3.6.4, released 2023/04/17
-```
-
-Finally, install the correct GDAL version by running:
-```bash
-python3 -m pip install GDAL==<insert version number>
-```
-
-For example,
-
-```bash
-python3 -m pip install GDAL==3.6.4
+├── input
+│   ├── 2019-03-01
+│   │   └── LIS
+│   ├── 2019-03-02
+│   │   └── LIS
+│   └── 2019-03-03
+│       └── LIS
+└── output
+    ├── 2019-03-01
+    │   ├── Appender
+    │   ├── Planner
+    │   └── Simulator
+    ├── 2019-03-02
+    │   ├── Appender
+    │   ├── Planner
+    │   └── Simulator
+    └── 2019-03-03
+        ├── Appender
+        ├── Planner
+        └── Simulator
 ```
 
 ## Execution
 
-### Docker (Development)
+The SOS applications can be executed using Conda or Docker. The steps for executing Conda are provided below, assuming you have following the [NOS-T installation instructions](https://nost-tools-v2.readthedocs.io/en/latest/installation/installation.html) and [AWS CLI installation instructions](https://nost-tools-v2.readthedocs.io/en/latest/operators_guide/modules/aws.html).
+
+### Conda
+
+Activate the Conda environment:
+
+```bash
+conda activate nost
+```
+
+Run each application in a separate terminal, making sure to start the manager application first:
+
+- Terminal 1:
+
+```bash
+python3 src/manager/main.py
+```
+
+- Terminal 2:
+
+```bash
+python3 src/planner/main.py
+```
+
+- Terminal 3:
+
+```bash
+python3 src/appender/main.py
+```
+
+- Terminal 4:
+```bash
+python3 src/simulator/main.py
+```
+
+Below is an example:
+
+<p align="center">
+  <img src="./docs/terminal.png"/>
+  <br>
+  <em>Terminal running all four SOS applications.</em>
+</p>
+
+### Docker
+
+> **Note:** This section is coming soon.
+
+<!-- ### Docker (Development)
 
 Each container can be built individually during development, to build a local version of a container, you can use ```docker build```. 
 
@@ -364,4 +243,4 @@ Three applications, including manager, satellite, and snow cover layer applicati
 
     ```
     docker-compose down
-    ```
+    ``` -->

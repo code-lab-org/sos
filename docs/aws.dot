@@ -1,0 +1,19 @@
+digraph MQTT_PubSub {
+    subgraph cluster0 {
+        style=dashed;
+        label="AWS";
+        fontsize=12;
+        fontname="Helvetica-Bold";
+        s3 [label="S3 Bucket", shape=rect, style=filled, fillcolor=dodgerblue, fontsize=16];
+        lambda [label="Lambda", shape=rect, style=filled, fillcolor=green, fontsize=16];
+    }
+    s3 -> lambda [label="Data", fontsize=10, fontcolor=red, color=red, style=dashed];
+    subgraph cluster1 {
+        style=dashed;
+        label="NOS-T System";
+        fontsize=16;
+        fontname="Helvetica-Bold";
+        nost_apps [label="NOS-T Apps"];
+    }
+    lambda -> nost_apps [label="AMQP", fontsize=10, fontcolor=orange, color=orange, style=dashed]
+}
