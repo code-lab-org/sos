@@ -7,8 +7,8 @@ This repository contains the codebase for Snow Observing Strategy (SOS) applicat
   - [AWS CLI Installation](#aws-cli-installation)
 - [Introduction](#introduction)
 - [Execution](#execution)
-  - [Docker (Development)](#docker-development)
-  - [Docker Compose](#docker-compose)
+  - [Conda](#conda)
+  - [Docker](#docker)
 
 
 ## Installation
@@ -98,7 +98,54 @@ The applications use the AWS SDK for Python, [Boto3](https://boto3.amazonaws.com
 
 ## Execution
 
-### Docker (Development)
+The SOS applications can be executed using conda or Docker. The steps for executing Conda are provided below, assuming you have following the [NOS-T installation instructions](https://nost-tools-v2.readthedocs.io/en/latest/installation/installation.html) and [AWS CLI installation instructions](https://nost-tools-v2.readthedocs.io/en/latest/operators_guide/modules/aws.html).
+
+### Conda
+
+Activate the Conda environment:
+
+```bash
+conda activate nost
+```
+
+Run each application in a separate terminal, making sure to start the manager application first:
+
+- Terminal 1:
+
+```bash
+python3 src/manager/main.py
+```
+
+- Terminal 2:
+
+```bash
+python3 src/planner/main.py
+```
+
+- Terminal 3:
+
+```bash
+python3 src/appender/main.py
+```
+
+- Terminal 4:
+```bash
+python3 src/simulator/main.py
+```
+
+Below is an example:
+
+<p align="center">
+  <img src="./docs/terminal.png"/>
+  <br>
+  <em>Terminal running all four SOS applications.</em>
+</p>
+
+### Docker
+
+> **Note:** This section is coming soon.
+
+<!-- ### Docker (Development)
 
 Each container can be built individually during development, to build a local version of a container, you can use ```docker build```. 
 
@@ -199,4 +246,4 @@ Three applications, including manager, satellite, and snow cover layer applicati
 
     ```
     docker-compose down
-    ```
+    ``` -->
