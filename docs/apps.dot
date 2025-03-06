@@ -1,0 +1,30 @@
+digraph{
+    rankdir=TB;
+    splines=polyline;
+    subgraph cluster0 {
+        style=dashed;
+        label="S3 Bucket";
+        fontsize=12;
+        fontname="Helvetica-Bold";
+        lis [label="LIS Data\n(NetCDF)"];
+        observations [label="Completed\nObservations\n(GeoJSON)"]
+    }
+    
+    subgraph cluster1 {
+        style=dashed;
+        label="NOS-T System";
+        fontsize=12;
+        fontname="Helvetica-Bold";
+        planner [label="Planner", color=red, style=filled, shape=rect];
+        appender [label="Appender", color=dodgerblue, style=filled, shape=rect];
+        simulator [label="Simulator", color=green, style=filled, shape=rect];
+    }
+    lis -> planner;
+    
+    
+    
+    planner -> appender [label="Selected\nObservations", fontsize=8];
+    appender -> simulator [label="Aggregated\nSelected\nObservations", fontsize=8]
+    lis -> simulator [style=invis]
+    simulator -> observations [label="Aggregated,\nCompleted\nObservations", fontsize=8]
+}

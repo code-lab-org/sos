@@ -93,6 +93,12 @@ snow_observing_systems/
         └── Simulator
 ```
 
+<p align="center">
+  <img src="https://pointillism.io/code-lab-org/sos/blob/main/docs/apps.dot.svg"/>
+  <br>
+  <em>Amazon Web Services (AWS) resources used by the SOS applications within the NOS-T system include S3 and Lambda.</em>
+</p>
+
 ## Execution
 
 The SOS applications can be executed using Conda or Docker. The steps for executing Conda are provided below, assuming you have following the [NOS-T installation instructions](https://nost-tools-v2.readthedocs.io/en/latest/installation/installation.html) and [AWS CLI installation instructions](https://nost-tools-v2.readthedocs.io/en/latest/operators_guide/modules/aws.html).
