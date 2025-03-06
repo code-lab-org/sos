@@ -5,11 +5,6 @@ This repository contains the codebase for Snow Observing Strategy (SOS) applicat
 - [Installation](#installation)
   - [NOS-T Tools Installation](#nos-t-tools-installation)
   - [AWS CLI Installation](#aws-cli-installation)
-    - [Install AWS CLI](#install-aws-cli)
-      - [Linux](#linux)
-      - [Windows](#windows)
-      - [Mac](#mac)
-    - [Configure AWS CLI](#configure-aws-cli)
 - [Introduction](#introduction)
 - [Execution](#execution)
   - [Docker (Development)](#docker-development)
@@ -24,63 +19,7 @@ To install the NOS-T library, follow the directions [here](https://nost-tools-v2
 
 ### AWS CLI Installation
 
-The SOS applications use the Amazon Web Services (AWS) command line interface (CLI).
-
-#### Install AWS CLI
-
-Installation instructions are provided below. For further information on AWS CLI installation, [click here](https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html).
-
-##### Linux
-
-```bash
-curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-unzip awscliv2.zip
-sudo ./aws/install
-```
-
-##### Windows
-
-1. Download and run the AWSL CLI installer: 
-
-```powershell
-msiexec.exe /i https://awscli.amazonaws.com/AWSCLIV2.msi
-```
-
-2. Confirm successful installation
-
-```powershell
-aws --version
-```
-
-##### Mac
-
-1. Download AWS CLI installer:
-
-```bash
-curl "https://awscli.amazonaws.com/AWSCLIV2.pkg" -o "AWSCLIV2.pkg"
-```
-
-2. Run the installer: 
-
-```bash
-sudo installer -pkg ./AWSCLIV2.pkg -target /
-```
-
-3. Confirm successful installation:
-
-```bash
-aws --version
-```
-
-#### Configure AWS CLI
-
-Once installed, the AWS CLI must be configured:
-
-```bash
-aws configure
-```
-
-Enter the Access Key ID and Secret Access Key provided by the NOS-T operator.
+To setup the Amazon Web Services (AWS) command line interface (CLI), follow the directions [here](https://nost-tools-v2.readthedocs.io/en/latest/operators_guide/modules/aws.html).
 
 ## Introduction
 
