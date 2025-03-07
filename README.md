@@ -171,27 +171,21 @@ To setup an event broker on local host, follow the directions [here](https://nos
 
 ### Env.js File
 
-In the `src/visualization` directory, create a file named `env.js` file with the following contents:
+1. In the `sos/src/visualization` directory, create a file named `env.js` file with the following contents:
 
-```javascript
-var HOST="localhost"
-var RABBITMQ_PORT=15670
-var USERNAME=  #Your RabbitMQ username
-var PASSWORD=  #Your RabbitMQ password
-var TOKEN=     #Cesium access token
-```
+    ```javascript
+    var HOST="localhost"
+    var RABBITMQ_PORT=15670
+    var USERNAME=  #Your RabbitMQ username
+    var PASSWORD=  #Your RabbitMQ password
+    var TOKEN=     #Cesium access token
+    ```
 
-> **Note:** Add your Cesium access token that you generated in the [Cesium Access Token Section](#cesium-access-token).
+    > **Note:** Add your Cesium access token that you generated in the [Cesium Access Token Section](#cesium-access-token).
 
 ### HTTP Server
 
-1. Ensure you are in the `src/visualization` directory:
-
-    ```bash
-    cd src/visualization
-    ```
-
-2. Run the HTTP server:
+1. In the `sos/src/visualization` directory, run an HTTP server:
 
     ```bash
     python3 -m http.server 7000
@@ -199,7 +193,7 @@ var TOKEN=     #Cesium access token
 
 3. In your web browser, navigate to http://localhost:7000
 
-4. Finally, click on `visualization.html`. You should see
+4. Finally, click on `cesium_visualization.html`. You should see a Cesium visualization web application running on local host.
 
 <!-- ### Docker (Development)
 

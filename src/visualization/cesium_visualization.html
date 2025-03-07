@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Snow Observing Systems</title>
+    <meta name="description" content="">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    
+    <!-- Include Cesium JS and CSS -->
+    <script src="https://cesium.com/downloads/cesiumjs/releases/1.85/Build/Cesium/Cesium.js"></script>
+    <link href="https://cesium.com/downloads/cesiumjs/releases/1.85/Build/Cesium/Widgets/widgets.css" rel="stylesheet">
+    
+    <!-- Bootstrap CSS -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.5.3/dist/css/bootstrap.min.css" integrity="sha384-TX8t27EcRE3e/ihU7zmQxVncDAy5uIKz4rEkgIXeMed4M0jlfIDPvg6uqKI2xXr2" crossorigin="anonymous">
+    
+    <!-- Environment variables -->
+    <script type="text/javascript" src="env.js"></script>
+
+    <style>
+        #cesiumContainer {
+            width: 100%;
+            height: 90vh;
+            margin: 0;
+            padding: 0;
+        }
+        #controls {
+            position: absolute;
+            top: 70px;
+            left: 10px;
+            background: rgba(42, 42, 42, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            color: white;
+        }
+        h1 {
+            margin: 10px 0;
+            padding: 10px;
+            background-color: #f8f9fa;
+        }
+    </style>
+</head>
+<body>
+    <!-- <h1 style="text-align: center;">Novel Observing Strategies Testbed (NOS-T): FireSat+ Example</h1> -->
+    
+    <div id="cesiumContainer"></div>
+    <div id="controls">
+        <h3>Layer Selection</h3>
+        <hr>
+        <h4>Extents</h4>
+        <label>
+            <input type="checkbox" id="toggleMissouriLayer" checked>
+            Missouri River Basin Extents
+        </label>
+        <hr>
+        <h4>Polygons</h4>
+        <label>
+            <input type="checkbox" id="toggleSweChangeLayer" >
+            Snow Water Equivalent (SWE) Change
+        </label>
+        <br>
+
+        <label>
+            <input type="checkbox" id="toggleOptimizationLayerAll" checked>
+            Optimization - All Locations
+        </label>
+        <br>
+        <label>
+            <input type="checkbox" id="toggleOptimizationLayerSelected" checked>
+            Optimization - Selected Locations
+        </label>
+        <br>
+    </div>
+    <script type="module">
+        // import { AMQPWebSocketClient } from './js/amqp-websocket-client.mjs';
+        import { AMQPWebSocketClient } from 'https://cdn.jsdelivr.net/npm/@cloudamqp/amqp-client@3.1.1/dist/amqp-websocket-client.mjs';
+
+        // Start application directly without authentication
+        startApplication();
+
+        function startApplication() {
+            var CESIUM_ACCESS_TOKEN = TOKEN;
+            var BROKER_HOST = HOST;
+            var BROKER_PORT = RABBITMQ_PORT;
+            var BROKER_CLIENT_USERNAME = USERNAME;
+            var BROKER_CLIENT_PASSWORD = PASSWORD;
+            Cesium.Ion.defaultAccessToken = CESIUM_ACCESS_TOKEN;
+
+            const viewer = new Cesium.Viewer('cesiumContainer');
+            const positions = {};
+            const previousSensorCircles = {};
+            let firstUpdate = true;
+            let previousLabelEntities = {};
+            let snowLayer, resolutionLayer;
+            let optimizationLayer, optimizationLayerAll, optimizationLayerSelected, missouriLayer;
+            let gcomLayer, capellaLayer;
+
+            // Load the Missouri River Basin GeoJSON file
+            Cesium.GeoJsonDataSource.load('WBD_10_HU2_4326.geojson', {
+                clampToGround: false,
+                stroke: Cesium.Color.RED,
+                fill: Cesium.Color.RED.withAlpha(0.0),
+            }).then(function (dataSource) {
+                missouriLayer = dataSource;
+                viewer.dataSources.add(dataSource);
+                viewer.zoomTo(dataSource);
+            }).otherwise(function (error) {
+                console.error(error);
+            });
+
+            // Event listeners for toggling vector layers
+            document.getElementById('toggleOptimizationLayerAll').addEventListener('change', function() {
+                if (optimizationLayerAll) {
+                    optimizationLayerAll.show = this.checked;
+                }
+            });
+
+            document.getElementById('toggleOptimizationLayerSelected').addEventListener('change', function() {
+                if (optimizationLayerSelected) {
+                    optimizationLayerSelected.show = this.checked;
+                }
+            });
+
+            document.getElementById('toggleMissouriLayer').addEventListener('change', function() {
+                if (missouriLayer) {
+                    missouriLayer.show = this.checked;
+                }
+            });
+
+            // Function to handle incoming messages
+            function handleMessage(topic, payload) {
+                if (topic === "sos.manager.init") {
+                    console.log("Initialize command received.");
+                    viewer.clockViewModel.currentTime = Cesium.JulianDate.fromIso8601(payload.taskingParameters.simStartTime);
+                    viewer.clockViewModel.startTime = Cesium.JulianDate.fromIso8601(payload.taskingParameters.simStartTime);
+                    viewer.clockViewModel.stopTime = Cesium.JulianDate.fromIso8601(payload.taskingParameters.simStopTime);
+                    viewer.clockViewModel.clockRange = Cesium.ClockRange.CLAMPED;
+                    viewer.timeline.zoomTo(viewer.clockViewModel.startTime, viewer.clockViewModel.stopTime);
+                } else if (topic === "sos.manager.start") {
+                    console.log("Start command received.");
+                    viewer.clockViewModel.multiplier = payload.taskingParameters.timeScalingFactor;
+                } else if (topic == "sos.manager.time" || topic == "sos.manager.status.time") {
+                    console.log("Time message received.");
+                    viewer.clockViewModel.currentTime = Cesium.JulianDate.fromIso8601(payload.properties.simTime);
+                    viewer.timeline.updateFromClock();
+                } else if (topic === "sos.manager.update") {
+                    console.log("Update message received.");
+                    viewer.clockViewModel.multiplier = payload.taskingParameters.timeScalingFactor;
+                } else if (topic === "sos.manager.stop") {
+                    console.log("Stop command received.");
+                    viewer.clockViewModel.multiplier = 0;
+                } else if (topic === "sos.constellation.location") {
+                    const position = new Cesium.Cartesian3(payload.ecef[0], payload.ecef[1], payload.ecef[2]);
+                    const altitude_km = payload.altitude / 1000;
+                    const radius_km = payload.radius / 1000;
+                    const swath_km = payload.swath / 1000;
+
+                    if (!positions[payload.name]) {
+                        positions[payload.name] = [];
+                    }
+                    positions[payload.name].push(position);
+
+                    if (previousSensorCircles[payload.name]) {
+                        previousSensorCircles[payload.name].forEach(circle => {
+                            viewer.scene.primitives.remove(circle);
+                        });
+                        previousSensorCircles[payload.name].length = 0;
+                    } else {
+                        previousSensorCircles[payload.name] = [];
+                    }
+
+                    if (previousLabelEntities[payload.name]) {
+                        viewer.entities.remove(previousLabelEntities[payload.name]);
+                    }
+
+                    let color = Cesium.Color.RED;
+                    if (payload.name === 'GCOM-W1 (SHIZUKU)') {
+                        color = Cesium.Color.GREEN;
+                    } else if (payload.name === 'CAPELLA-14 (ACADIA-4)') {
+                        color = Cesium.Color.YELLOW;
+                    }
+
+                    const dotcolor = payload.state ? Cesium.Color.LIME : Cesium.Color.RED;
+
+                    previousLabelEntities[payload.name] = viewer.entities.add({
+                        position: position,
+                        point: {
+                            pixelSize: 10,
+                            color: dotcolor,
+                        },
+                        label: {
+                            text: payload.name,
+                            font: '10pt Arial',
+                            style: Cesium.LabelStyle.FILL,
+                            fillColor: dotcolor,
+                            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                            pixelOffset: new Cesium.Cartesian2(0, -15),
+                            eyeOffset: new Cesium.Cartesian3(0, 0, -5000),
+                        }
+                    });
+
+                    const sensorRadius = payload.radius;
+                    const sensorHeight = payload.altitude;
+                    const hollowRadius = payload.radius * (5 / 50);
+
+                    const outerCone = new Cesium.CylinderGeometry({
+                        length: sensorHeight * 2,
+                        topRadius: 0.0,
+                        bottomRadius: sensorRadius,
+                        vertexFormat: Cesium.PerInstanceColorAppearance.VERTEX_FORMAT
+                    });
+
+                    const outerConeInstance = new Cesium.GeometryInstance({
+                        geometry: outerCone,
+                        modelMatrix: Cesium.Matrix4.multiplyByTranslation(
+                            Cesium.Transforms.eastNorthUpToFixedFrame(position),
+                            new Cesium.Cartesian3(0.0, 0.0, -sensorHeight),
+                            new Cesium.Matrix4()
+                        ),
+                        attributes: {
+                            color: Cesium.ColorGeometryInstanceAttribute.fromColor(color.withAlpha(0.2))
+                        }
+                    });
+
+                    const outerPrimitive = new Cesium.Primitive({
+                        geometryInstances: outerConeInstance,
+                        appearance: new Cesium.PerInstanceColorAppearance()
+                    });
+
+                    viewer.scene.primitives.add(outerPrimitive);
+                    previousSensorCircles[payload.name].push(outerPrimitive);
+
+                    if (payload.name === "CAPELLA-14 (ACADIA-4)") {
+                        const innerCone = new Cesium.CylinderGeometry({
+                            length: sensorHeight * 2,
+                            topRadius: 0.0,
+                            bottomRadius: hollowRadius,
+                            vertexFormat: Cesium.PerInstanceColorAppearance.VERTEX_FORMAT
+                        });
+
+                        const innerConeInstance = new Cesium.GeometryInstance({
+                            geometry: innerCone,
+                            modelMatrix: Cesium.Matrix4.multiplyByTranslation(
+                                Cesium.Transforms.eastNorthUpToFixedFrame(position),
+                                new Cesium.Cartesian3(0.0, 0.0, -sensorHeight),
+                                new Cesium.Matrix4()
+                            ),
+                            attributes: {
+                                color: Cesium.ColorGeometryInstanceAttribute.fromColor(Cesium.Color.BLACK.withAlpha(0.6))
+                            }
+                        });
+
+                        const innerPrimitive = new Cesium.Primitive({
+                            geometryInstances: innerConeInstance,
+                            appearance: new Cesium.PerInstanceColorAppearance()
+                        });
+
+                        viewer.scene.primitives.add(innerPrimitive);
+                        previousSensorCircles[payload.name].push(innerPrimitive);
+                    }
+
+                    if (!positions[payload.name]) {
+                        positions[payload.name] = [];
+                    }
+
+                    if (positions[payload.name].polylineEntity) {
+                        viewer.entities.remove(positions[payload.name].polylineEntity);
+                    }
+
+                    if (positions[payload.name].length > 1) {
+                        positions[payload.name].polylineEntity = viewer.entities.add({
+                            polyline: {
+                                positions: positions[payload.name],
+                                width: 0.5,
+                                material: color
+                            }
+                        });
+                    }
+                } else if (topic === "sos.snow.layer") {
+                    handleLayerMessage(payload, 'snow_layer', 'toggleSnowLayer');
+                } else if (topic === "sos.resolution.layer") {
+                    handleLayerMessage(payload, 'resolution_layer', 'toggleResolutionLayer');
+                } else if (topic === "sos.gcom.layer") {
+                    handleLayerMessage(payload, 'gcom_layer', 'toggleGcomLayer');
+                } else if (topic === "sos.capella.layer") {
+                    handleLayerMessage(payload, 'capella_layer', 'toggleCapellaLayer');
+                } else if (topic === "sos.planner.layer") {
+                    handleLayerMessage(payload, 'swe_change_layer', 'toggleSweChangeLayer');
+                } else if (topic === "sos.planner.all") {
+                    handleIncomingMessage(payload, "all");
+                } else if (topic === "sos.planner.selected") {
+                    handleIncomingMessage(payload, "selected");
+                }
+            }
+            
+            function handleIncomingMessage(payload, layerType) {
+                // Get the appropriate checkbox and data source reference
+                const toggleId = layerType === 'all' ? 'toggleOptimizationLayerAll' : 'toggleOptimizationLayerSelected';
+                const checkbox = document.getElementById(toggleId);
+                
+                // Debug logging
+                console.log(`Processing ${layerType} layer`);
+                console.log(`Current optimizationLayerSelected:`, optimizationLayerSelected);
+
+                // Parse and process the message regardless of checkbox state
+                const geoJsonData = JSON.parse(payload.vector_layer);
+
+                // Load the GeoJSON data from the string
+                Cesium.GeoJsonDataSource.load(geoJsonData, {
+                    clampToGround: false,
+                    strokeWidth: 3
+                }).then(function (loadedDataSource) {
+                    // Set color for each entity based on layer type and simulation status
+                    const entities = loadedDataSource.entities.values;
+                    for (const entity of entities) {
+                        let color;
+                        if (layerType === 'all') {
+                            color = Cesium.Color.GRAY;
+                        } else {
+                            const simulationStatus = entity.properties.simulator_simulation_status.getValue();
+                            color = simulationStatus === "Completed" ? 
+                                Cesium.Color.NAVY : 
+                                Cesium.Color.RED;
+                        }
+                        
+                        // Apply color to both stroke and fill
+                        if (entity.polygon) {
+                            entity.polygon.material = color.withAlpha(0.5);
+                            entity.polygon.outlineColor = color;
+                            entity.polygon.outline = true;
+                        }
+                    }
+
+                    // Remove only the corresponding previous layer
+                    if (layerType === 'all') {
+                        if (optimizationLayerAll) {
+                            console.log('Removing previous all layer');
+                            viewer.dataSources.remove(optimizationLayerAll);
+                        }
+                        optimizationLayerAll = loadedDataSource;
+                    } else {
+                        if (optimizationLayerSelected) {
+                            console.log('Removing previous selected layer');
+                            viewer.dataSources.remove(optimizationLayerSelected);
+                        }
+                        optimizationLayerSelected = loadedDataSource;
+                    }
+
+                    // Only add to viewer if checkbox is checked
+                    if (checkbox.checked) {
+                        viewer.dataSources.add(loadedDataSource);
+                    }
+
+                    // Update checkbox event listener
+                    checkbox.removeEventListener('change', checkbox.changeHandler); // Remove old listener
+                    checkbox.changeHandler = function() { // Store reference to handler
+                        if (loadedDataSource) {
+                            if (this.checked) {
+                                viewer.dataSources.add(loadedDataSource);
+                            } else {
+                                viewer.dataSources.remove(loadedDataSource);
+                            }
+                        }
+                    };
+                    checkbox.addEventListener('change', checkbox.changeHandler);
+                }).otherwise(function (error) {
+                    console.error('Error loading GeoJSON:', error);
+                });
+            }
+            
+            function handleLayerMessage(payload, layerName, toggleId) {
+                // Remove any existing layer with the same name
+                const layers = viewer.scene.imageryLayers;
+                for (let i = layers.length - 1; i >= 0; i--) {
+                    const existingLayer = layers.get(i);
+                    if (existingLayer.layerName === layerName) {
+                        layers.remove(existingLayer, true);
+                    }
+                }
+
+                console.log('Handling layer message:', layerName);
+                let layer;
+                const checkbox = document.getElementById(toggleId);
+
+                if (checkbox && checkbox.checked) {
+                    const layerImage = `data:image/png;base64,${payload[layerName]}`;
+                    layer = new Cesium.ImageryLayer(
+                        new Cesium.SingleTileImageryProvider({
+                            url: layerImage,
+                            rectangle: Cesium.Rectangle.fromDegrees(
+                                payload.top_left[0], payload.bottom_right[1],
+                                payload.bottom_right[0], payload.top_left[1]
+                            )
+                        })
+                    );
+                    layer.layerName = layerName;
+                    viewer.scene.imageryLayers.add(layer);
+                }
+
+                if (checkbox) {
+                    checkbox.addEventListener('change', function() {
+                        if (layer) {
+                            layer.show = this.checked;
+                        } else if (this.checked) {
+                            const layerImage = `data:image/png;base64,${payload[layerName]}`;
+                            layer = new Cesium.ImageryLayer(
+                                new Cesium.SingleTileImageryProvider({
+                                    url: layerImage,
+                                    rectangle: Cesium.Rectangle.fromDegrees(
+                                        payload.top_left[0], payload.bottom_right[1], 
+                                        payload.bottom_right[0], payload.top_left[1]
+                                    )
+                                })
+                            );
+                            layer.layerName = layerName;
+                            viewer.scene.imageryLayers.add(layer);
+                        }
+                    });
+                }
+            }
+
+            // Connect to local RabbitMQ instance
+            const tls = window.location.protocol === "https:";
+            const url = `${tls ? "wss" : "ws"}://${BROKER_HOST}:${BROKER_PORT}`;
+            console.log(`Connecting to ${url}`);
+
+            // Simple connection without authentication
+            const amqp = new AMQPWebSocketClient(url, "/", BROKER_CLIENT_USERNAME, BROKER_CLIENT_PASSWORD);
+            
+            async function start(amqp) {
+                try {
+                    const conn = await amqp.connect();
+                    const ch = await conn.channel();
+                    console.log("Connected to the broker.");
+                    await ch.exchangeDeclare("sos", "topic", { durable: false, autoDelete: true });
+                    const q = await ch.queue("", { exclusive: true });
+                    await q.bind("sos", "sos.#");
+                    await q.subscribe({ noAck: true }, (msg) => {
+                        const topic = msg.routingKey;
+                        const payload = JSON.parse(msg.bodyToString());
+                        handleMessage(topic, payload);
+                    });
+                } catch (err) {
+                    console.error("Error during AMQP setup:", err);
+                }
+            }
+            
+            start(amqp);
+        }
+    </script>
+</body>
+</html>
