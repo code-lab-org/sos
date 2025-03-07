@@ -118,7 +118,7 @@ Create a YAML file named `sos.yaml` with the following contents:
 info:
   title: Novel Observing Strategies Testbed (NOS-T) YAML Configuration
   version: '1.0.0'
-  description: Version-controlled AsyncAPI document for RabbitMQ event broker with Keycloak authentication within NOS-T
+  description: Version-controlled AsyncAPI document for RabbitMQ event broker
 servers:
   rabbitmq:
     keycloak_authentication: False
