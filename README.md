@@ -240,7 +240,7 @@ To setup an event broker on local host, follow the directions [here](https://nos
 
 2. Create a new access token by clicking the blue "Create token" button located in the upper left corner.
 
-<!-- 3. Add the Asset "Blue Marble Next Generation July 2004" to your assets: https://ion.cesium.com/assetdepot/3845?query=Blue%20Mar. Click the blue 'Add to my assets' button located in the bottom right corner. -->
+3. Add the Asset "Blue Marble Next Generation July 2004" to your assets: https://ion.cesium.com/assetdepot/3845?query=Blue%20Mar. Click the blue 'Add to my assets' button located in the bottom right corner.
 
 ### Env.js File
 
