@@ -177,3 +177,11 @@ backup/
 *.geojson
 *.yml
 *.yaml
+# Ignore all .env files anywhere in the repository
+**/.env
+.env
+
+# Ignore all env.js files anywhere in the repository
+**/env.js
+env.js
+
