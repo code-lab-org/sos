@@ -19,13 +19,13 @@
     <style>
         #cesiumContainer {
             width: 100%;
-            height: 90vh;
+            height: 100vh;
             margin: 0;
             padding: 0;
         }
         #controls {
             position: absolute;
-            top: 70px;
+            top: 10px;
             left: 10px;
             background: rgba(42, 42, 42, 0.8);
             padding: 10px;
@@ -40,8 +40,6 @@
     </style>
 </head>
 <body>
-    <!-- <h1 style="text-align: center;">Novel Observing Strategies Testbed (NOS-T): FireSat+ Example</h1> -->
-    
     <div id="cesiumContainer"></div>
     <div id="controls">
         <h3>Layer Selection</h3>
@@ -51,13 +49,13 @@
             <input type="checkbox" id="toggleMissouriLayer" checked>
             Missouri River Basin Extents
         </label>
-        <hr>
+        <!-- <hr> -->
         <h4>Polygons</h4>
-        <label>
+        <!-- <label>
             <input type="checkbox" id="toggleSweChangeLayer" >
             Snow Water Equivalent (SWE) Change
         </label>
-        <br>
+        <br> -->
 
         <label>
             <input type="checkbox" id="toggleOptimizationLayerAll" checked>
@@ -73,10 +71,8 @@
     <script type="module">
         // import { AMQPWebSocketClient } from './js/amqp-websocket-client.mjs';
         import { AMQPWebSocketClient } from 'https://cdn.jsdelivr.net/npm/@cloudamqp/amqp-client@3.1.1/dist/amqp-websocket-client.mjs';
-
         // Start application directly without authentication
         startApplication();
-
         function startApplication() {
             var CESIUM_ACCESS_TOKEN = TOKEN;
             var BROKER_HOST = HOST;
