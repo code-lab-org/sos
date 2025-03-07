@@ -10,6 +10,8 @@ This repository contains the codebase for Snow Observing Strategy (SOS) applicat
   - [Messaging Protocol](#messaging-protocol)
   - [Data Structure \& Interfaces](#data-structure--interfaces)
 - [Execution](#execution)
+  - [YAML](#yaml)
+  - [.env](#env)
   - [Conda](#conda)
   - [Docker](#docker)
 - [Cesium Visualization](#cesium-visualization)
@@ -107,6 +109,77 @@ snow_observing_systems/
 ## Execution
 
 The SOS applications can be executed using Conda or Docker. The steps for executing Conda are provided below, assuming you have following the [NOS-T installation instructions](https://nost-tools-v2.readthedocs.io/en/latest/installation/installation.html) and [AWS CLI installation instructions](https://nost-tools-v2.readthedocs.io/en/latest/operators_guide/modules/aws.html).
+
+### YAML
+
+Create a YAML file named `sos.yaml` with the following contents:
+
+```yaml
+info:
+  title: Novel Observing Strategies Testbed (NOS-T) YAML Configuration
+  version: '1.0.0'
+  description: Version-controlled AsyncAPI document for RabbitMQ event broker with Keycloak authentication within NOS-T
+servers:
+  rabbitmq:
+    keycloak_authentication: False
+    host: "localhost"
+    port: 5672
+    tls: False
+    virtual_host: "/"
+    message_expiration: "60000" # in milliseconds, message expiration time
+    delivery_mode: 2 # 1=transient, 2=durable
+    content_type: "text/plain"
+    heartbeat: 30 # in seconds
+    connection_attempts: 3
+    retry_delay: 5 # in seconds
+  keycloak:
+    host: "nost.smce.nasa.gov"
+    port: 8443
+    tls: True
+    token_refresh_interval: 10 #in seconds
+    realm: "NOS-T"
+execution:
+  general:
+    prefix: sos
+  manager:
+    sim_start_time: "2019-03-01T23:59:59+00:00"
+    sim_stop_time: "2019-03-10T23:59:59+00:00"
+    start_time:
+    time_step: "0:00:01"
+    time_scale_factor: 144 # 1 simulation day = 5 wallclock minutes
+    time_scale_updates: []
+    time_status_step: "0:00:01" # 1 second * time scale factor
+    time_status_init: "2019-03-01T23:59:59+00:00"
+    command_lead: "0:00:05"
+    required_apps:
+      - manager
+      - planner
+      - appender
+      - simulator
+    init_retry_delay_s: 5
+    init_max_retry: 5
+    set_offset: True
+    shut_down_when_terminated: False
+  managed_application:
+    time_scale_factor: 144 # 1 simulation day = 5 wallclock minutes
+    time_step: "0:00:01" # 1 second * time scale factor
+    set_offset: True
+    time_status_step: "0:00:10" # 10 seconds * time scale factor
+    time_status_init: "2019-03-01T00:00:00+00:00"
+    shut_down_when_terminated: False
+    manager_app_name: "manager"
+```
+
+### .env
+
+Create a `.env` file with the following content specific to your event broker running on local host:
+
+```sh
+USERNAME="admin"
+PASSWORD="admin"
+CLIENT_ID=""
+CLIENT_SECRET_KEY=""
+```
 
 ### Conda
 
