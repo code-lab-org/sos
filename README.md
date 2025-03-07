@@ -112,7 +112,7 @@ The SOS applications can be executed using Conda or Docker. The steps for execut
 
 ### YAML
 
-Create a YAML file named `sos.yaml` with the following contents:
+In the `sos` directory, create a YAML file named `sos.yaml` with the following contents:
 
 ```yaml
 info:
@@ -172,7 +172,7 @@ execution:
 
 ### .env
 
-Create a `.env` file with the following content specific to your event broker running on local host:
+In the `sos` directory, create a `.env` file with the following content specific to your event broker running on local host:
 
 ```sh
 USERNAME="admin"
