@@ -12,6 +12,11 @@ This repository contains the codebase for Snow Observing Strategy (SOS) applicat
 - [Execution](#execution)
   - [Conda](#conda)
   - [Docker](#docker)
+- [Cesium Visualization](#cesium-visualization)
+  - [Event Broker on Local Host](#event-broker-on-local-host)
+  - [Cesium Access Token](#cesium-access-token)
+  - [Env.js File](#envjs-file)
+  - [HTTP Server](#http-server)
 
 
 ## Installation
@@ -147,6 +152,54 @@ Below is an example:
 ### Docker
 
 > **Note:** This section is coming soon.
+
+## Cesium Visualization
+
+Setting up a Cesium visualization requires you (*i*) set up an event broker on local host, (*ii*) acquire a Cesium access token, (*iii*) create an env.js file with credentials, and (*iv*) run an HTTP server to expose local files. Each of these steps are covered below.
+
+### Event Broker on Local Host
+
+To setup an event broker on local host, follow the directions [here](https://nost-tools-v2.readthedocs.io/en/latest/operators_guide/modules/localBroker.html).
+
+### Cesium Access Token
+
+1. Sign in or create an account at: https://cesium.com/ion/signin/tokens.
+
+2. Create a new access token by clicking the blue "Create token" button located in the upper left corner.
+
+<!-- 3. Add the Asset "Blue Marble Next Generation July 2004" to your assets: https://ion.cesium.com/assetdepot/3845?query=Blue%20Mar. Click the blue 'Add to my assets' button located in the bottom right corner. -->
+
+### Env.js File
+
+In the `src/visualization` directory, create a file named `env.js` file with the following contents:
+
+```javascript
+var HOST="localhost"
+var RABBITMQ_PORT=15670
+var USERNAME=  #Your RabbitMQ username
+var PASSWORD=  #Your RabbitMQ password
+var TOKEN=     #Cesium access token
+```
+
+> **Note:** Add your Cesium access token that you generated in the [Cesium Access Token Section](#cesium-access-token).
+
+### HTTP Server
+
+1. Ensure you are in the `src/visualization` directory:
+
+    ```bash
+    cd src/visualization
+    ```
+
+2. Run the HTTP server:
+
+    ```bash
+    python3 -m http.server 7000
+    ```
+
+3. In your web browser, navigate to http://localhost:7000
+
+4. Finally, click on `visualization.html`. You should see
 
 <!-- ### Docker (Development)
 
