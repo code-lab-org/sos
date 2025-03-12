@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
 import logging
 from typing import List, Tuple
+from constellation_config_files.schemas import VectorLayer
 # from geojson_pydantic import Polygon, MultiPolygon
 # from joblib import Parallel, delayed
 from nost_tools import Entity, Application
@@ -51,7 +52,7 @@ class Collect_Observations(Entity):
         self.requests = None
         self.next_requests = None
         self.observation_collected = None
-        self.new_request_flag = None
+        self.new_request_flag = False
 
     def initialize(self, init_time: datetime):
         super().initialize(init_time)
@@ -62,6 +63,9 @@ class Collect_Observations(Entity):
         self.next_requests = None
         self.observation_collected = None
         self.new_request_flag  = None
+
+    def on_appender(self):      
+        self.new_request_flag = True
 
     def tick(self, time_step: timedelta):
         super().tick(time_step)
@@ -103,13 +107,15 @@ class Collect_Observations(Entity):
             # update requests
             self.requests = self.next_requests
 
+        current_date = self.app.simulator._time.date().replace("-", "")
+        
+
+        if self.new_request_flag:
+            self.requests = read_master_file(current_date)
+            self.new_request_flag = False
+
         # This code should execute only when message is received from the appender
         # self.new_request_flag should be set to 1 by the observer in the appender
-
-        if self.new_request_flag is not None:
-            self.requests = read_master_file()
-            self.new_request_flag = None
-
         
         # # check for new requests
         # if self.new_requests is not None:
@@ -119,4 +125,12 @@ class Collect_Observations(Entity):
 
     def message_received_from_appender(self, client, userdata, message):
         # handle message received
-        pass
+        # self.app.add_message_callback("appender", "master", self.on_appender)
+        self.on_appender()  
+    
+       
+
+    
+
+    
+        

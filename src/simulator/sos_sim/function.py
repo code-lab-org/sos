@@ -103,8 +103,9 @@ def compute_ground_track_and_format(
 # CALLBACK FUNCTIONS
 # Reading master file
 
-def read_master_file():
-    request_data = gpd.read_file("Master_file.geojson")
+def read_master_file(date):
+    # request_data = gpd.read_file("Master_file.geojson")
+    request_data = gpd.read_file(f"local_master_{date}.geojson")
     request_points = request_data.apply(
         lambda r:{
             "point":Point(id=r["simulator_id"], latitude=r["planner_latitude"], longitude=r["planner_longitude"]),
