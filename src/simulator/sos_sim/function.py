@@ -6,6 +6,7 @@ from typing import List,Tuple
 # Importing Libraries
 from collections import namedtuple
 import pandas as pd
+import os
 import geopandas as gpd
 from shapely import Geometry
 from datetime import datetime, timedelta, timezone
@@ -105,18 +106,23 @@ def compute_ground_track_and_format(
 
 def read_master_file(date):
     # request_data = gpd.read_file("Master_file.geojson")
-    request_data = gpd.read_file(f"local_master_{date}.geojson")
-    request_points = request_data.apply(
-        lambda r:{
-            "point":Point(id=r["simulator_id"], latitude=r["planner_latitude"], longitude=r["planner_longitude"]),
-            "status":r["simulator_simulation_status"],
-            "time":r["planner_time"],
-            "completion_date":r["simulator_completion_date"],
-            "satellite":r["simulator_satellite"],
-            "polygon_groundtrack":r["simulator_polygon_groundtrack"]
-        },
-        axis=1
-    )
+    print("Reading Master file")
+    if os.path.exists(f"local_master_{date}.geojson"):     
+        request_data = gpd.read_file(f"local_master_{date}.geojson")
+        request_points = request_data.apply(
+            lambda r:{
+                "point":Point(id=r["simulator_id"], latitude=r["planner_latitude"], longitude=r["planner_longitude"]),
+                "status":r["simulator_simulation_status"],
+                "time":r["planner_time"],
+                "completion_date":r["simulator_completion_date"],
+                "satellite":r["simulator_satellite"],
+                "polygon_groundtrack":r["simulator_polygon_groundtrack"]
+            },
+            axis=1
+        )
+    else:       
+        print(f"File local_master_{date}.geojson not found. Returning an empty list.")
+        request_points = []
     # request_points= request_points.to_dict('records')
     return request_points
 
