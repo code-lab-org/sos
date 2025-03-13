@@ -25,13 +25,20 @@ from sos_sim.function import (
 from sos_sim.entity import Collect_Observations   
 import yaml
 
-def get_start_time(yaml_file="sos.yaml"):
-    with open(yaml_file, "r") as file:
-        config = yaml.safe_load(file)  # Load YAML data safely
-    return config.get("sim_start_time")  # Extract start_time
+# def get_start_time(yaml_file="sos.yaml"):
+#     with open(yaml_file, "r") as file:
+#         config = yaml.safe_load(file)  # Load YAML data safely
+#         start_time_str= config.get("sim_start_time")  # Extract start_time
+#         if start_time_str:
+#         # Convert the string to a datetime object with timezone info
+#             return datetime.fromisoformat(start_time_str).astimezone(timezone.utc)
+#     return None 
 
-# Usage example
-start_time = get_start_time()
+# # Usage example
+# start_time = get_start_time()
+# print(start_time, type(start_time))
+# # start_time = datetime(2019, 3, 23, 59, 59, tzinfo=timezone.utc).isoformat()
+start_time = datetime(2019, 3, 1, tzinfo=timezone.utc)
 
 # configure logging
 logging.basicConfig(level=logging.INFO)

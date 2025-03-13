@@ -49,7 +49,7 @@ class Collect_Observations(Entity):
 
         # declare state variables
         self.constellation = None
-        self.requests = None
+        self.requests = []
         self.next_requests = None
         self.observation_collected = None
         self.new_request_flag = False
@@ -105,10 +105,12 @@ class Collect_Observations(Entity):
                 self.observation_collected,
             )
             # update requests
-            self.requests = self.next_requests
+            self.requests = self.next_requests            
 
-        current_date = self.app.simulator._time.date().replace("-", "")
-        
+        if isinstance(self.app.simulator._time, str):
+            current_date = self.app.simulator._time.replace("-", "")  # Already a string
+        else:
+            current_date = self.app.simulator._time.date().strftime("%Y%m%d")        
 
         if self.new_request_flag:
             self.requests = read_master_file(current_date)
@@ -123,9 +125,11 @@ class Collect_Observations(Entity):
         #         self.requests.append(request)
         #     self.new_requests = None
 
-    def message_received_from_appender(self, client, userdata, message):
+    # def message_received_from_appender(self, client, userdata, message):
+    def message_received_from_appender(self, ch, method, properties, body):
         # handle message received
         # self.app.add_message_callback("appender", "master", self.on_appender)
+        logger.info("Message succesfully received")
         self.on_appender()  
     
        

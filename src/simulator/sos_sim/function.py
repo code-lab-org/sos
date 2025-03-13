@@ -23,6 +23,7 @@ from tatc.analysis import collect_ground_track
 def Snowglobe_constellation(start: datetime) -> List[Satellite]:
     roll_angle = (30 + 33.5) / 2
     roll_range = 33.5 - 30
+    start = datetime(2019, 3, 1, tzinfo=timezone.utc)
     # start = datetime(2019, 3, 1, tzinfo=timezone.utc)
     constellation = WalkerConstellation(
         name="SnowGlobe Ku",
@@ -64,7 +65,7 @@ def compute_opportunity(
 ) -> gpd.GeoSeries:
     # filter requests
     filtered_requests = requests
-    if not filtered_requests.empty:
+    if filtered_requests:
         filtered_requests = [
         request
         for request in requests
@@ -81,7 +82,6 @@ def compute_opportunity(
             return observations.iloc[0]
         return None
     return None
-
    
 
 # Computing Groundtrack and formatting into a dataframe
@@ -107,8 +107,8 @@ def compute_ground_track_and_format(
 def read_master_file(date):
     # request_data = gpd.read_file("Master_file.geojson")
     print("Reading Master file")
-    if os.path.exists(f"local_master_{date}.geojson"):     
-        request_data = gpd.read_file(f"local_master_{date}.geojson")
+    if os.path.exists(f"master_{date}.geojson"):     
+        request_data = gpd.read_file(f"master_{date}.geojson")
         request_points = request_data.apply(
             lambda r:{
                 "point":Point(id=r["simulator_id"], latitude=r["planner_latitude"], longitude=r["planner_longitude"]),
