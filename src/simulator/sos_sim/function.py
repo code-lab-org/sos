@@ -2,7 +2,7 @@
 # The functions are stored in a separate file to make the main code more readable
 
 from typing import List,Tuple
-
+import logging
 # Importing Libraries
 from collections import namedtuple
 import pandas as pd
@@ -16,7 +16,9 @@ from tatc.utils import swath_width_to_field_of_regard, swath_width_to_field_of_v
 from tatc.analysis import collect_multi_observations
 from tatc.schemas import Satellite
 from tatc.schemas import Point
+from joblib import Parallel, delayed
 from tatc.analysis import collect_ground_track
+logger = logging.getLogger(__name__)
 
 # Configure Constellation
 
@@ -58,28 +60,49 @@ def Snowglobe_constellation(start: datetime) -> List[Satellite]:
 from joblib import Parallel, delayed
 
 def compute_opportunity(
-    constellation: List[Satellite],
+    const: List[Satellite],
     time: datetime,
     duration: timedelta,
     requests: List[dict],
 ) -> gpd.GeoSeries:
     # filter requests
-    filtered_requests = requests
-    if filtered_requests:
-        filtered_requests = [
+    # logger.info(f"{type(const)},{const}")
+    filtered_requests = requests    
+    logger.info(f"Entered compute_opporutnity,length of request is {len(filtered_requests)}, type of filtered request is,{type(filtered_requests)}")
+
+    filtered_requests = [
         request
         for request in requests
         if request.get("status") is None or pd.isna(request.get("status"))
         ]
-        observation_results = Parallel(-1)(
-                delayed(collect_multi_observations)(
-                    point, constellation, time, time + duration
-                )
-                for point in filtered_requests
-            )
+
+    if filtered_requests:
+        column_names = list(filtered_requests[0].keys())
+        logger.info(f"columns in filtered request",column_names)        
+
+        # collect observation
+        observation_results = pd.concat(
+        [
+        collect_multi_observations(
+        request['point'], 
+        const, 
+        time, 
+        time + duration)
+        for request in filtered_requests
+        ],
+        ignore_index=True,
+        ).sort_values(by="epoch", ascending=True)
+
+        # observation_results = Parallel(n_jobs=-1)(
+        #         delayed(collect_multi_observations)(
+        #             point, constellation, time, time + duration
+        #         )
+        #         for point in filtered_requests
+        #     )
         if observation_results:
-            observations = pd.concat(observation_results, ignore_index=True).sort_values(by="epoch", ascending=True)
-            return observations.iloc[0]
+            logger.info(f"Observation opportunity exist{time + duration}")
+            # observations = pd.concat(observation_results, ignore_index=True).sort_values(by="epoch", ascending=True)
+            return observation_results.iloc[0]
         return None
     return None
    
@@ -107,6 +130,7 @@ def compute_ground_track_and_format(
 def read_master_file(date):
     # request_data = gpd.read_file("Master_file.geojson")
     print("Reading Master file")
+    logger.info("Reading master file")
     if os.path.exists(f"master_{date}.geojson"):     
         request_data = gpd.read_file(f"master_{date}.geojson")
         request_points = request_data.apply(
@@ -119,10 +143,12 @@ def read_master_file(date):
                 "polygon_groundtrack":r["simulator_polygon_groundtrack"]
             },
             axis=1
-        )
+        ).tolist()
     else:       
         print(f"File local_master_{date}.geojson not found. Returning an empty list.")
         request_points = []
+
+    logger.info(f"Type of requests file{type(request_points)}")
     # request_points= request_points.to_dict('records')
     return request_points
 

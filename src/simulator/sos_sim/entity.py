@@ -2,6 +2,7 @@ from datetime import datetime, timedelta
 import logging
 from typing import List, Tuple
 from constellation_config_files.schemas import VectorLayer
+
 # from geojson_pydantic import Polygon, MultiPolygon
 # from joblib import Parallel, delayed
 from nost_tools import Entity, Application
@@ -69,10 +70,13 @@ class Collect_Observations(Entity):
 
     def tick(self, time_step: timedelta):
         super().tick(time_step)
+        # logger.info("entering tick time",self._time,len(self.requests),"next time",self._next_time)
+        logger.info(f"entering tick time {self._time}, {len(self.requests)}, next time {self._next_time}")
+
         # Set all the tick operations here
 
         self.observation_collected = compute_opportunity(
-            self.constellation.values(), self._time, time_step, self.requests
+           list(self.constellation.values()), self._time, time_step, self.requests
         )
         
         if self.observation_collected is not None:
@@ -97,7 +101,9 @@ class Collect_Observations(Entity):
                 self.observation_collected = None
 
     def tock(self):
+        logger.info("entering tock time")
         super().tock()
+        logger.info("entering tock time")
         if self.observation_collected is not None:
             self.notify_observers(
                 self.PROPERTY_OBSERVATION,
@@ -113,6 +119,7 @@ class Collect_Observations(Entity):
             current_date = self.app.simulator._time.date().strftime("%Y%m%d")        
 
         if self.new_request_flag:
+            logger.info("requests received")
             self.requests = read_master_file(current_date)
             self.new_request_flag = False
 
