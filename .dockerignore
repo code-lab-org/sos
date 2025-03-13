@@ -1,6 +1,6 @@
 data/
 backup/
-.env
+**/.env
 data_download.sh
 entrypoint.sh
 credentials
