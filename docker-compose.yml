@@ -1,22 +1,28 @@
 services:
-  sos_manager:
+  manager:
     image: emmanuelgonzalez/sos_manager:latest
     env_file: .env
     volumes:
       - ./data:/opt/data
-  sos_satellites:
-    image: emmanuelgonzalez/sos_satellites:latest
-    env_file: .env
-    volumes:
-      - ./input_data:/opt/input_data
-      - ./data:/opt/data
-  sos_snow_cover_layer:
-    image: emmanuelgonzalez/sos_snow_cover_layer:latest
+      - ./sos.yaml:/opt/sos.yaml
+      - ~/.aws/credentials:/root/.aws/credentials:ro
+  planner:
+    image: emmanuelgonzalez/sos_planner:latest
     env_file: .env
     volumes:
       - ./data:/opt/data
-  sos_resolution_layer:
-    image: emmanuelgonzalez/sos_resolution_layer:latest
+      - ./sos.yaml:/opt/sos.yaml
+      - ~/.aws/credentials:/root/.aws/credentials:ro
+  appender:
+    image: emmanuelgonzalez/sos_appender:latest
     env_file: .env
     volumes:
       - ./data:/opt/data
+      - ./sos.yaml:/opt/sos.yaml
+      - ~/.aws/credentials:/root/.aws/credentials:ro
+  # sos_resolution_layer:
+  #   image: emmanuelgonzalez/sos_resolution_layer:latest
+  #   env_file: .env
+  #   volumes:
+  #     - ./data:/opt/data
+  #     - ./sos.yaml:/opt/sos.yaml
