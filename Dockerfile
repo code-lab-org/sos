@@ -51,10 +51,12 @@ RUN python3 -m pip install --upgrade pip
 RUN wget https://github.com/emmanuelgonz/nost-tools/archive/refs/heads/main.zip \
     && unzip main.zip \
     && cd nost-tools-main \
-    && python3 -m pip install .[examples]
+    && python3 -m pip install .[examples] \
+    && rm /opt/main.zip /opt/nost-tools-main -rf
 
 # Install AWS command line interface (CLI)
 RUN curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" \
     && unzip awscliv2.zip \
     && ./aws/install -i /usr/local/aws-cli -b /usr/local/bin \
-    && rm awscliv2.zip
+    && rm awscliv2.zip \
+    && rm aws -rf
