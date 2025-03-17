@@ -69,6 +69,10 @@ def compute_opportunity(
     # logger.info(f"{type(const)},{const}")
     filtered_requests = requests    
     logger.info(f"Entered compute_opporutnity,length of request is {len(filtered_requests)}, type of filtered request is,{type(filtered_requests)}")
+    logger.info(f"time :{type(time)}, duration: {type(duration)},combined: {type(time + duration)}")
+
+    # end = (time + duration).replace(tzinfo=timezone.utc)
+    end = (time + duration)
 
     filtered_requests = [
         request
@@ -78,7 +82,7 @@ def compute_opportunity(
 
     if filtered_requests:
         column_names = list(filtered_requests[0].keys())
-        logger.info(f"columns in filtered request",column_names)        
+        logger.info(f"columns in filtered request{column_names}")        
 
         # collect observation
         observation_results = pd.concat(
@@ -87,7 +91,7 @@ def compute_opportunity(
         request['point'], 
         const, 
         time, 
-        time + duration)
+        end)
         for request in filtered_requests
         ],
         ignore_index=True,
@@ -99,11 +103,13 @@ def compute_opportunity(
         #         )
         #         for point in filtered_requests
         #     )
-        if observation_results:
+        if observation_results is not None and not observation_results.empty:
             logger.info(f"Observation opportunity exist{time + duration}")
             # observations = pd.concat(observation_results, ignore_index=True).sort_values(by="epoch", ascending=True)
             return observation_results.iloc[0]
         return None
+        
+        logger.info("at the end of compute observations")
     return None
    
 
@@ -112,9 +118,11 @@ def compute_opportunity(
 def compute_ground_track_and_format(
     sat_object: Satellite, observation_time: datetime
 ) -> Geometry:
+    logger.info(f"Computing ground track for {sat_object.name} at {observation_time}, type of observation time is {type(observation_time)}")
     results = collect_ground_track(sat_object, [observation_time], crs="spice")
+    logger.info(f"Lenght of results{len(results)},type of results{type(results)}")  
     # Formatting the dataframe
-    return results.iloc[0]["geometry"]
+    return results["geometry"].iloc[0]
 
 
 # Code to filter requests
@@ -171,11 +179,14 @@ def update_requests(requests, collected_observation):
 #     return filtered_observations
     
 def write_back_to_appender(source, time):
+    logger.info(f"Checking if appender function is reading the source object{source},{len(source.requests)},{type(source.requests)},{type(time)},{time}")
     filtered_observations = [
         observation for observation in source.requests
-        if datetime.fromtimestamp(observation['epoch_time']).date() == time.date() 
+        # logger.info("datatype of completion date is {}".format(type(observation["completion_date"])))
+        if datetime.fromtimestamp(observation['completion_date']).date() == time.date() 
     ]
-    source.app.send_message("topic", "payload")
+    # if filetered requests is not empty send a message tot he appender
+    # source.app.send_message("topic", "payload")
     
 
 
