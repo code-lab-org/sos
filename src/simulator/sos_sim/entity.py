@@ -20,7 +20,8 @@ from .function import (
     Snowglobe_constellation,
     compute_ground_track_and_format,
     # filter_requests,
-    read_master_file
+    read_master_file,
+    process_master_file
 )
 
 # from .schemas import Request, Observation
@@ -92,10 +93,14 @@ class Collect_Observations(Entity):
                 # update next_requests to reflect collected observation
                 for row in self.next_requests:
                     if row["point"].id == self.observation_collected["point_id"]:
-                        row["status"] = "Completed"
-                        row["completion_date"] = self.observation_collected["epoch"]
-                        row["satellite"] = self.observation_collected["satellite"]
-                        row["polygon_groundtrack"] = self.observation_collected["ground_track"]
+                        row["point"] = TATC_Point(id = self.observation_collected["point_id"], latitude = self.observation_collected['geometry'].y, longitude = self.observation_collected['geometry'].x)
+                        #Point(id=r["simulator_id"], latitude=r["planner_latitude"], longitude=r["planner_longitude"])
+                        row["simulator_simulation_status"] = "Completed"
+                        row["simulator_completion_date"] = self.observation_collected["epoch"]
+                        row["simulator_satellite"] = self.observation_collected["satellite"]
+                        row["simulator_polygon_groundtrack"] = self.observation_collected["ground_track"]
+
+                    logger.info(f"Type of polygon groundtrack{type(row['simulator_polygon_groundtrack'])}")
 
             else:
                 self.observation_collected = None
@@ -120,7 +125,9 @@ class Collect_Observations(Entity):
 
         if self.new_request_flag:
             logger.info("requests received")
-            self.requests = read_master_file(current_date)
+            # self.requests = read_master_file(current_date)
+            # self.requests = read_master_file()
+            self.requests = process_master_file(self.requests)
             self.new_request_flag = False
 
         # This code should execute only when message is received from the appender

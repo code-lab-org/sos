@@ -4,6 +4,7 @@ import logging
 import os
 import time
 from datetime import datetime, timedelta, timezone
+
 import boto3
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -32,7 +33,9 @@ from tatc.schemas import (
     WalkerConstellation,
 )
 from tatc.utils import swath_width_to_field_of_regard, swath_width_to_field_of_view
+
 logging.basicConfig(level=logging.INFO)
+
 logger = logging.getLogger()
 
 
@@ -640,7 +643,7 @@ class Environment(Observer):
         Returns:
             output_geojson (str): The output GeoJSON file name.
             selected_blocks_gdf (gpd.GeoDataFrame): The selected blocks GeoDataFrame.
-        """    
+        """
         unique_time = pd.Timestamp(final_eta_gdf["time"].iloc[0])
         N = 50
         final_eta_gdf["final_eta"] = final_eta_gdf["final_eta"].replace(

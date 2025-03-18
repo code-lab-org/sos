@@ -155,41 +155,6 @@ class Environment(Observer):
 
     # def on_simulator(self, ch, method, properties, body):
 
-    # def on_planner(self, ch, method, properties, body):
-    #     """
-    #     Responds to messages from planner application
-
-    #     Inputs:
-    #         ch (Channel): The channel on which the message was received.
-    #         method (Method): The method used to receive the message.
-    #         properties (Properties): The properties of the message.
-    #         body (bytes): The body of the message.
-    #     """
-    #     component_gdf = self.message_to_geojson(body)
-    #     component_gdf = self.process_component(component_gdf)
-    #     self.master_components.append(component_gdf)
-    #     self.counter += len(component_gdf)
-    #     min_value = component_gdf["simulator_id"].min()
-    #     max_value = component_gdf["simulator_id"].max()
-    #     self.master_gdf = pd.concat(self.master_components, ignore_index=True)
-    #     self.remove_duplicates()
-    #     date = self.app.simulator._time
-    #     date = str(date.date()).replace("-", "")
-    #     self.master_gdf.to_file(f"master_{date}.geojson", driver="GeoJSON")
-    #     selected_json_data = self.master_gdf.to_json()
-    #     self.app.send_message(
-    #         self.app.app_name,
-    #         "master",  # ["master", "selected"],
-    #         VectorLayer(vector_layer=selected_json_data).model_dump_json(),
-    #     )
-    #     if self.visualize_selected:
-    #         self.app.send_message(
-    #             "planner",
-    #             "selected",
-    #             VectorLayer(vector_layer=selected_json_data).model_dump_json(),
-    #         )
-    #     logger.info(f"{self.app.app_name} sent message.")
-
     def on_planner(self, ch, method, properties, body):
         """
         Responds to messages from planner application
@@ -204,14 +169,13 @@ class Environment(Observer):
         component_gdf = self.process_component(component_gdf)
         self.master_components.append(component_gdf)
         self.counter += len(component_gdf)
-        # min_value = component_gdf["simulator_id"].min()
-        # max_value = component_gdf["simulator_id"].max()
+        min_value = component_gdf["simulator_id"].min()
+        max_value = component_gdf["simulator_id"].max()
         self.master_gdf = pd.concat(self.master_components, ignore_index=True)
         self.remove_duplicates()
         date = self.app.simulator._time
         date = str(date.date()).replace("-", "")
-        # self.master_gdf.to_file(f"master_{date}.geojson", driver="GeoJSON")
-        self.master_gdf.to_file("master.geojson", driver="GeoJSON")        
+        self.master_gdf.to_file(f"master_{date}.geojson", driver="GeoJSON")
         selected_json_data = self.master_gdf.to_json()
         self.app.send_message(
             self.app.app_name,
@@ -225,9 +189,6 @@ class Environment(Observer):
                 VectorLayer(vector_layer=selected_json_data).model_dump_json(),
             )
         logger.info(f"{self.app.app_name} sent message.")
-
-
-    
 
     def on_change(self, source, property_name, old_value, new_value):
         """

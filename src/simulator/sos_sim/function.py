@@ -18,7 +18,9 @@ from tatc.schemas import Satellite
 from tatc.schemas import Point
 from joblib import Parallel, delayed
 from tatc.analysis import collect_ground_track
+from constellation_config_files.schemas import VectorLayer
 logger = logging.getLogger(__name__)
+from shapely import wkt
 
 # Configure Constellation
 
@@ -68,16 +70,17 @@ def compute_opportunity(
     # filter requests
     # logger.info(f"{type(const)},{const}")
     filtered_requests = requests    
-    logger.info(f"Entered compute_opporutnity,length of request is {len(filtered_requests)}, type of filtered request is,{type(filtered_requests)}")
-    logger.info(f"time :{type(time)}, duration: {type(duration)},combined: {type(time + duration)}")
-
-    # end = (time + duration).replace(tzinfo=timezone.utc)
-    end = (time + duration)
+    logger.info(f"Entered compute_opportunity,length of request is {len(filtered_requests)}, type of filtered request is,{type(filtered_requests)}")
+    logger.info(f"time :{type(time)}, duration: {type(duration)},combined: {type(time + duration)},tz info of time{time.tzinfo},tz info of combined{(time + duration).tzinfo}")
+    time = time.replace(tzinfo=timezone.utc)
+    end = (time + duration).replace(tzinfo=timezone.utc)
+    
+    # end = (time + duration)
 
     filtered_requests = [
         request
         for request in requests
-        if request.get("status") is None or pd.isna(request.get("status"))
+        if request.get("simulator_simulation_status") is None or pd.isna(request.get("simulator_simulation_status"))
         ]
 
     if filtered_requests:
@@ -119,9 +122,11 @@ def compute_ground_track_and_format(
     sat_object: Satellite, observation_time: datetime
 ) -> Geometry:
     logger.info(f"Computing ground track for {sat_object.name} at {observation_time}, type of observation time is {type(observation_time)}")
-    results = collect_ground_track(sat_object, [observation_time], crs="spice")
-    logger.info(f"Lenght of results{len(results)},type of results{type(results)}")  
+    # results = collect_ground_track(sat_object, [observation_time], crs="spice")
+    results = collect_ground_track(sat_object, [observation_time])
+    logger.info(f"Length of results{len(results)},type of results{type(results)}")  
     # Formatting the dataframe
+    # results["geometry"].iloc[0]
     return results["geometry"].iloc[0]
 
 
@@ -135,25 +140,26 @@ def compute_ground_track_and_format(
 # CALLBACK FUNCTIONS
 # Reading master file
 
-def read_master_file(date):
+def read_master_file():
     # request_data = gpd.read_file("Master_file.geojson")
     print("Reading Master file")
     logger.info("Reading master file")
-    if os.path.exists(f"master_{date}.geojson"):     
-        request_data = gpd.read_file(f"master_{date}.geojson")
+    # if os.path.exists(f"master_{date}.geojson"):     
+    if os.path.exists(f"master.geojson"):   
+        request_data = gpd.read_file(f"master.geojson")
         request_points = request_data.apply(
             lambda r:{
                 "point":Point(id=r["simulator_id"], latitude=r["planner_latitude"], longitude=r["planner_longitude"]),
-                "status":r["simulator_simulation_status"],
-                "time":r["planner_time"],
-                "completion_date":r["simulator_completion_date"],
-                "satellite":r["simulator_satellite"],
-                "polygon_groundtrack":r["simulator_polygon_groundtrack"]
+                "simulator_simulation_status":r["simulator_simulation_status"],
+                "planner_time":r["planner_time"],
+                "simulator_completion_date":r["simulator_completion_date"],
+                "simulator_satellite":r["simulator_satellite"],
+                "simulator_polygon_groundtrack":r["simulator_polygon_groundtrack"]
             },
             axis=1
         ).tolist()
     else:       
-        print(f"File local_master_{date}.geojson not found. Returning an empty list.")
+        print(f"File local_master.geojson not found. Returning an empty list.")
         request_points = []
 
     logger.info(f"Type of requests file{type(request_points)}")
@@ -165,29 +171,52 @@ def read_master_file(date):
 def update_requests(requests, collected_observation):
     merged = requests.merge(collected_observation, on="id", how="left")
     return merged
-
-# Write to Master File
-# Occurs at fixed time step
-
-# def write_back_to_appender(observations_list,time):
-
-#     # Filter the observations based on matching day/date
-#     filtered_observations = [
-#         observation for observation in observations_list
-#         if datetime.fromtimestamp(observation['epoch_time']).date() == time.date() 
-#     ]
-#     return filtered_observations
     
 def write_back_to_appender(source, time):
-    logger.info(f"Checking if appender function is reading the source object{source},{len(source.requests)},{type(source.requests)},{type(time)},{time}")
-    filtered_observations = [
-        observation for observation in source.requests
-        # logger.info("datatype of completion date is {}".format(type(observation["completion_date"])))
-        if datetime.fromtimestamp(observation['completion_date']).date() == time.date() 
-    ]
-    # if filetered requests is not empty send a message tot he appender
-    # source.app.send_message("topic", "payload")
+    logger.info(f"Checking if appender function is reading the source object{source},{len(source.requests)},{type(source.requests)},{type(time)},{time},{time.date()}")
+    appender_data = process_master_file(source.requests) 
+    selected_json_data = pd.DataFrame(appender_data)
+    selected_json_data['simulator_polygon_groundtrack'] = selected_json_data['simulator_polygon_groundtrack'].apply(wkt.loads)
+    gdf = gpd.GeoDataFrame(selected_json_data, geometry='simulator_polygon_groundtrack')
+    gdf.to_file("master_simulator.geojson", driver='GeoJSON')
+    logger.info(f"{source.app.app_name} sending message.")  # source.app.send_message(
+    #             "simulator",
+    #             "selected",
+    #             VectorLayer(vector_layer=selected_json_data).model_dump_json(),
+    #         )
+    # logger.info(f"{source.app.app_name} sent message.")
+
+    # filtered_observations = []
+    # for observation in source.requests:
+    #     logger.info(f"Observation time: {observation}")
+    #     if datetime.fromtimestamp(observation['completion_date']).date() == time.date():
+    #         filtered_observations.append(observation) 
+
+
+def process_master_file(existing_request):
+    master = read_master_file()
+    master_processed = [request for request in master if request["simulator_simulation_status"] == "Completed"]
+    master_unprocessed = [request for request in master if request["simulator_simulation_status"] is None]
+    # Code to update master_processed exisitng request based on id and if status is completed in exisitng request
+    for unprocessed_request in master_unprocessed:
+        for request in existing_request:
+            if request["point"] == unprocessed_request["point"]:
+                for key, value in request.items(): 
+                    if  key == 'point':
+                        unprocessed_request["simulator_id"] = value.id
+                        unprocessed_request["planner_latitude"] = value.latitude
+                        unprocessed_request["planner_longitude"] = value.longitude
+                    else:
+                        unprocessed_request[key] = value
+                #   unprocessed_request.update(request)  # Update only fields, don't replace dict
+
+    # Return the combined list of processed and unprocessed requests
+    return (master_processed + master_unprocessed)
+
+
     
+
+        
 
 
 
