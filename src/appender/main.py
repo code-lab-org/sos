@@ -1,6 +1,5 @@
 import json
 import logging
-
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -199,7 +198,9 @@ class Environment(Observer):
             method (Method): The method used to receive the message.
             properties (Properties): The properties of the message.
             body (bytes): The body of the message.
+
         """
+        logger.info("entering appender _on_planner")
         component_gdf = self.message_to_geojson(body)
         component_gdf = self.process_component(component_gdf)
         self.master_components.append(component_gdf)
@@ -211,7 +212,8 @@ class Environment(Observer):
         date = self.app.simulator._time
         date = str(date.date()).replace("-", "")
         # self.master_gdf.to_file(f"master_{date}.geojson", driver="GeoJSON")
-        self.master_gdf.to_file("master.geojson", driver="GeoJSON")        
+        self.master_gdf.to_file("master.geojson", driver="GeoJSON")  
+        logger.info("Master geosjon file created")      
         selected_json_data = self.master_gdf.to_json()
         self.app.send_message(
             self.app.app_name,
@@ -225,8 +227,6 @@ class Environment(Observer):
                 VectorLayer(vector_layer=selected_json_data).model_dump_json(),
             )
         logger.info(f"{self.app.app_name} sent message.")
-
-
     
 
     def on_change(self, source, property_name, old_value, new_value):

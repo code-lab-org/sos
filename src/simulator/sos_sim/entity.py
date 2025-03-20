@@ -110,13 +110,15 @@ class Collect_Observations(Entity):
         super().tock()
         logger.info("entering tock time")
         if self.observation_collected is not None:
-            self.notify_observers(
-                self.PROPERTY_OBSERVATION,
-                None,
-                self.observation_collected,
-            )
+            logger.info("Notifying Observers")
+            # self.notify_observers(
+            #     self.PROPERTY_OBSERVATION,
+            #     None,
+            #     self.observation_collected,
+            # )
             # update requests
-            self.requests = self.next_requests            
+            self.requests = self.next_requests  
+        else: logger.info("No observation collected")          
 
         if isinstance(self.app.simulator._time, str):
             current_date = self.app.simulator._time.replace("-", "")  # Already a string

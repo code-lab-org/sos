@@ -100,9 +100,9 @@ entity = Collect_Observations(
 # app.add_message_callback("appender", "topic", entity.message_received_from_appender)
 
 simulator.add_entity(entity)
-entity.add_observer(
-        PropertyChangeCallback(Collect_Observations.PROPERTY_OBSERVATION, log_observation)
-    )
+# entity.add_observer(
+#         PropertyChangeCallback(Collect_Observations.PROPERTY_OBSERVATION, log_observation)
+#     )
 
 # Add Observers
 entity.add_observer(

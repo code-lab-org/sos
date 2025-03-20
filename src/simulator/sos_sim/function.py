@@ -176,6 +176,7 @@ def write_back_to_appender(source, time):
     logger.info(f"Checking if appender function is reading the source object{source},{len(source.requests)},{type(source.requests)},{type(time)},{time},{time.date()}")
     appender_data = process_master_file(source.requests) 
     selected_json_data = pd.DataFrame(appender_data)
+    logger.info(f"Colums in selected json data{selected_json_data.columns}")
     selected_json_data['simulator_polygon_groundtrack'] = selected_json_data['simulator_polygon_groundtrack'].apply(wkt.loads)
     gdf = gpd.GeoDataFrame(selected_json_data, geometry='simulator_polygon_groundtrack')
     gdf.to_file("master_simulator.geojson", driver='GeoJSON')
@@ -194,6 +195,7 @@ def write_back_to_appender(source, time):
 
 
 def process_master_file(existing_request):
+    logger.info(f"Processing master file")
     master = read_master_file()
     master_processed = [request for request in master if request["simulator_simulation_status"] == "Completed"]
     master_unprocessed = [request for request in master if request["simulator_simulation_status"] is None]

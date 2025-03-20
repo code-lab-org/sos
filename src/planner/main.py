@@ -673,6 +673,7 @@ class Environment(Observer):
                 f"Selected_Cells_Optimization_{unique_time.strftime('%Y%m%d')}.geojson"
             )
             selected_blocks_gdf.to_file(output_geojson, driver="GeoJSON")
+            logger.info(f"Optimization output daved as {output_geojson}")
 
             print(
                 f"Selected cells saved to '{output_geojson}' with time: {unique_time}"
@@ -957,7 +958,7 @@ class Environment(Observer):
                 mo_basin = self.download_geojson(
                     s3=s3,
                     bucket="snow-observing-systems",
-                    key="vector/WBDHU2_4326.geojson",
+                    key="inputs/vector/WBDHU2_4326.geojson",
                     filename="WBDHU2_4326.geojson",
                 )
                 mo_basin = self.process_geojson(mo_basin)
@@ -970,14 +971,14 @@ class Environment(Observer):
                 dataset1 = self.download_file(
                     s3=s3,
                     bucket="snow-observing-systems",
-                    key=f"Missouri Open Loop sample output/LIS_HIST_{old_value_reformat}0000.d01.nc",
+                    key=f"inputs/LIS/LIS_HIST_{old_value_reformat}0000.d01.nc",
                     filename=f"LIS_HIST_{old_value_reformat}0000.d01.nc",
                 )
                 # Get second dataset
                 dataset2 = self.download_file(
                     s3=s3,
                     bucket="snow-observing-systems",
-                    key=f"Missouri Open Loop sample output/LIS_HIST_{new_value_reformat}0000.d01.nc",
+                    key=f"inputs/LIS/LIS_HIST_{new_value_reformat}0000.d01.nc",
                     filename=f"LIS_HIST_{new_value_reformat}0000.d01.nc",
                 )
                 # Generate the combined dataset
