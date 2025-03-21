@@ -226,7 +226,7 @@ class Environment(Observer):
                 "selected",
                 VectorLayer(vector_layer=selected_json_data).model_dump_json(),
             )
-        logger.info(f"{self.app.app_name} sent message.")
+        logger.info(f"{self.app.app_name} sent message. at {self.app.simulator._time}")
     
 
     def on_change(self, source, property_name, old_value, new_value):

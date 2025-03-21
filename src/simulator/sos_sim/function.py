@@ -70,8 +70,8 @@ def compute_opportunity(
     # filter requests
     # logger.info(f"{type(const)},{const}")
     filtered_requests = requests    
-    logger.info(f"Entered compute_opportunity,length of request is {len(filtered_requests)}, type of filtered request is,{type(filtered_requests)}")
-    logger.info(f"time :{type(time)}, duration: {type(duration)},combined: {type(time + duration)},tz info of time{time.tzinfo},tz info of combined{(time + duration).tzinfo}")
+    # logger.info(f"Entered compute_opportunity,length of request is {len(filtered_requests)}, type of filtered request is,{type(filtered_requests)}")
+    # logger.info(f"time :{type(time)}, duration: {type(duration)},combined: {type(time + duration)},tz info of time{time.tzinfo},tz info of combined{(time + duration).tzinfo}")
     time = time.replace(tzinfo=timezone.utc)
     end = (time + duration).replace(tzinfo=timezone.utc)
     
@@ -85,7 +85,7 @@ def compute_opportunity(
 
     if filtered_requests:
         column_names = list(filtered_requests[0].keys())
-        logger.info(f"columns in filtered request{column_names}")        
+        # logger.info(f"columns in filtered request{column_names}")        
 
         # collect observation
         observation_results = pd.concat(
@@ -162,7 +162,7 @@ def read_master_file():
         print(f"File local_master.geojson not found. Returning an empty list.")
         request_points = []
 
-    logger.info(f"Type of requests file{type(request_points)}")
+    # logger.info(f"Type of requests file{type(request_points)}")
     # request_points= request_points.to_dict('records')
     return request_points
 
@@ -176,11 +176,16 @@ def write_back_to_appender(source, time):
     logger.info(f"Checking if appender function is reading the source object{source},{len(source.requests)},{type(source.requests)},{type(time)},{time},{time.date()}")
     appender_data = process_master_file(source.requests) 
     selected_json_data = pd.DataFrame(appender_data)
-    logger.info(f"Colums in selected json data{selected_json_data.columns}")
-    selected_json_data['simulator_polygon_groundtrack'] = selected_json_data['simulator_polygon_groundtrack'].apply(wkt.loads)
+    # logger.info(f"Colums in selected json data{selected_json_data.columns}")
+    logger.info(f"Type of simulator_polygon_groundtrack{type(selected_json_data['simulator_polygon_groundtrack'])}")
+    # selected_json_data['simulator_polygon_groundtrack'] = selected_json_data['simulator_polygon_groundtrack'].apply(wkt.loads)
+    selected_json_data['simulator_polygon_groundtrack'] = selected_json_data['simulator_polygon_groundtrack'].apply(
+    lambda x: wkt.loads(x) if isinstance(x, str) else x)
     gdf = gpd.GeoDataFrame(selected_json_data, geometry='simulator_polygon_groundtrack')
     gdf.to_file("master_simulator.geojson", driver='GeoJSON')
-    logger.info(f"{source.app.app_name} sending message.")  # source.app.send_message(
+    logger.info(f"{source.app.app_name} sending message.")  
+    
+    # source.app.send_message(
     #             "simulator",
     #             "selected",
     #             VectorLayer(vector_layer=selected_json_data).model_dump_json(),

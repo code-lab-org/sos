@@ -72,7 +72,7 @@ class Collect_Observations(Entity):
     def tick(self, time_step: timedelta):
         super().tick(time_step)
         # logger.info("entering tick time",self._time,len(self.requests),"next time",self._next_time)
-        logger.info(f"entering tick time {self._time}, {len(self.requests)}, next time {self._next_time}")
+        # logger.info(f"entering tick time {self._time}, {len(self.requests)}, next time {self._next_time}")
 
         # Set all the tick operations here
 
@@ -100,17 +100,17 @@ class Collect_Observations(Entity):
                         row["simulator_satellite"] = self.observation_collected["satellite"]
                         row["simulator_polygon_groundtrack"] = self.observation_collected["ground_track"]
 
-                    logger.info(f"Type of polygon groundtrack{type(row['simulator_polygon_groundtrack'])}")
+                    # logger.info(f"Type of polygon groundtrack{type(row['simulator_polygon_groundtrack'])}")
 
             else:
                 self.observation_collected = None
 
     def tock(self):
-        logger.info("entering tock time")
+        # logger.info("entering tock time")
         super().tock()
-        logger.info("entering tock time")
+        # logger.info("entering tock time")
         if self.observation_collected is not None:
-            logger.info("Notifying Observers")
+            # logger.info("Notifying Observers")
             # self.notify_observers(
             #     self.PROPERTY_OBSERVATION,
             #     None,
@@ -118,7 +118,7 @@ class Collect_Observations(Entity):
             # )
             # update requests
             self.requests = self.next_requests  
-        else: logger.info("No observation collected")          
+        # else: logger.info("No observation collected")          
 
         if isinstance(self.app.simulator._time, str):
             current_date = self.app.simulator._time.replace("-", "")  # Already a string
@@ -145,7 +145,7 @@ class Collect_Observations(Entity):
     def message_received_from_appender(self, ch, method, properties, body):
         # handle message received
         # self.app.add_message_callback("appender", "master", self.on_appender)
-        logger.info("Message succesfully received")
+        logger.info(f"Message succesfully received at {self.app.simulator._time}")
         self.on_appender()  
     
        
