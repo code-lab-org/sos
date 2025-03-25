@@ -2,10 +2,10 @@ import base64
 import io
 import logging
 import os
+import sys
 import time
 from datetime import datetime, timedelta, timezone
 
-import boto3
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,7 +14,7 @@ import xarray as xr
 from boto3.s3.transfer import TransferConfig
 from constellation_config_files.schemas import SWEChangeLayer, VectorLayer
 from nost_tools.application_utils import ShutDownObserver
-from nost_tools.config import ConnectionConfig
+from nost_tools.configuration import ConnectionConfig
 from nost_tools.managed_application import ManagedApplication
 from nost_tools.observer import Observer
 from PIL import Image
@@ -34,6 +34,10 @@ from tatc.schemas import (
 )
 from tatc.utils import swath_width_to_field_of_regard, swath_width_to_field_of_view
 
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+from src.sos_tools.aws_utils import AWSUtils
+from src.sos_tools.data_utils import DataUtils
+
 logging.basicConfig(level=logging.INFO)
 
 logger = logging.getLogger()
@@ -52,55 +56,13 @@ class Environment(Observer):
         self.app = app
         self.visualize_swe_change = True
         self.visualize_all_layers = False
-
-    def start_session(self):
-        """
-        Start a boto3 session.
-
-        Returns:
-            session (boto3.Session): A boto3 session
-        """
-        session = boto3.Session()
-        return session
-
-    def get_session_token(
-        self, session, mfa_serial=None, mfa_token=None, mfa_required=True
-    ):
-        """
-        Get a session token.
-
-        Args:
-            session (boto3.Session): A boto3 session
-            mfa_serial (str): MFA serial number
-            mfa_token (str): MFA token
-            mfa_required (bool): If True, MFA is required
-
-        Returns:
-            token (dict): A dictionary containing the session token
-        """
-        sts = session.client("sts")
-        if mfa_required:
-            return sts.get_session_token(SerialNumber=mfa_serial, TokenCode=mfa_token)
-        else:
-            return sts.get_session_token()
-
-    def decompose_token(self, token):
-        """
-        Decompose the session token.
-
-        Args:
-            token (dict): A dictionary containing the session token
-
-        Returns:
-            session_token (str): The session token
-            secret_access_key (str): The secret access key
-            access_key_id (str): The access key ID
-        """
-        credentials = token.get("Credentials", {})
-        session_token = credentials.get("SessionToken")
-        secret_access_key = credentials.get("SecretAccessKey")
-        access_key_id = credentials.get("AccessKeyId")
-        return session_token, secret_access_key, access_key_id
+        self.current_simulation_date = None
+        self.output_directory = os.path.join("outputs", self.app.app_name)
+        self.input_directory = os.path.join("inputs", self.app.app_name)
+        self.data_utils = DataUtils()
+        self.data_utils.create_directories(
+            [self.output_directory, self.input_directory]
+        )
 
     def interpolate_dataset(
         self, dataset, variables_to_interpolate, lat_coords, lon_coords, time_coords
@@ -160,7 +122,9 @@ class Environment(Observer):
             dataset2.time[-1].values, unit="D"
         ).replace("-", "")
         last_date = max(last_date_ds1, last_date_ds2)
-        output_file = f"LIS_dataset_{last_date}.nc"
+        output_file = os.path.join(
+            self.current_simulation_date, f"LIS_dataset_{last_date}.nc"
+        )
         if os.path.exists(output_file):
             logger.info(
                 f"File {output_file} already exists. Reading the existing file."
@@ -245,7 +209,9 @@ class Environment(Observer):
             {"eta5": eta5_da, "swe_diff_abs": swe_diff_abs}
         ).transpose("time", "y", "x")
         last_date = str(swe["time"][-1].values)[:10].replace("-", "")
-        output_file = f"Efficiency_SWE_Change_{last_date}.nc"
+        output_file = os.path.join(
+            self.current_simulation_date, f"Efficiency_SWE_Change_{last_date}.nc"
+        )
         swe_difference_dataset.to_netcdf(output_file)
         logger.info("Generating the SWE difference dataset successfully completed.")
         return output_file, swe_difference_dataset
@@ -292,7 +258,9 @@ class Environment(Observer):
             if "grid_mapping" in surface_temp_dataset[var].attrs:
                 del surface_temp_dataset[var].attrs["grid_mapping"]
         last_date = str(swe["time"][-1].values)[:10].replace("-", "")
-        output_file = f"Efficiency_SurfTemp_{last_date}.nc"
+        output_file = os.path.join(
+            self.current_simulation_date, f"Efficiency_SurfTemp_{last_date}.nc"
+        )
         surface_temp_dataset.to_netcdf(output_file)
         logger.info("Generating surface temperature dataset successfully completed.")
 
@@ -339,7 +307,9 @@ class Environment(Observer):
             if "grid_mapping" in sensor_gcom_dataset[var].attrs:
                 del sensor_gcom_dataset[var].attrs["grid_mapping"]
         last_date = str(swe["time"][-1].values)[:10].replace("-", "")
-        output_file = f"Efficiency_Sensor_GCOM_{last_date}.nc"
+        output_file = os.path.join(
+            self.current_simulation_date, f"Efficiency_Sensor_GCOM_{last_date}.nc"
+        )
         sensor_gcom_dataset.to_netcdf(output_file)
         logger.info("Generating GCOM efficiency dataset successfully completed.")
 
@@ -376,7 +346,9 @@ class Environment(Observer):
             if "grid_mapping" in capella_dataset[var].attrs:
                 del capella_dataset[var].attrs["grid_mapping"]
         last_date = str(swe["time"][-1].values)[:10].replace("-", "")
-        output_file = f"Efficiency_Sensor_Capella_{last_date}.nc"
+        output_file = os.path.join(
+            self.current_simulation_date, f"Efficiency_Sensor_Capella_{last_date}.nc"
+        )
         capella_dataset.to_netcdf(output_file)
         logger.info("Generating Capella efficiency dataset successfully completed.")
         return output_file, capella_dataset
@@ -416,7 +388,9 @@ class Environment(Observer):
             "combined_eta"
         ].assign_coords({"time": eta5["time"], "y": eta5["y"], "x": eta5["x"]})
         last_date = str(swe["time"][-1].values)[:10].replace("-", "")
-        output_file = f"{output_file}_{last_date}.nc"
+        output_file = os.path.join(
+            self.current_simulation_date, f"{output_file}_{last_date}.nc"
+        )
         combined_dataset.to_netcdf(output_file)
         logger.info("Combining and multiplying the datasets successfully completed.")
 
@@ -626,8 +600,9 @@ class Environment(Observer):
             crs="EPSG:4326",
         )
         final_eta_gdf["time"] = pd.Timestamp(final_last_date)
-        output_file = (
-            f"Reward_{pd.Timestamp(final_last_date).strftime('%Y%m%d')}.geojson"
+        output_file = os.path.join(
+            self.current_simulation_date,
+            f"Reward_{pd.Timestamp(final_last_date).strftime('%Y%m%d')}.geojson",
         )
         final_eta_gdf.to_file(output_file, driver="GeoJSON")
         logger.info("Generating final efficiency dataset successfully completed.")
@@ -672,8 +647,9 @@ class Environment(Observer):
                         }
                     )
             selected_blocks_gdf = gpd.GeoDataFrame(selected_blocks, crs="EPSG:4326")
-            output_geojson = (
-                f"Selected_Cells_Optimization_{unique_time.strftime('%Y%m%d')}.geojson"
+            output_geojson = os.path.join(
+                self.current_simulation_date,
+                f"Selected_Cells_Optimization_{unique_time.strftime('%Y%m%d')}.geojson",
             )
             selected_blocks_gdf.to_file(output_geojson, driver="GeoJSON")
 
@@ -784,7 +760,7 @@ class Environment(Observer):
             rgba_image = np.flipud(rgba_image)
 
         image = Image.fromarray(rgba_image, "RGBA")
-        image.save(output_path)
+        image.save(os.path.join(self.current_simulation_date, output_path))
         try:
             if rotate:
                 bottom_left, bottom_right, top_left, top_right = self.get_extents(
@@ -846,20 +822,20 @@ class Environment(Observer):
         dataset = gpd.read_file(filename)
         return dataset
 
-    def upload_file(self, s3, bucket, key, filename):
-        """
-        Upload a file to an S3 bucket
+    # def upload_file(self, s3, bucket, key, filename):
+    #     """
+    #     Upload a file to an S3 bucket
 
-        Args:
-            s3: S3 client
-            bucket: S3 bucket name
-            key: S3 object key
-            filename: Filename to upload
-        """
-        logger.info(f"Uploading file to S3.")
-        config = TransferConfig(use_threads=False)
-        s3.upload_file(Filename=filename, Bucket=bucket, Key=key, Config=config)
-        logger.info(f"Uploading file to S3 successfully completed.")
+    #     Args:
+    #         s3: S3 client
+    #         bucket: S3 bucket name
+    #         key: S3 object key
+    #         filename: Filename to upload
+    #     """
+    #     logger.info(f"Uploading file to S3.")
+    #     config = TransferConfig(use_threads=False)
+    #     s3.upload_file(Filename=filename, Bucket=bucket, Key=key, Config=config)
+    #     logger.info(f"Uploading file to S3 successfully completed.")
 
     def detect_level_change(self, new_value, old_value, level):
         """
@@ -937,30 +913,21 @@ class Environment(Observer):
 
             # Publish message if day, week, or month has changed
             if change:
+
+                self.current_simulation_date = os.path.join(
+                    self.output_directory, str(new_value.date())
+                )
+                self.data_utils.create_directories([self.current_simulation_date])
                 old_value_reformat = str(old_value.date()).replace("-", "")
                 new_value_reformat = str(new_value.date()).replace("-", "")
 
-                # Create a boto3 session
-                session = self.start_session()
-
-                # Get a session token
-                token = self.get_session_token(session=session, mfa_required=False)
-                session_token, secret_access_key, access_key_id = self.decompose_token(
-                    token
-                )
-
-                # Create an S3 client
-                s3 = session.client(
-                    "s3",
-                    aws_session_token=session_token,
-                    aws_secret_access_key=secret_access_key,
-                    aws_access_key_id=access_key_id,
-                )
+                # Establish connection to S3
+                s3 = AWSUtils().client
 
                 mo_basin = self.download_geojson(
                     s3=s3,
                     bucket="snow-observing-systems",
-                    key="vector/WBDHU2_4326.geojson",
+                    key="inputs/vector/WBDHU2_4326.geojson",
                     filename="WBDHU2_4326.geojson",
                 )
                 mo_basin = self.process_geojson(mo_basin)
@@ -973,26 +940,32 @@ class Environment(Observer):
                 dataset1 = self.download_file(
                     s3=s3,
                     bucket="snow-observing-systems",
-                    key=f"Missouri Open Loop sample output/LIS_HIST_{old_value_reformat}0000.d01.nc",
-                    filename=f"LIS_HIST_{old_value_reformat}0000.d01.nc",
+                    key=f"inputs/LIS/LIS_HIST_{old_value_reformat}0000.d01.nc",
+                    filename=os.path.join(
+                        self.input_directory,
+                        f"LIS_HIST_{old_value_reformat}0000.d01.nc",
+                    ),
                 )
                 # Get second dataset
                 dataset2 = self.download_file(
                     s3=s3,
                     bucket="snow-observing-systems",
-                    key=f"Missouri Open Loop sample output/LIS_HIST_{new_value_reformat}0000.d01.nc",
-                    filename=f"LIS_HIST_{new_value_reformat}0000.d01.nc",
+                    key=f"inputs/LIS/LIS_HIST_{new_value_reformat}0000.d01.nc",
+                    filename=os.path.join(
+                        self.input_directory,
+                        f"LIS_HIST_{new_value_reformat}0000.d01.nc",
+                    ),
                 )
                 # Generate the combined dataset
                 combined_output_file, combined_dataset = self.generate_combined_dataset(
                     dataset1, dataset2, mo_basin
                 )
                 # Upload dataset to S3
-                self.upload_file(
-                    s3=s3,
-                    bucket="snow-observing-systems",
-                    key=combined_output_file,
-                    filename=combined_output_file,
+                s3.upload_file(
+                    Bucket="snow-observing-systems",
+                    Key=combined_output_file,
+                    Filename=combined_output_file,
+                    Config=TransferConfig(use_threads=False),
                 )
                 # Select the SWE_tavg variable for a specific time step (e.g., first time step)
                 swe_data = combined_dataset["SWE_tavg"].isel(time=0)  # SEND AS MESSAGE
@@ -1030,11 +1003,11 @@ class Environment(Observer):
                     ds=combined_dataset
                 )
                 # Upload dataset to S3
-                self.upload_file(
-                    s3=s3,
-                    bucket="snow-observing-systems",
-                    key=swe_output_file,
-                    filename=swe_output_file,
+                s3.upload_file(
+                    Bucket="snow-observing-systems",
+                    Key=swe_output_file,
+                    Filename=swe_output_file,
+                    Config=TransferConfig(use_threads=False),
                 )
                 # Select the eta5 variable for a specific time step (e.g., first time step)
                 eta5_data = eta5_file["eta5"].isel(time=1)
@@ -1069,11 +1042,11 @@ class Environment(Observer):
                     ds=combined_dataset
                 )
                 # Upload dataset to S3
-                self.upload_file(
-                    s3=s3,
-                    bucket="snow-observing-systems",
-                    key=surfacetemp_output_file,
-                    filename=surfacetemp_output_file,
+                s3.upload_file(
+                    Bucket="snow-observing-systems",
+                    Key=surfacetemp_output_file,
+                    Filename=surfacetemp_output_file,
+                    Config=TransferConfig(use_threads=False),
                 )
                 # Select the eta0 variable for a specific time step (e.g., first time step)
                 eta0_data = eta0_file["eta0"].isel(time=1)
@@ -1109,11 +1082,11 @@ class Environment(Observer):
                     ds=combined_dataset
                 )
                 # Upload dataset to S3
-                self.upload_file(
-                    s3=s3,
-                    bucket="snow-observing-systems",
-                    key=sensor_gcom_output_file,
-                    filename=sensor_gcom_output_file,
+                s3.upload_file(
+                    Bucket="snow-observing-systems",
+                    Key=sensor_gcom_output_file,
+                    Filename=sensor_gcom_output_file,
+                    Config=TransferConfig(use_threads=False),
                 )
                 # Select the eta2 variable for a specific time step (e.g., first time step)
                 eta2_data_GCOM = eta2_file_GCOM["eta2"].isel(time=1)
@@ -1149,11 +1122,11 @@ class Environment(Observer):
                     self.generate_sensor_capella(ds=combined_dataset)
                 )
                 # Upload dataset to S3
-                self.upload_file(
-                    s3=s3,
-                    bucket="snow-observing-systems",
-                    key=sensor_capella_output_file,
-                    filename=sensor_capella_output_file,
+                s3.upload_file(
+                    Bucket="snow-observing-systems",
+                    Key=sensor_capella_output_file,
+                    Filename=sensor_capella_output_file,
+                    Config=TransferConfig(use_threads=False),
                 )
                 # Select the eta2 variable for a specific time step (e.g., first time step)
                 eta2_data_Capella = eta2_file_Capella["eta2"].isel(time=1)
@@ -1198,11 +1171,11 @@ class Environment(Observer):
                     )
                 )
                 # Upload dataset to S3
-                self.upload_file(
-                    s3=s3,
-                    bucket="snow-observing-systems",
-                    key=gcom_combine_multiply_output_file,
-                    filename=gcom_combine_multiply_output_file,
+                s3.upload_file(
+                    Bucket="snow-observing-systems",
+                    Key=gcom_combine_multiply_output_file,
+                    Filename=gcom_combine_multiply_output_file,
+                    Config=TransferConfig(use_threads=False),
                 )
                 # Select the combined_eta variable for a specific time step (e.g., first time step)
                 gcom_eta = gcom_dataset["combined_eta"].isel(time=1)
@@ -1246,11 +1219,11 @@ class Environment(Observer):
                     )
                 )
                 # Upload dataset to S3
-                self.upload_file(
-                    s3=s3,
-                    bucket="snow-observing-systems",
-                    key=capella_combine_multiply_output_file,
-                    filename=capella_combine_multiply_output_file,
+                s3.upload_file(
+                    Bucket="snow-observing-systems",
+                    Key=capella_combine_multiply_output_file,
+                    Filename=capella_combine_multiply_output_file,
+                    Config=TransferConfig(use_threads=False),
                 )
                 capella_eta_layer_encoded, _, _, _, _ = self.encode(
                     dataset=capella_dataset,
@@ -1286,6 +1259,13 @@ class Environment(Observer):
                     start=old_value,
                     end=new_value,
                 )
+                # Upload dataset to S3
+                s3.upload_file(
+                    Bucket="snow-observing-systems",
+                    Key=final_eta_output_file,
+                    Filename=final_eta_output_file,
+                    Config=TransferConfig(use_threads=False),
+                )
                 # Clip Final Eta GDF and ground tracks to the Missouri Basin
                 final_eta_gdf_clipped = gpd.clip(final_eta_gdf, mo_basin)
                 # Convert the clipped GeoDataFrame to GeoJSON and send as message
@@ -1309,6 +1289,13 @@ class Environment(Observer):
                 ########################
                 output_geojson, selected_cells_gdf = self.find_optimal_solution(
                     final_eta_gdf=final_eta_gdf
+                )
+                # Upload dataset to S3
+                s3.upload_file(
+                    Bucket="snow-observing-systems",
+                    Key=output_geojson,
+                    Filename=output_geojson,
+                    Config=TransferConfig(use_threads=False),
                 )
                 selected_cells_gdf["time"] = selected_cells_gdf["time"].astype(str)
                 selected_json_data = selected_cells_gdf.to_json()
@@ -1380,7 +1367,9 @@ def main():
 
     # start up the application on PREFIX, publish time status every 10 seconds of wallclock time
     app.start_up(
-        config.rc.simulation_configuration.execution_parameters.general.prefix, config
+        config.rc.simulation_configuration.execution_parameters.general.prefix,
+        config,
+        True,
     )
 
 

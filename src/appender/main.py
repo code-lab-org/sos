@@ -1,15 +1,22 @@
 import json
 import logging
+import os
+import sys
 
 import geopandas as gpd
 import numpy as np
 import pandas as pd
+from boto3.s3.transfer import TransferConfig
 from constellation_config_files.schemas import VectorLayer
 from nost_tools.application_utils import ShutDownObserver
-from nost_tools.config import ConnectionConfig
+from nost_tools.configuration import ConnectionConfig
 from nost_tools.managed_application import ManagedApplication
 from nost_tools.observer import Observer
 from nost_tools.simulator import Mode, Simulator
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+from src.sos_tools.aws_utils import AWSUtils
+from src.sos_tools.data_utils import DataUtils
 
 logging.basicConfig(level=logging.INFO)
 
@@ -31,6 +38,10 @@ class Environment(Observer):
         self.master_components = []
         self.master_gdf = gpd.GeoDataFrame()
         self.visualize_selected = False  # True
+        self.current_simulation_date = None
+        self.output_directory = os.path.join("outputs", self.app.app_name)
+        self.data_utils = DataUtils()
+        self.data_utils.create_directories([self.output_directory])
 
     def add_prefix_to_columns(self, gdf, prefix):
         """
@@ -153,8 +164,6 @@ class Environment(Observer):
             json.loads(data.vector_layer)["features"], crs="EPSG:4326"
         )
 
-    # def on_simulator(self, ch, method, properties, body):
-
     def on_planner(self, ch, method, properties, body):
         """
         Responds to messages from planner application
@@ -165,7 +174,13 @@ class Environment(Observer):
             properties (Properties): The properties of the message.
             body (bytes): The body of the message.
         """
+        # Establish connection to S3
+        s3 = AWSUtils().client
+
+        # Convert the message body to a GeoDataFrame
         component_gdf = self.message_to_geojson(body)
+
+        # Process the component GeoDataFrame
         component_gdf = self.process_component(component_gdf)
         self.master_components.append(component_gdf)
         self.counter += len(component_gdf)
@@ -174,8 +189,24 @@ class Environment(Observer):
         self.master_gdf = pd.concat(self.master_components, ignore_index=True)
         self.remove_duplicates()
         date = self.app.simulator._time
-        date = str(date.date()).replace("-", "")
-        self.master_gdf.to_file(f"master_{date}.geojson", driver="GeoJSON")
+        date_new_format = str(date.date()).replace("-", "")
+        self.current_simulation_date = os.path.join(
+            self.output_directory, str(date.date())
+        )
+        self.data_utils.create_directories([self.current_simulation_date])
+        output_file = os.path.join(
+            self.current_simulation_date, f"appender_master_{date_new_format}.geojson"
+        )
+        self.master_gdf.to_file(
+            output_file,
+            driver="GeoJSON",
+        )
+        s3.upload_file(
+            Bucket="snow-observing-systems",
+            Key=output_file,
+            Filename=output_file,
+            Config=TransferConfig(use_threads=False),
+        )
         selected_json_data = self.master_gdf.to_json()
         self.app.send_message(
             self.app.app_name,
@@ -231,7 +262,9 @@ def main():
 
     # start up the application on PREFIX, publish time status every 10 seconds of wallclock time
     app.start_up(
-        config.rc.simulation_configuration.execution_parameters.general.prefix, config
+        config.rc.simulation_configuration.execution_parameters.general.prefix,
+        config,
+        True,
     )
 
     app.add_message_callback("planner", "selected_cells", environment.on_planner)
