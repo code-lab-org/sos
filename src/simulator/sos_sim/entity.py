@@ -110,6 +110,7 @@ class Collect_Observations(Entity):
                 # Visualization
                 # write a function to convert the self.next request to json format to send to the cesium application
                 vector_data_json = convert_to_vector_layer_format(self.next_requests)
+                logger.info(f"Vector data json {vector_data_json.dtype}")
                 # Sending message to visualization
                 self.app.send_message(
                     self.app.app_name,

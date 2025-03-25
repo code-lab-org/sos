@@ -123,6 +123,7 @@ def compute_ground_track_and_format(
 ) -> Geometry:
     logger.info(f"Computing ground track for {sat_object.name} at {observation_time}, type of observation time is {type(observation_time)}")
     # results = collect_ground_track(sat_object, [observation_time], crs="spice")
+    observation_time = observation_time.replace(tzinfo=timezone.utc)
     results = collect_ground_track(sat_object, [observation_time],crs="spice")
     logger.info(f"Length of results{len(results)},type of results{type(results)}")  
     # Formatting the dataframe
@@ -149,7 +150,8 @@ def read_master_file():
                 "simulator_simulation_status":r["simulator_simulation_status"],
                 "simulator_completion_date":r["simulator_completion_date"],
                 "simulator_satellite":r["simulator_satellite"],
-                "simulator_polygon_groundtrack":r["simulator_polygon_groundtrack"]
+                "simulator_polygon_groundtrack":r["simulator_polygon_groundtrack"],
+                "planner_geometry":r["geometry"]
             },
             axis=1
         ).tolist()
@@ -187,6 +189,7 @@ def write_back_to_appender(source, time):
     # gdf["planner_time"] = gdf["planner_time"].astype(str) 
 
     # Saving Daily local files for LIS ingestion
+    gdf["simulator_completion_date"] = pd.to_datetime(gdf["simulator_completion_date"], errors="coerce")
     daily_gdf_filtered = gdf[gdf["simulator_completion_date"].dt.date == source.app.simulator._time.date()]
     daily_gdf_filtered.to_file(f"simulator_output_{date_sim}.geojson", driver='GeoJSON')
 
@@ -230,12 +233,15 @@ def process_master_file(existing_request):
 
 def convert_to_vector_layer_format(visual_requests):
     vector_data =  pd.DataFrame(visual_requests)
-    vector_data['simulator_polygon_groundtrack'] = vector_data['simulator_polygon_groundtrack'].apply(
+    vector_data['geometry'] = vector_data['planner_geometry'].apply(
     lambda x: wkt.loads(x) if isinstance(x, str) else x)
-    vector_data_gdf = gpd.GeoDataFrame(vector_data, geometry='simulator_polygon_groundtrack')
+    vector_data_gdf = gpd.GeoDataFrame(vector_data, geometry='geometry')
     vector_data_gdf["simulator_completion_date"] = vector_data_gdf["simulator_completion_date"].astype(str)   
     vector_data_gdf["point"] = vector_data_gdf["point"].astype(str) 
     vector_data_gdf["planner_time"] = vector_data_gdf["planner_time"].astype(str)
+    vector_data_gdf["simulator_polygon_groundtrack"] = vector_data_gdf["simulator_polygon_groundtrack"].astype(str)
+    vector_data_gdf["planner_geometry"] = vector_data_gdf["planner_geometry"].astype(str)
+    logger.info(f"type of vector data gdf{vector_data_gdf.dtypes}")
     return vector_data_gdf.to_json()
 
 
