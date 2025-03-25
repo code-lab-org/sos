@@ -9,6 +9,9 @@ from nost_tools.config import ConnectionConfig
 from nost_tools.managed_application import ManagedApplication
 from nost_tools.observer import Observer
 from nost_tools.simulator import Mode, Simulator
+from shapely import wkt
+from datetime import datetime
+import pytz
 
 logging.basicConfig(level=logging.INFO)
 
@@ -23,7 +26,6 @@ class Environment(Observer):
         app (:obj:`ManagedApplication`): An application containing a test-run namespace, a name and description for the app, client credentials, and simulation timing instructions
         grounds (:obj:`DataFrame`): DataFrame of ground station information including groundId (*int*), latitude-longitude location (:obj:`GeographicPosition`), min_elevation (*float*) angle constraints, and operational status (*bool*)
     """
-
     def __init__(self, app):
         self.app = app
         self.counter = 0
@@ -146,48 +148,21 @@ class Environment(Observer):
         Returns:
             GeoDataFrame: The GeoDataFrame created from the message
         """
+        logger.info("Converting message body to GeoDataFrame.")
         body = body.decode("utf-8")
+        logger.info("Decoding body completed")
         data = VectorLayer.model_validate_json(body)
-        return gpd.GeoDataFrame.from_features(
-            json.loads(data.vector_layer)["features"], crs="EPSG:4326"
-        )
+        logger.info("Validating body completed")
+        k = gpd.GeoDataFrame.from_features(
+            json.loads(data.vector_layer)["features"], crs="EPSG:4326" )
+        
+        logger.info(f"Message body successfully converted to GeoDataFrame. {type(k)}")        
+        return k
 
-    # def on_simulator(self, ch, method, properties, body):
+        # return gpd.GeoDataFrame.from_features(
+        #     json.loads(data.vector_layer)["features"], crs="EPSG:4326" ) 
 
-    # def on_planner(self, ch, method, properties, body):
-    #     """
-    #     Responds to messages from planner application
-
-    #     Inputs:
-    #         ch (Channel): The channel on which the message was received.
-    #         method (Method): The method used to receive the message.
-    #         properties (Properties): The properties of the message.
-    #         body (bytes): The body of the message.
-    #     """
-    #     component_gdf = self.message_to_geojson(body)
-    #     component_gdf = self.process_component(component_gdf)
-    #     self.master_components.append(component_gdf)
-    #     self.counter += len(component_gdf)
-    #     min_value = component_gdf["simulator_id"].min()
-    #     max_value = component_gdf["simulator_id"].max()
-    #     self.master_gdf = pd.concat(self.master_components, ignore_index=True)
-    #     self.remove_duplicates()
-    #     date = self.app.simulator._time
-    #     date = str(date.date()).replace("-", "")
-    #     self.master_gdf.to_file(f"master_{date}.geojson", driver="GeoJSON")
-    #     selected_json_data = self.master_gdf.to_json()
-    #     self.app.send_message(
-    #         self.app.app_name,
-    #         "master",  # ["master", "selected"],
-    #         VectorLayer(vector_layer=selected_json_data).model_dump_json(),
-    #     )
-    #     if self.visualize_selected:
-    #         self.app.send_message(
-    #             "planner",
-    #             "selected",
-    #             VectorLayer(vector_layer=selected_json_data).model_dump_json(),
-    #         )
-    #     logger.info(f"{self.app.app_name} sent message.")
+        # logger.info("Message body successfully converted to GeoDataFrame.")  
 
     def on_planner(self, ch, method, properties, body):
         """
@@ -227,6 +202,39 @@ class Environment(Observer):
                 VectorLayer(vector_layer=selected_json_data).model_dump_json(),
             )
         logger.info(f"{self.app.app_name} sent message. at {self.app.simulator._time}")
+
+
+    def on_simulator(self, ch, method, properties, body):
+        """
+        Responds to messages from simulator application(generates daily file)
+
+        Inputs:
+            ch (Channel): The channel on which the message was received.
+            method (Method): The method used to receive the message.
+            properties (Properties): The properties of the message.
+            body (bytes): The body of the message.
+
+        """
+        logger.info("entering appender _on_simulator")
+        component_gdf = self.message_to_geojson(body)
+        logger.info(f"Data type pd dataframe all columns {component_gdf.dtypes}")
+        # component_gdf['simulator_completion_time'] = component_gdf['simulator_completion_time'].apply(
+        #  lambda x: x.astimezone(pytz.UTC).strftime("%Y-%m-%d %H:%M:%S %Z") if isinstance(x, datetime) else str(x)
+        # )        
+             
+        date = self.app.simulator._time
+        date = date.date()
+        # date = str(date.date()).replace("-", "")   
+        logger.info(f"Date is {date}, type is {type(date)}") 
+        logger.info(f"sample data from component gdf {component_gdf.head()}")
+        # Filter the component gdf to get the data where "simulator_completion_date" is equal to the current date 
+        component_gdf['simulator_completion_date'] = pd.to_datetime(component_gdf['simulator_completion_date'], errors='coerce')
+        logger.info(f"Date is {date}, type is {type(date)}") 
+        logger.info(f"Data type pd dataframe all columns {component_gdf.dtypes}")
+        # component_gdf_filtered = component_gdf[component_gdf["simulator_completion_date"].dt.date == date]
+        # component_gdf_filtered = component_gdf_filtered.to_crs(epsg=4326)
+        # component_gdf_filtered.to_file(f"simulator_{date}.geojson", driver="GeoJSON")
+        logger.info(f"Daily Simulator file saved at {self.app.simulator._time}")
     
 
     def on_change(self, source, property_name, old_value, new_value):
@@ -274,6 +282,7 @@ def main():
     )
 
     app.add_message_callback("planner", "selected_cells", environment.on_planner)
+    # app.add_message_callback("simulator", "selected_cells", environment.on_simulator)
 
 
 if __name__ == "__main__":

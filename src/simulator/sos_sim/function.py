@@ -85,7 +85,7 @@ def compute_opportunity(
 
     if filtered_requests:
         column_names = list(filtered_requests[0].keys())
-        # logger.info(f"columns in filtered request{column_names}")        
+        # logger.info(f"columns in filtered request{column_names}")      
 
         # collect observation
         observation_results = pd.concat(
@@ -129,14 +129,6 @@ def compute_ground_track_and_format(
     # results["geometry"].iloc[0]
     return results["geometry"].iloc[0]
 
-
-# Code to filter requests
-# def filter_requests(requests: gpd.GeoDataFrame) -> gpd.GeoDataFrame:
-#     filtered_req = requests[
-#         requests["simulation_status"].isna() | (requests["simulation_status"] == "None")
-#     ]
-#     return filtered_req
-
 # CALLBACK FUNCTIONS
 # Reading master file
 
@@ -174,6 +166,7 @@ def update_requests(requests, collected_observation):
     
 def write_back_to_appender(source, time):
     logger.info(f"Checking if appender function is reading the source object{source},{len(source.requests)},{type(source.requests)},{type(time)},{time},{time.date()}")
+    logger.info(f"Time before processing data{source.app.simulator._time}")
     appender_data = process_master_file(source.requests) 
     selected_json_data = pd.DataFrame(appender_data)
     # logger.info(f"Colums in selected json data{selected_json_data.columns}")
@@ -183,20 +176,29 @@ def write_back_to_appender(source, time):
     lambda x: wkt.loads(x) if isinstance(x, str) else x)
     gdf = gpd.GeoDataFrame(selected_json_data, geometry='simulator_polygon_groundtrack')
     gdf.to_file("master_simulator.geojson", driver='GeoJSON')
-    logger.info(f"{source.app.app_name} sending message.")  
-    
-    # source.app.send_message(
-    #             "simulator",
-    #             "selected",
-    #             VectorLayer(vector_layer=selected_json_data).model_dump_json(),
-    #         )
-    # logger.info(f"{source.app.app_name} sent message.")
+    logger.info(f"{source.app.app_name} sending message.") 
+    date_sim  = source.app.simulator._time
+    date_sim = str(date_sim.date()).replace("-", "")
+    # gdf["simulator_completion_date"] = gdf["simulator_completion_date"].astype(str)   
+    # gdf["point"] = gdf["point"].astype(str) 
+    # gdf["planner_time"] = gdf["planner_time"].astype(str) 
 
-    # filtered_observations = []
-    # for observation in source.requests:
-    #     logger.info(f"Observation time: {observation}")
-    #     if datetime.fromtimestamp(observation['completion_date']).date() == time.date():
-    #         filtered_observations.append(observation) 
+    # Saving Daily local files for LIS ingestion
+    daily_gdf_filtered = gdf[gdf["simulator_completion_date"].dt.date == source.app.simulator._time.date()]
+    daily_gdf_filtered.to_file(f"simulator_output_{date_sim}.geojson", driver='GeoJSON')
+
+    logger.info(f"Time after processing data{source.app.simulator._time}")
+
+    # selected_json_data = gdf.to_json()
+    # logger.info(f"Appp name is {source.app.app_name}")
+    # time before sending message
+    # logger.info(f"Time before sending message{source.app.simulator._time}")
+    # source.app.send_message(
+    # source.app.app_name,
+    #     "selected_cells",
+    #                 VectorLayer(vector_layer=selected_json_data).model_dump_json(),
+    #             )
+    # logger.info("(SELECTED) Publishing message successfully completed.")
 
 
 def process_master_file(existing_request):
@@ -219,6 +221,22 @@ def process_master_file(existing_request):
 
     # Return the combined list of processed and unprocessed requests
     return (master_processed + master_unprocessed)
+
+
+# Converting data to be comaptible to the message body vector layer format
+
+def convert_to_vector_layer_format(visual_requests):
+    vector_data =  pd.DataFrame(visual_requests)
+    vector_data['simulator_polygon_groundtrack'] = vector_data['simulator_polygon_groundtrack'].apply(
+    lambda x: wkt.loads(x) if isinstance(x, str) else x)
+    vector_data_gdf = gpd.GeoDataFrame(vector_data, geometry='simulator_polygon_groundtrack')
+    vector_data_gdf["simulator_completion_date"] = vector_data_gdf["simulator_completion_date"].astype(str)   
+    vector_data_gdf["point"] = vector_data_gdf["point"].astype(str) 
+    vector_data_gdf["planner_time"] = vector_data_gdf["planner_time"].astype(str)
+    return vector_data_gdf.to_json()
+
+
+
 
 
     

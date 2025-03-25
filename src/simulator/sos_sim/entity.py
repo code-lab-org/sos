@@ -21,7 +21,8 @@ from .function import (
     compute_ground_track_and_format,
     # filter_requests,
     read_master_file,
-    process_master_file
+    process_master_file,
+    convert_to_vector_layer_format
 )
 
 # from .schemas import Request, Observation
@@ -33,7 +34,6 @@ class Collect_Observations(Entity):
     Reports the next observation opportunity and
     records observations when collected.
     """
-
     # defining class constants
     PROPERTY_OBSERVATION = "observation_collected"
 
@@ -81,13 +81,17 @@ class Collect_Observations(Entity):
         )
         
         if self.observation_collected is not None:
-            if np.random.rand() <= 0.75:
+            if np.random.rand() <= 0.75:          
+
                 # get the satellite that collected the observation
                 satellite = self.constellation[self.observation_collected["satellite"]]
                 # Call the groundtrack function
                 self.observation_collected["ground_track"] = compute_ground_track_and_format(
                     satellite, self.observation_collected["epoch"]
                 )
+                logger.info(f"Observation {self.observation_collected}")
+                logger.info(f"Observation type {type(self.observation_collected)}")
+                
                 self.next_requests = self.requests.copy()
                 
                 # update next_requests to reflect collected observation
@@ -102,6 +106,16 @@ class Collect_Observations(Entity):
 
                     # logger.info(f"Type of polygon groundtrack{type(row['simulator_polygon_groundtrack'])}")
 
+                # Visualization
+                # write a function to convert the self.next request to json format to send to the cesium application
+                vector_data_json = convert_to_vector_layer_format(self.next_requests)
+                # Sending message to visualization
+                self.app.send_message(
+                    self.app.app_name,
+                        "selected_cells",
+                                    VectorLayer(vector_layer=vector_data_json).model_dump_json(),
+                                )
+                logger.info("(SELECTED) Publishing message successfully completed.")
             else:
                 self.observation_collected = None
 
