@@ -123,7 +123,7 @@ def compute_ground_track_and_format(
 ) -> Geometry:
     logger.info(f"Computing ground track for {sat_object.name} at {observation_time}, type of observation time is {type(observation_time)}")
     # results = collect_ground_track(sat_object, [observation_time], crs="spice")
-    results = collect_ground_track(sat_object, [observation_time])
+    results = collect_ground_track(sat_object, [observation_time],crs="spice")
     logger.info(f"Length of results{len(results)},type of results{type(results)}")  
     # Formatting the dataframe
     # results["geometry"].iloc[0]
@@ -142,8 +142,11 @@ def read_master_file():
         request_points = request_data.apply(
             lambda r:{
                 "point":Point(id=r["simulator_id"], latitude=r["planner_latitude"], longitude=r["planner_longitude"]),
-                "simulator_simulation_status":r["simulator_simulation_status"],
+                "simulator_id":r["simulator_id"],             
                 "planner_time":r["planner_time"],
+                "planner_latitude":r["planner_latitude"],
+                "planner_longitude":r["planner_longitude"],
+                "simulator_simulation_status":r["simulator_simulation_status"],
                 "simulator_completion_date":r["simulator_completion_date"],
                 "simulator_satellite":r["simulator_satellite"],
                 "simulator_polygon_groundtrack":r["simulator_polygon_groundtrack"]
@@ -211,11 +214,11 @@ def process_master_file(existing_request):
         for request in existing_request:
             if request["point"] == unprocessed_request["point"]:
                 for key, value in request.items(): 
-                    if  key == 'point':
-                        unprocessed_request["simulator_id"] = value.id
-                        unprocessed_request["planner_latitude"] = value.latitude
-                        unprocessed_request["planner_longitude"] = value.longitude
-                    else:
+                    # if  key == 'point':
+                    #     unprocessed_request["simulator_id"] = value.id
+                    #     unprocessed_request["planner_latitude"] = value.latitude
+                    #     unprocessed_request["planner_longitude"] = value.longitude
+                    # else:
                         unprocessed_request[key] = value
                 #   unprocessed_request.update(request)  # Update only fields, don't replace dict
 

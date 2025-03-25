@@ -28,6 +28,7 @@ from .function import (
 # from .schemas import Request, Observation
 
 logger = logging.getLogger(__name__)
+np.random.seed(0)
 
 class Collect_Observations(Entity):
     """
@@ -89,15 +90,15 @@ class Collect_Observations(Entity):
                 self.observation_collected["ground_track"] = compute_ground_track_and_format(
                     satellite, self.observation_collected["epoch"]
                 )
-                logger.info(f"Observation {self.observation_collected}")
-                logger.info(f"Observation type {type(self.observation_collected)}")
+                # logger.info(f"Observation {self.observation_collected}")
+                # logger.info(f"Observation type {type(self.observation_collected)}")
                 
                 self.next_requests = self.requests.copy()
                 
                 # update next_requests to reflect collected observation
                 for row in self.next_requests:
                     if row["point"].id == self.observation_collected["point_id"]:
-                        row["point"] = TATC_Point(id = self.observation_collected["point_id"], latitude = self.observation_collected['geometry'].y, longitude = self.observation_collected['geometry'].x)
+                        # row["point"] = TATC_Point(id = self.observation_collected["point_id"], latitude = self.observation_collected['geometry'].y, longitude = self.observation_collected['geometry'].x)
                         #Point(id=r["simulator_id"], latitude=r["planner_latitude"], longitude=r["planner_longitude"])
                         row["simulator_simulation_status"] = "Completed"
                         row["simulator_completion_date"] = self.observation_collected["epoch"]
