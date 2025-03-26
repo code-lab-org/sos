@@ -482,6 +482,7 @@ class Environment(Observer):
         )
         logger.info("Computing orbit tracks successfully completed.")
         logger.info("Computing ground tracks (P1).")
+        # logger.info(f"Execution ground track time start{self.app.simulator._time}")
         ground_tracks = pd.concat(
             [
                 compute_ground_track(
@@ -495,6 +496,7 @@ class Environment(Observer):
             ignore_index=True,
         )
         logger.info("Computing ground tracks (P1) successfully completed.")
+        # logger.info(f"Execution ground track time end{self.app.simulator._time}")
         amsr2 = Instrument(
             name="AMSR2",
             field_of_regard=utils.swath_width_to_field_of_regard(700e3, 1450e3),

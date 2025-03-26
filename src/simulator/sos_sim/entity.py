@@ -109,12 +109,11 @@ class Collect_Observations(Entity):
 
                 # Visualization
                 # write a function to convert the self.next request to json format to send to the cesium application
-                vector_data_json = convert_to_vector_layer_format(self.next_requests)
-                logger.info(f"Vector data json {vector_data_json.dtype}")
+                vector_data_json = convert_to_vector_layer_format(self.next_requests)                
                 # Sending message to visualization
                 self.app.send_message(
                     self.app.app_name,
-                        "selected_cells",
+                        "selected",
                                     VectorLayer(vector_layer=vector_data_json).model_dump_json(),
                                 )
                 logger.info("(SELECTED) Publishing message successfully completed.")
@@ -125,14 +124,7 @@ class Collect_Observations(Entity):
         # logger.info("entering tock time")
         super().tock()
         # logger.info("entering tock time")
-        if self.observation_collected is not None:
-            # logger.info("Notifying Observers")
-            # self.notify_observers(
-            #     self.PROPERTY_OBSERVATION,
-            #     None,
-            #     self.observation_collected,
-            # )
-            # update requests
+        if self.observation_collected is not None:            
             self.requests = self.next_requests  
         # else: logger.info("No observation collected")          
 
@@ -148,16 +140,8 @@ class Collect_Observations(Entity):
             self.requests = process_master_file(self.requests)
             self.new_request_flag = False
 
-        # This code should execute only when message is received from the appender
-        # self.new_request_flag should be set to 1 by the observer in the appender
-        
-        # # check for new requests
-        # if self.new_requests is not None:
-        #     for request in self.new_requests:
-        #         self.requests.append(request)
-        #     self.new_requests = None
+        # This code should execute only when message is received from the appender    
 
-    # def message_received_from_appender(self, client, userdata, message):
     def message_received_from_appender(self, ch, method, properties, body):
         # handle message received
         # self.app.add_message_callback("appender", "master", self.on_appender)
