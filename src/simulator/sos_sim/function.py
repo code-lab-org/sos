@@ -21,7 +21,7 @@ from tatc.analysis import collect_ground_track
 from constellation_config_files.schemas import VectorLayer
 logger = logging.getLogger(__name__)
 from shapely import wkt
-import time  
+import time as t
 
 # Configure Constellation
 
@@ -69,7 +69,7 @@ def compute_opportunity(
     requests: List[dict],
 ) -> gpd.GeoSeries:
     # filter requests
-    start_time = time.time()
+    start_time = t.time()
     # logger.info(f"{type(const)},{const}")
     filtered_requests = requests    
     # logger.info(f"Entered compute_opportunity,length of request is {len(filtered_requests)}, type of filtered request is,{type(filtered_requests)}")
@@ -103,7 +103,7 @@ def compute_opportunity(
         ).sort_values(by="epoch", ascending=True)
 
 
-        end_time = time.time()
+        end_time = t.time()
 
         # Calculate the total time taken
         computation_time = end_time - start_time
@@ -144,7 +144,7 @@ def read_master_file():
     # request_data = gpd.read_file("Master_file.geojson")
     print("Reading Master file")
     logger.info("Reading master file")
-    start_time = time.time()
+    start_time = t.time()
     # if os.path.exists(f"master_{date}.geojson"):     
     if os.path.exists(f"master.geojson"):   
         request_data = gpd.read_file(f"master.geojson")
@@ -167,7 +167,7 @@ def read_master_file():
         print(f"File local_master.geojson not found. Returning an empty list.")
         request_points = []
 
-    end_time = time.time()
+    end_time = t.time()
     # Calculate the total time taken
     computation_time = end_time - start_time
     logger.info(f"Read masterfile time: {computation_time:.2f} seconds")
@@ -185,7 +185,7 @@ def read_master_file():
 def write_back_to_appender(source, time):
     logger.info(f"Checking if appender function is reading the source object{source},{len(source.requests)},{type(source.requests)},{type(time)},{time},{time.date()}")
     logger.info(f"Simulator time on scenario callback{source.app.simulator._time}")
-    start_time = time.time()
+    start_time = t.time()
     appender_data = process_master_file(source.requests) 
     selected_json_data = pd.DataFrame(appender_data)
     # logger.info(f"Colums in selected json data{selected_json_data.columns}")
@@ -207,7 +207,7 @@ def write_back_to_appender(source, time):
     daily_gdf_filtered = gdf[gdf["simulator_completion_date"].dt.date == source.app.simulator._time.date()]
     daily_gdf_filtered.to_file(f"simulator_output_{date_sim}.geojson", driver='GeoJSON')   
 
-    end_time = time.time()
+    end_time = t.time()
     # Calculate the total time taken
     computation_time = end_time - start_time
     logger.info(f"Write back to appender time: {computation_time:.2f} seconds")
@@ -226,7 +226,7 @@ def write_back_to_appender(source, time):
 
 def process_master_file(existing_request):
     logger.info(f"Processing master file")
-    start_time = time.time()
+    start_time = t.time()
     master = read_master_file()
     master_processed = [request for request in master if request["simulator_simulation_status"] == "Completed"]
     master_unprocessed = [request for request in master if request["simulator_simulation_status"] is None]
@@ -243,7 +243,7 @@ def process_master_file(existing_request):
                         unprocessed_request[key] = value
                 #   unprocessed_request.update(request)  # Update only fields, don't replace dict     
      
-    end_time = time.time()
+    end_time = t.time()
     # Calculate the total time taken
     computation_time = end_time - start_time
     logger.info(f"Process master file time: {computation_time:.2f} seconds")           
@@ -255,7 +255,7 @@ def process_master_file(existing_request):
 # Converting data to be comaptible to the message body vector layer format
 
 def convert_to_vector_layer_format(visual_requests):
-    start_time = time.time()
+    start_time = t.time()
     vector_data =  pd.DataFrame(visual_requests)
     vector_data['geometry'] = vector_data['planner_geometry'].apply(
     lambda x: wkt.loads(x) if isinstance(x, str) else x)
@@ -267,7 +267,7 @@ def convert_to_vector_layer_format(visual_requests):
     vector_data_gdf["planner_geometry"] = vector_data_gdf["planner_geometry"].astype(str)
     logger.info(f"type of vector data gdf{vector_data_gdf.dtypes}")
 
-    end_time = time.time()
+    end_time = t.time()
     # Calculate the total time taken
     computation_time = end_time - start_time
     logger.info(f"Covnert to vector layer time: {computation_time:.2f} seconds")     
