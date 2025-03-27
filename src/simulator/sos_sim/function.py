@@ -131,14 +131,14 @@ def compute_ground_track_and_format(
     logger.info(f"Computing ground track for {sat_object.name} at {observation_time}, type of observation time is {type(observation_time)}")
     # results = collect_ground_track(sat_object, [observation_time], crs="spice")
     observation_time = observation_time.replace(tzinfo=timezone.utc)
-    results = collect_ground_track(sat_object, [observation_time])#,crs="spice")
+    results = collect_ground_track(sat_object, [observation_time],crs="spice")
     logger.info(f"Length of results{len(results)},type of results{type(results)}")  
     # Formatting the dataframe
     # results["geometry"].iloc[0]
     return results["geometry"].iloc[0]
 
 # CALLBACK FUNCTIONS
-# Reading master file
+# The data from the appender is a geodataframe, reading and converting that to a list of dictionaries
 
 def read_master_file():
     # request_data = gpd.read_file("Master_file.geojson")
@@ -177,10 +177,7 @@ def read_master_file():
     return request_points
 
 
-# # Update Requests in temporary dataframe
-# def update_requests(requests, collected_observation):
-#     merged = requests.merge(collected_observation, on="id", how="left")
-#     return merged
+# this function is triggered by scenario time interval callback, it writes the daily output to a geojson file
     
 def write_back_to_appender(source, time):
     logger.info(f"Checking if appender function is reading the source object{source},{len(source.requests)},{type(source.requests)},{type(time)},{time},{time.date()}")
@@ -212,18 +209,7 @@ def write_back_to_appender(source, time):
     computation_time = end_time - start_time
     logger.info(f"Write back to appender time: {computation_time:.2f} seconds")
 
-    # selected_json_data = gdf.to_json()
-    # logger.info(f"Appp name is {source.app.app_name}")
-    # time before sending message
-    # logger.info(f"Time before sending message{source.app.simulator._time}")
-    # source.app.send_message(
-    # source.app.app_name,
-    #     "selected_cells",
-    #                 VectorLayer(vector_layer=selected_json_data).model_dump_json(),
-    #             )
-    # logger.info("(SELECTED) Publishing message successfully completed.")
-
-
+# the master file from the appender is in geojson format, and the requests are in a list of dictionaries, writing back the completed requests to the master file(triggered on available requests callback)
 def process_master_file(existing_request):
     logger.info(f"Processing master file")
     start_time = t.time()
