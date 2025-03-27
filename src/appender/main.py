@@ -204,7 +204,7 @@ class Environment(Observer):
         self.remove_duplicates()
         date = self.app.simulator._time
         date_new_format = str(date.date()).replace("-", "")
-        # self.current_simulation_date = os.path.join(
+        self.current_simulation_date = os.path.join(
             self.output_directory, str(date.date())
         )
         self.data_utils.create_directories([self.current_simulation_date])
