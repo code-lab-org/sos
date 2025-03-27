@@ -5,7 +5,7 @@ import os
 import sys
 import time
 from datetime import datetime, timedelta, timezone
-
+import boto3
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -39,7 +39,6 @@ from src.sos_tools.aws_utils import AWSUtils
 from src.sos_tools.data_utils import DataUtils
 
 logging.basicConfig(level=logging.INFO)
-
 logger = logging.getLogger()
 
 
@@ -459,6 +458,7 @@ class Environment(Observer):
         )
         logger.info("Computing orbit tracks successfully completed.")
         logger.info("Computing ground tracks (P1).")
+        # logger.info(f"Execution ground track time start{self.app.simulator._time}")
         ground_tracks = pd.concat(
             [
                 compute_ground_track(
@@ -472,6 +472,7 @@ class Environment(Observer):
             ignore_index=True,
         )
         logger.info("Computing ground tracks (P1) successfully completed.")
+        # logger.info(f"Execution ground track time end{self.app.simulator._time}")
         amsr2 = Instrument(
             name="AMSR2",
             field_of_regard=utils.swath_width_to_field_of_regard(700e3, 1450e3),
@@ -618,7 +619,7 @@ class Environment(Observer):
         Returns:
             output_geojson (str): The output GeoJSON file name.
             selected_blocks_gdf (gpd.GeoDataFrame): The selected blocks GeoDataFrame.
-        """
+        """    
         unique_time = pd.Timestamp(final_eta_gdf["time"].iloc[0])
         N = 50
         final_eta_gdf["final_eta"] = final_eta_gdf["final_eta"].replace(
@@ -652,6 +653,7 @@ class Environment(Observer):
                 f"Selected_Cells_Optimization_{unique_time.strftime('%Y%m%d')}.geojson",
             )
             selected_blocks_gdf.to_file(output_geojson, driver="GeoJSON")
+            logger.info(f"Optimization output daved as {output_geojson}")
 
             print(
                 f"Selected cells saved to '{output_geojson}' with time: {unique_time}"

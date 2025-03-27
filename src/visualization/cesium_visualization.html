@@ -284,6 +284,8 @@
                 } else if (topic === "sos.planner.all") {
                     handleIncomingMessage(payload, "all");
                 } else if (topic === "sos.planner.selected") {
+                    handleIncomingMessage(payload, "selected");                
+                } else if (topic === "sos.simulator.selected") {
                     handleIncomingMessage(payload, "selected");
                 }
             }
