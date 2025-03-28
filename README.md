@@ -53,42 +53,45 @@ Applications communicate via a RabbitMQ message broker utilizing the Advanced Me
 </p> -->
 
 ```mermaid
-  graph LR
-      subgraph cluster0["S3 Bucket"]
-          lis["LIS<br/>(NetCDF)"]
-      end
+---
+caption: Snow Observing Systems (SOS) application workflow.
+---
+graph LR
+    subgraph cluster0["S3 Bucket"]
+        lis["LIS<br/>(NetCDF)"]
+    end
 
-      subgraph cluster1["Applications"]
-          style cluster1 stroke-dasharray: 5 5
-          planner["Planner"]
-          style planner fill:red
-          appender["Appender"]
-          style appender fill:dodgerblue
-          simulator["Simulator"]
-          style simulator fill:green
-      end
+    subgraph cluster1["Applications"]
+        style cluster1 stroke-dasharray: 5 5
+        planner["Planner"]
+        style planner fill:red
+        appender["Appender"]
+        style appender fill:dodgerblue
+        simulator["Simulator"]
+        style simulator fill:green
+    end
 
-      subgraph cluster2["Outputs"]
-          style cluster2 stroke-dasharray: 5 5
-          sc_geojson["Selected Cells<br/>(GeoJSON)"]
-          ag_geojson["Aggregated Selected Cells<br/>(GeoJSON)"]
-      end
+    subgraph cluster2["Outputs"]
+        style cluster2 stroke-dasharray: 5 5
+        sc_geojson["Selected Cells<br/>(GeoJSON)"]
+        ag_geojson["Aggregated Selected Cells<br/>(GeoJSON)"]
+    end
 
-      subgraph cluster3["Visualization"]
-          style cluster3 stroke-dasharray: 5 5
-          cesium["Cesium Web<br/>Application"]
-      end
+    subgraph cluster3["Visualization"]
+        style cluster3 stroke-dasharray: 5 5
+        cesium["Cesium Web<br/>Application"]
+    end
 
-      lis -->|Read| planner
-      lis ~~~ appender
-      lis ~~~ simulator
-      planner -->|Write| sc_geojson
-      appender -->|Append| ag_geojson
-      simulator -->|Update| ag_geojson
+    lis -->|Read| planner
+    lis ~~~ appender
+    lis ~~~ simulator
+    planner -->|Write| sc_geojson
+    appender -->|Append| ag_geojson
+    simulator -->|Update| ag_geojson
 
-      sc_geojson~~~cluster3
-      ag_geojson --> cluster3
-      ag_geojson -.->|Upload/Filter Daily| lis
+    sc_geojson~~~cluster3
+    ag_geojson --> cluster3
+    ag_geojson -.->|Upload/Filter Daily| lis
 ```
 ### Messaging Protocol
 
