@@ -79,7 +79,7 @@ Applications communicate via a RabbitMQ message broker utilizing the Advanced Me
           cesium["Cesium Web<br/>Application"]
       end
 
-      lis --> planner
+      lis -->|Read| planner
       lis ~~~ appender
       lis ~~~ simulator
       planner -->|Write| sc_geojson
