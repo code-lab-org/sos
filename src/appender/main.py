@@ -15,11 +15,10 @@ from nost_tools.observer import Observer
 from nost_tools.simulator import Mode, Simulator
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+
+
 from src.sos_tools.aws_utils import AWSUtils
 from src.sos_tools.data_utils import DataUtils
-from shapely import wkt
-from datetime import datetime
-import pytz
 
 logging.basicConfig(level=logging.INFO)
 
@@ -34,6 +33,7 @@ class Environment(Observer):
         app (:obj:`ManagedApplication`): An application containing a test-run namespace, a name and description for the app, client credentials, and simulation timing instructions
         grounds (:obj:`DataFrame`): DataFrame of ground station information including groundId (*int*), latitude-longitude location (:obj:`GeographicPosition`), min_elevation (*float*) angle constraints, and operational status (*bool*)
     """
+
     def __init__(self, app):
         self.app = app
         self.counter = 0
@@ -166,15 +166,16 @@ class Environment(Observer):
         data = VectorLayer.model_validate_json(body)
         logger.info("Validating body completed")
         k = gpd.GeoDataFrame.from_features(
-            json.loads(data.vector_layer)["features"], crs="EPSG:4326" )
-        
-        logger.info(f"Message body successfully converted to GeoDataFrame. {type(k)}")        
+            json.loads(data.vector_layer)["features"], crs="EPSG:4326"
+        )
+
+        logger.info(f"Message body successfully converted to GeoDataFrame. {type(k)}")
         return k
 
         # return gpd.GeoDataFrame.from_features(
-        #     json.loads(data.vector_layer)["features"], crs="EPSG:4326" ) 
+        #     json.loads(data.vector_layer)["features"], crs="EPSG:4326" )
 
-        # logger.info("Message body successfully converted to GeoDataFrame.")  
+        # logger.info("Message body successfully converted to GeoDataFrame.")
 
     def on_planner(self, ch, method, properties, body):
         """
@@ -221,8 +222,8 @@ class Environment(Observer):
             Filename=output_file,
             Config=TransferConfig(use_threads=False),
         )
-        self.master_gdf.to_file("master.geojson", driver="GeoJSON")  
-        logger.info("Master geosjon file created")      
+        self.master_gdf.to_file("master.geojson", driver="GeoJSON")
+        logger.info("Master geosjon file created")
         selected_json_data = self.master_gdf.to_json()
         self.app.send_message(
             self.app.app_name,
@@ -236,7 +237,6 @@ class Environment(Observer):
                 VectorLayer(vector_layer=selected_json_data).model_dump_json(),
             )
         logger.info(f"{self.app.app_name} sent message. at {self.app.simulator._time}")
-
 
     def on_simulator(self, ch, method, properties, body):
         """
@@ -254,22 +254,23 @@ class Environment(Observer):
         logger.info(f"Data type pd dataframe all columns {component_gdf.dtypes}")
         # component_gdf['simulator_completion_time'] = component_gdf['simulator_completion_time'].apply(
         #  lambda x: x.astimezone(pytz.UTC).strftime("%Y-%m-%d %H:%M:%S %Z") if isinstance(x, datetime) else str(x)
-        # )        
-             
+        # )
+
         date = self.app.simulator._time
         date = date.date()
-        # date = str(date.date()).replace("-", "")   
-        logger.info(f"Date is {date}, type is {type(date)}") 
+        # date = str(date.date()).replace("-", "")
+        logger.info(f"Date is {date}, type is {type(date)}")
         logger.info(f"sample data from component gdf {component_gdf.head()}")
-        # Filter the component gdf to get the data where "simulator_completion_date" is equal to the current date 
-        component_gdf['simulator_completion_date'] = pd.to_datetime(component_gdf['simulator_completion_date'], errors='coerce')
-        logger.info(f"Date is {date}, type is {type(date)}") 
+        # Filter the component gdf to get the data where "simulator_completion_date" is equal to the current date
+        component_gdf["simulator_completion_date"] = pd.to_datetime(
+            component_gdf["simulator_completion_date"], errors="coerce"
+        )
+        logger.info(f"Date is {date}, type is {type(date)}")
         logger.info(f"Data type pd dataframe all columns {component_gdf.dtypes}")
         # component_gdf_filtered = component_gdf[component_gdf["simulator_completion_date"].dt.date == date]
         # component_gdf_filtered = component_gdf_filtered.to_crs(epsg=4326)
         # component_gdf_filtered.to_file(f"simulator_{date}.geojson", driver="GeoJSON")
         logger.info(f"Daily Simulator file saved at {self.app.simulator._time}")
-    
 
     def on_change(self, source, property_name, old_value, new_value):
         """
