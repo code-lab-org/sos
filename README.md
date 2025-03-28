@@ -235,8 +235,6 @@ graph LR
     style simulated2 fill: #008000, stroke: #333, stroke-width: 2px
     style simulated3 fill: #008000, stroke: #333, stroke-width: 2px
 
-    style inputs fill:Grey
-    style outputs fill:Grey
     style LIS fill:Violet
     style for1 fill:Violet
     style for2 fill:Violet
