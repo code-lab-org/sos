@@ -143,7 +143,7 @@ flowchart TB
 
 The LIS inputs are stored in an S3 bucket, which the SOS applications access. The SOS applications then output data into an output directory, organized by the specific day and application. Below is an example:
 
-```bash
+<!-- ```bash
 snow_observing_systems/
 ├── input
 │   ├── 2019-03-01
@@ -165,6 +165,89 @@ snow_observing_systems/
         ├── Appender
         ├── Planner
         └── Simulator
+``` -->
+
+```mermaid
+graph LR
+
+    subgraph S3Bucket["S3 Bucket"]
+        subgraph Inputs["LIS Forecasts"]
+        inputs --> LIS
+        inputs --> vector
+        LIS -.-> for1["LIS_HIST_201903010000.d01.nc"]
+        LIS -.-> for2["LIS_HIST_201903020000.d01.nc"]
+        LIS -.-> for3["LIS_HIST_201903030000.d01.nc"]
+        LIS -.-> for4["LIS_HIST_201903040000.d01.nc"]
+        LIS -.-> for5["LIS_HIST_201903050000.d01.nc"]
+        LIS -.-> for6["LIS_HIST_201903060000.d01.nc"]
+        LIS -.-> for7["LIS_HIST_201903070000.d01.nc"]
+        LIS -.-> for8["LIS_HIST_201903080000.d01.nc"]
+        LIS -.-> for9["LIS_HIST_201903090000.d01.nc"]
+        LIS -.-> for10["LIS_HIST_201903100000.d01.nc"]
+        vector -.-> geoj["WBDHU2.geojson"]
+        end
+        subgraph Outputs["NOS-T Application Ouputs"]
+        outputs --> planner
+        outputs --> appender
+        outputs --> simulator
+        planner -.-> d1p["2019-03-02"]
+        planner -.-> d1p2[".<br/>.<br/>.<br/>."]
+        planner -.-> d1p3["2019-03-10"]
+        d1p -.-> selected["selected_cells.geojson"]
+        d1p2 -.-> selected2[".<br/>.<br/>.<br/>."]
+        d1p3 -.-> selected3["selected_cells.geojson"]
+        appender -.-> d1a["2019-03-02"]
+        appender -.-> d1a2[".<br/>.<br/>.<br/>."]
+        appender -.-> d1a3["2019-03-10"]
+        d1a -.-> appended["appended_cells.geojson"]
+        d1a2 -.->appended2[".<br/>.<br/>.<br/>."]
+        d1a3 -.-> appended3["appended_cells.geojson"]
+        simulator -.-> d1s["2019-03-02"]
+        simulator -.-> d1s2[".<br/>.<br/>.<br/>."]
+        simulator -.-> d1s3["2019-03-10"]
+        d1s -.-> simulated["completed_cells.geojson"]
+        d1s2 -.->simulated2[".<br/>.<br/>.<br/>."]
+        d1s3 -.-> simulated3["completed_cells.geojson"]
+        end
+    end
+
+    style planner fill: #ff0000, stroke: #333, stroke-width: 2px
+    style d1p fill: #ff0000, stroke: #333, stroke-width: 2px
+    style d1p2 fill: #ff0000, stroke: #333, stroke-width: 2px
+    style d1p3 fill: #ff0000, stroke: #333, stroke-width: 2px
+    style selected fill: #ff0000, stroke: #333, stroke-width: 2px
+    style selected2 fill: #ff0000, stroke: #333, stroke-width: 2px
+    style selected3 fill: #ff0000, stroke: #333, stroke-width: 2px
+
+    style appender fill: #1e90ff, stroke: #333, stroke-width: 2px
+    style d1a fill: #1e90ff, stroke: #333, stroke-width: 2px
+    style d1a2 fill: #1e90ff, stroke: #333, stroke-width: 2px
+    style d1a3 fill: #1e90ff, stroke: #333, stroke-width: 2px
+    style appended fill: #1e90ff, stroke: #333, stroke-width: 2px
+    style appended2 fill: #1e90ff, stroke: #333, stroke-width: 2px
+    style appended3 fill: #1e90ff, stroke: #333, stroke-width: 2px
+
+    style simulator fill: #008000, stroke: #333, stroke-width: 2px
+    style d1s fill: #008000, stroke: #333, stroke-width: 2px
+    style d1s2 fill: #008000, stroke: #333, stroke-width: 2px
+    style d1s3 fill: #008000, stroke: #333, stroke-width: 2px
+    style simulated fill: #008000, stroke: #333, stroke-width: 2px
+    style simulated2 fill: #008000, stroke: #333, stroke-width: 2px
+    style simulated3 fill: #008000, stroke: #333, stroke-width: 2px
+
+    style inputs fill:Grey
+    style outputs fill:Grey
+    style LIS fill:Violet
+    style for1 fill:Violet
+    style for2 fill:Violet
+    style for3 fill:Violet
+    style for4 fill:Violet
+    style for5 fill:Violet
+    style for6 fill:Violet
+    style for7 fill:Violet
+    style for8 fill:Violet
+    style for9 fill:Violet
+    style for10 fill:Violet
 ```
 
 <p align="center">
