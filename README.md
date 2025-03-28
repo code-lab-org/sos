@@ -168,8 +168,7 @@ snow_observing_systems/
 ``` -->
 
 ```mermaid
-graph LR
-
+flowchart LR
     subgraph S3Bucket["S3 Bucket"]
         subgraph Inputs["LIS Forecasts"]
         inputs --> LIS
