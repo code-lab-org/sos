@@ -46,16 +46,16 @@ A single manager application is responsible for orchestrating the various applic
 
 Applications communicate via a RabbitMQ message broker utilizing the Advanced Message Queuing Protocol (AMQP) protocol. The figure below illustrates the overall workflow:
 
-<p align="center">
+<!-- <p align="center">
   <img src="https://pointillism.io/code-lab-org/sos/blob/main/docs/workflow.dot.svg"/>
   <br>
   <em>Snow Observing Systems (SOS) application workflow.</em>
-</p>
+</p> -->
 
 ```mermaid
   graph LR
       subgraph cluster0["S3 Bucket"]
-          lis["LIS NetCDF"]
+          lis["LIS<br/>(NetCDF)"]
       end
 
       subgraph cluster1["Applications"]
