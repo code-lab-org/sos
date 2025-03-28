@@ -168,10 +168,6 @@ snow_observing_systems/
 ``` -->
 
 ```mermaid
----
-config:
-  theme: redux
----
 flowchart LR
     subgraph S3Bucket["S3 Bucket"]
         subgraph Inputs["LIS Forecasts"]
@@ -251,11 +247,50 @@ flowchart LR
     style for10 fill:Violet
 ```
 
-<p align="center">
+<!-- <p align="center">
   <img src="https://pointillism.io/code-lab-org/sos/blob/main/docs/apps.dot.svg"/>
   <br>
   <em>Flow of data between the various applications.</em>
-</p>
+</p> -->
+
+```mermaid
+sequenceDiagram
+    box Red Discover
+    participant L as Land<br/>Information<br/>System (LIS)
+    end
+    box Green Novel Observing Strategies Testbed (NOS-T)
+    participant M as Manager
+    participant P as Planner
+    participant A as Appender
+    participant S as Simulator
+    participant C as Cesium Web<br/>Application
+    end
+    activate M
+    activate C
+    M->>C: Initialize
+    M->>C: Start
+    L-->>P: LIS NetCDF
+    activate P
+    Note over P: Maximize<br/>Reward<br/>Values
+    P-->>A: Taskable<br/>Observations
+    deactivate P
+    activate A
+    Note over A: Append Unique<br/>Taskable<br/>Observations
+    A-->>S: Appended<br/>Taskable<br/>Observations
+    deactivate A
+    activate S
+    Note over S: Simulate<br/>Satellite<br/>Operations
+    box Blue Amazon Web<br/>Services (AWS)
+    participant S3 as S3 Bucket
+    end
+    S-->>S3: Collected Taskable Observations
+    deactivate S
+    Note over C: Visualize<br/>Taskable<br/>Observations
+    M->>C: Stop
+    S3->>L: Collected Taskable Observations
+    deactivate M
+    deactivate C
+```
 
 ## Execution
 
