@@ -253,6 +253,8 @@ flowchart LR
   <em>Flow of data between the various applications.</em>
 </p> -->
 
+The flow of data between the various applications and systems is shown below:
+
 ```mermaid
 sequenceDiagram
     box Red Discover
