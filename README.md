@@ -53,10 +53,6 @@ Applications communicate via a RabbitMQ message broker utilizing the Advanced Me
 </p>
 
 ```mermaid
-  ---
-  config:
-        theme: redux
-  ---
   graph LR
       subgraph cluster0["S3 Bucket"]
           lis["LIS NetCDF"]
