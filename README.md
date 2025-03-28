@@ -54,7 +54,8 @@ Applications communicate via a RabbitMQ message broker utilizing the Advanced Me
 
 ```mermaid
 ---
-caption:Snow Observing Systems (SOS) application workflow.
+caption: Snow Observing Systems (SOS) application workflow.
+caption_position: bottom 
 ---
 graph LR
     subgraph cluster0["S3 Bucket"]
