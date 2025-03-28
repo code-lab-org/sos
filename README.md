@@ -52,10 +52,8 @@ Applications communicate via a RabbitMQ message broker utilizing the Advanced Me
   <em>Snow Observing Systems (SOS) application workflow.</em>
 </p> -->
 
-```mermaid
----
-caption: Snow Observing Systems (SOS) application workflow.
----
+<figure>
+  <pre class="mermaid">
 graph LR
     subgraph cluster0["S3 Bucket"]
         lis["LIS<br/>(NetCDF)"]
@@ -92,7 +90,12 @@ graph LR
     sc_geojson~~~cluster3
     ag_geojson --> cluster3
     ag_geojson -.->|Upload/Filter Daily| lis
-```
+  </pre>
+  <figcaption>
+    Snow Observing Systems (SOS) application workflow.
+  </figcaption>
+</figure>
+
 ### Messaging Protocol
 
 The SOS applications utilize the [Advanced Message Queuing Protocol (AMQP)](https://www.amqp.org/) through a [RabbitMQ event broker](http://rabbitmq.com/). These messages include:
