@@ -168,6 +168,10 @@ snow_observing_systems/
 ``` -->
 
 ```mermaid
+---
+config:
+  theme: redux
+---
 flowchart LR
     subgraph S3Bucket["S3 Bucket"]
         subgraph Inputs["LIS Forecasts"]
