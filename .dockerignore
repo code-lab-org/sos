@@ -1,7 +1,7 @@
 data/
 backup/
 docs/
-src/
+# src/
 **/.env
 **/env.js
 **/*.yaml
@@ -12,3 +12,7 @@ Dockerfile
 **/*.md
 **/*.yml
 **/*.txt
+**/*.geojson
+**/*.simg
+inputs/
+outputs/
