@@ -414,11 +414,11 @@ Below is an example:
 
 The SOS applications can be run using Docker compose.
 
-1. Confirm you are in the root directory (cloned repo, i.e. `sos/`), which will be your working directory.
+1. Change directory to your cloned repo (i.e. `sos/`), which will be the working directory for this execution.
 
-2. Confirm the following:
+2. Confirm prerequisites:
 
-   - Files in your working directory:
+   - Required files are present in the working directory (i.e. `sos/`):
      - [sos.yaml](#yaml)
      - [.env](#env)
    - [Successful completion of `aws configuration`](#aws-cli-installation)
@@ -431,7 +431,7 @@ The SOS applications can be run using Docker compose.
 
     > NOTE: To confirm Docker containers are running, run the command: ```docker ps```. You should see four containers listed: manager, planner, appender, and simulator.
 
-3. To shutdown the Docker containers:
+4. To shutdown the Docker containers:
 
     ```
     docker-compose down
