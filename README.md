@@ -426,7 +426,7 @@ The SOS applications can be run using Docker compose.
 3. Execute the containers using `docker-compose`:
 
     ```
-    docker-compose -f docker-compose.yml up -d
+    docker-compose up -d
     ```
 
     > NOTE: To confirm Docker containers are running, run the command: ```docker ps```. You should see four containers listed: manager, planner, appender, and simulator.
