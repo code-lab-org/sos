@@ -11,7 +11,7 @@ credentials
 Dockerfile
 **/*.md
 **/*.yml
-**/*.txt
+# **/*.txt
 **/*.geojson
 **/*.simg
 inputs/
