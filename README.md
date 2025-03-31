@@ -412,7 +412,23 @@ Below is an example:
 
 ### Docker
 
-> **Note:** This section is coming soon.
+The SOS applications can be run using Docker compose.
+
+1. 
+
+2. Orchestrate the containers:
+
+    ```
+    docker-compose -f docker-compose-dev.yml up -d
+    ```
+
+  > NOTE: To confirm Docker containers are running, run the command: ```docker ps```. You should see four containers listed: manager, planner, appender, and simulator.
+
+3. To shutdown the Docker containers:
+
+    ```
+    docker-compose down
+    ```
 
 ## Cesium Visualization
 
