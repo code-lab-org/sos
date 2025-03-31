@@ -1,5 +1,7 @@
+name: sos_execution
 services:
   manager:
+    container_name: sos_manager
     image: codelaborg/sos:latest
     command: python3 src/manager/main.py
     env_file: .env
@@ -11,6 +13,7 @@ services:
     restart: "no"
 
   planner:
+    container_name: sos_planner
     image: codelaborg/sos:latest
     command: python3 src/planner/main.py
     env_file: .env
@@ -22,6 +25,7 @@ services:
     restart: "no"
 
   appender:
+    container_name: sos_appender
     image: codelaborg/sos:latest
     command: python3 src/appender/main.py
     env_file: .env
@@ -33,6 +37,7 @@ services:
     restart: "no"
 
   simulator:
+    container_name: sos_simulator
     image: codelaborg/sos:latest
     command: python3 src/simulator/main.py
     env_file: .env
