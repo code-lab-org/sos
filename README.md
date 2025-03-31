@@ -418,18 +418,18 @@ The SOS applications can be run using Docker compose.
 
 2. Confirm the following:
 
-- Files in your working directory:
-  - [sos.yaml](#yaml)
-  - [.env](#env)
-- [Successful completion of `aws configuration`](#aws-cli-installation)
+   - Files in your working directory:
+     - [sos.yaml](#yaml)
+     - [.env](#env)
+   - [Successful completion of `aws configuration`](#aws-cli-installation)
 
-2. Execute the containers using `docker-compose`:
+3. Execute the containers using `docker-compose`:
 
     ```
     docker-compose -f docker-compose.yml up -d
     ```
 
-  > NOTE: To confirm Docker containers are running, run the command: ```docker ps```. You should see four containers listed: manager, planner, appender, and simulator.
+    > NOTE: To confirm Docker containers are running, run the command: ```docker ps```. You should see four containers listed: manager, planner, appender, and simulator.
 
 3. To shutdown the Docker containers:
 
