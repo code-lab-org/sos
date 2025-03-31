@@ -1,4 +1,4 @@
-FROM emmanuelgonzalez/sos:latest
+FROM codelaborg/sos:latest
 
 # Set working directory
 WORKDIR /opt
