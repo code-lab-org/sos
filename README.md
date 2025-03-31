@@ -414,9 +414,16 @@ Below is an example:
 
 The SOS applications can be run using Docker compose.
 
-1. 
+1. Confirm you are in the root directory (cloned repo, i.e. `sos/`), which will be your working directory.
 
-2. Orchestrate the containers:
+2. Confirm the following:
+
+- Files in your working directory:
+  - [sos.yaml](#yaml)
+  - [.env](#env)
+- [Successful completion of `aws configuration`](#aws-cli-installation)
+
+2. Execute the containers using `docker-compose`:
 
     ```
     docker-compose -f docker-compose-dev.yml up -d

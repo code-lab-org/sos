@@ -1,43 +1,44 @@
 services:
   manager:
-    image: codelaborg/sos_manager:latest
+    image: codelaborg/sos:latest
+    command: python3 src/manager/main.py
     env_file: .env
     volumes:
       - ./sos.yaml:/opt/sos.yaml
-      - ./outputs:/opt/outputs
-      - ./inputs:/opt/inputs
+      - ~/.aws/credentials:/root/.aws/credentials:ro
+      - ./:/opt/
     network_mode: "host"
     restart: "no"
 
   planner:
-    image: codelaborg/sos_planner:latest
+    image: codelaborg/sos:latest
+    command: python3 src/planner/main.py
     env_file: .env
     volumes:
       - ./sos.yaml:/opt/sos.yaml
-      - ~/.aws:/root/.aws
-      - ./outputs:/opt/outputs
-      - ./inputs:/opt/inputs
+      - ~/.aws/credentials:/root/.aws/credentials:ro
+      - ./:/opt/
     network_mode: "host"
     restart: "no"
 
   appender:
-    image: codelaborg/sos_appender:latest
+    image: codelaborg/sos:latest
+    command: python3 src/appender/main.py
     env_file: .env
     volumes:
       - ./sos.yaml:/opt/sos.yaml
-      - ~/.aws:/root/.aws
-      - ./outputs:/opt/outputs
-      - ./inputs:/opt/inputs
+      - ~/.aws/credentials:/root/.aws/credentials:ro
+      - ./:/opt/
     network_mode: "host"
     restart: "no"
 
   simulator:
-    image: codelaborg/sos_simulator:latest
+    image: codelaborg/sos:latest
+    command: python3 src/simulator/main.py
     env_file: .env
     volumes:
       - ./sos.yaml:/opt/sos.yaml
-      - ~/.aws:/root/.aws
-      - ./outputs:/opt/outputs
-      - ./inputs:/opt/inputs
+      - ~/.aws/credentials:/root/.aws/credentials:ro
+      - ./:/opt/
     network_mode: "host"
     restart: "no"
