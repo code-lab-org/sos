@@ -153,13 +153,12 @@ def compute_ground_track_and_format(
 
 
 def read_master_file():
-    # request_data = gpd.read_file("Master_file.geojson")
     print("Reading Master file")
     logger.info("Reading master file")
     start_time = t.time()
-    # if os.path.exists(f"master_{date}.geojson"):
-    if os.path.exists(f"master.geojson"):
-        request_data = gpd.read_file(f"master.geojson")
+    output_filename = "outputs/master.geojson"
+    if os.path.exists(output_filename):
+        request_data = gpd.read_file(output_filename)
         request_points = request_data.apply(
             lambda r: {
                 "point": Point(
@@ -180,7 +179,7 @@ def read_master_file():
             axis=1,
         ).tolist()
     else:
-        print(f"File local_master.geojson not found. Returning an empty list.")
+        print(f"Master file not found. Returning an empty list.")
         request_points = []
 
     end_time = t.time()
@@ -219,7 +218,7 @@ def write_back_to_appender(source, time):
         "simulator_polygon_groundtrack"
     ].apply(lambda x: wkt.loads(x) if isinstance(x, str) else x)
     gdf = gpd.GeoDataFrame(selected_json_data, geometry="simulator_polygon_groundtrack")
-    gdf.to_file("master_simulator.geojson", driver="GeoJSON")
+    gdf.to_file(f"outputs/master_simulator.geojson", driver="GeoJSON")
     logger.info(f"{source.app.app_name} sending message.")
     date_sim_time = source.app.simulator._time
     date_sim = str(date_sim_time.date()).replace("-", "")
@@ -237,11 +236,9 @@ def write_back_to_appender(source, time):
     current_simulation_date = os.path.join(output_directory, str(date_sim_time.date()))
     data_utils.create_directories([current_simulation_date])
     output_file = os.path.join(
-        current_simulation_date, f"appender_master_{date_sim}.geojson"
+        current_simulation_date, f"simulator_output_{date_sim}.geojson"
     )
-    daily_gdf_filtered.to_file(
-        output_file
-    )  # f"simulator_output_{date_sim}.geojson", driver="GeoJSON")
+    daily_gdf_filtered.to_file(output_file)
     s3.upload_file(
         Bucket="snow-observing-systems",
         Key=output_file,
