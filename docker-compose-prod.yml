@@ -5,6 +5,7 @@ services:
     image: codelaborg/sos_manager:latest
     env_file: .env
     volumes:
+      - ~/.aws/credentials:/root/.aws/credentials:ro
       - ./sos.yaml:/opt/sos.yaml
       - ./outputs:/opt/outputs
       - ./inputs:/opt/inputs
@@ -16,8 +17,8 @@ services:
     image: codelaborg/sos_planner:latest
     env_file: .env
     volumes:
+      - ~/.aws/credentials:/root/.aws/credentials:ro
       - ./sos.yaml:/opt/sos.yaml
-      - ~/.aws:/root/.aws
       - ./outputs:/opt/outputs
       - ./inputs:/opt/inputs
     network_mode: "host"
@@ -28,8 +29,8 @@ services:
     image: codelaborg/sos_appender:latest
     env_file: .env
     volumes:
+      - ~/.aws/credentials:/root/.aws/credentials:ro
       - ./sos.yaml:/opt/sos.yaml
-      - ~/.aws:/root/.aws
       - ./outputs:/opt/outputs
       - ./inputs:/opt/inputs
     network_mode: "host"
@@ -40,8 +41,8 @@ services:
     image: codelaborg/sos_simulator:latest
     env_file: .env
     volumes:
+      - ~/.aws/credentials:/root/.aws/credentials:ro
       - ./sos.yaml:/opt/sos.yaml
-      - ~/.aws:/root/.aws
       - ./outputs:/opt/outputs
       - ./inputs:/opt/inputs
     network_mode: "host"
