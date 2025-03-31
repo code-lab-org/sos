@@ -222,7 +222,7 @@ class Environment(Observer):
             Filename=output_file,
             Config=TransferConfig(use_threads=False),
         )
-        self.master_gdf.to_file("master.geojson", driver="GeoJSON")
+        self.master_gdf.to_file("outputs/master.geojson", driver="GeoJSON")
         logger.info("Master geosjon file created")
         selected_json_data = self.master_gdf.to_json()
         self.app.send_message(
@@ -267,9 +267,6 @@ class Environment(Observer):
         )
         logger.info(f"Date is {date}, type is {type(date)}")
         logger.info(f"Data type pd dataframe all columns {component_gdf.dtypes}")
-        # component_gdf_filtered = component_gdf[component_gdf["simulator_completion_date"].dt.date == date]
-        # component_gdf_filtered = component_gdf_filtered.to_crs(epsg=4326)
-        # component_gdf_filtered.to_file(f"simulator_{date}.geojson", driver="GeoJSON")
         logger.info(f"Daily Simulator file saved at {self.app.simulator._time}")
 
     def on_change(self, source, property_name, old_value, new_value):

@@ -60,7 +60,11 @@ class Environment(Observer):
         self.input_directory = os.path.join("inputs", self.app.app_name)
         self.data_utils = DataUtils()
         self.data_utils.create_directories(
-            [self.output_directory, self.input_directory]
+            [
+                self.output_directory,
+                self.input_directory,
+                os.path.join("inputs", "vector"),
+            ]
         )
 
     def interpolate_dataset(
@@ -819,8 +823,13 @@ class Environment(Observer):
         Returns:
             dataset (gpd.GeoDataFrame): The GeoDataFrame
         """
-        config = TransferConfig(use_threads=False)
-        s3.download_file(Bucket=bucket, Key=key, Filename=filename, Config=config)
+        if not os.path.isfile(filename):
+            logger.info(f"Downloading file from S3: {filename}")
+            config = TransferConfig(use_threads=False)
+            s3.download_file(Bucket=bucket, Key=key, Filename=filename, Config=config)
+        else:
+            logger.info(f"File already exists: {filename}")
+
         dataset = gpd.read_file(filename)
         return dataset
 
@@ -930,7 +939,8 @@ class Environment(Observer):
                     s3=s3,
                     bucket="snow-observing-systems",
                     key="inputs/vector/WBDHU2_4326.geojson",
-                    filename="WBDHU2_4326.geojson",
+                    # filename="WBDHU2_4326.geojson",
+                    filename="inputs/vector/WBDHU2_4326.geojson",
                 )
                 mo_basin = self.process_geojson(mo_basin)
                 self.polygons = mo_basin.geometry
