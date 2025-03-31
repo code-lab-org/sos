@@ -30,9 +30,7 @@ class ScenarioTimeIntervalCallback(Observer):
     """
 
     def __init__(
-        self,
-        callback: Callable[[object,datetime], None],
-        time_inteval: timedelta
+        self, callback: Callable[[object, datetime], None], time_inteval: timedelta
     ):
         self.callback = callback
         self.time_interval = time_inteval

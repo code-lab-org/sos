@@ -1,30 +1,15 @@
 # Main Execution Script
 # Author: Divya Ramachandran
 
-from datetime import datetime, timedelta, timezone
 import logging
-from typing import List
-from nost_tools import Simulator, Application
-from pydantic import TypeAdapter
-import pandas as pd
-from tatc.schemas import Satellite as TATC_Satellite
-from nost_tools.config import ConnectionConfig
-from nost_tools.managed_application import ManagedApplication
-from nost_tools.observer import Observer
-from nost_tools.simulator import Mode, Simulator
-from nost_tools.application_utils import ShutDownObserver
-import geopandas as gpd
-from sos_sim.observers import ScenarioTimeIntervalCallback, PropertyChangeCallback
-from tatc.schemas import Satellite
-from tatc.schemas import Point
-from sos_sim.function import (
-    read_master_file,    
-    Snowglobe_constellation,    
-    write_back_to_appender,
-)
-from sos_sim.entity import Collect_Observations   
-import yaml
+from datetime import datetime, timedelta, timezone
 
+from nost_tools.application_utils import ShutDownObserver
+from nost_tools.configuration import ConnectionConfig
+from nost_tools.managed_application import ManagedApplication
+from sos_sim.entity import Collect_Observations
+from sos_sim.function import Snowglobe_constellation, write_back_to_appender
+from sos_sim.observers import ScenarioTimeIntervalCallback
 
 start_time = datetime(2019, 3, 1, tzinfo=timezone.utc)
 
@@ -34,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 """""
 NOST integration
-"""""
+""" ""
 #  Load config
 config = ConnectionConfig(yaml_file="sos.yaml")
 
@@ -53,16 +38,19 @@ app.start_up(
     config.rc.simulation_configuration.execution_parameters.general.prefix, config
 )
 
+
 def log_observation(observation):
     """
     Log observation collection.
     """
     logger.info(
         "Request %s collected by %s at %s",
-        observation['point_id'], 
-        'completed',
-        observation['epoch'],
-        observation['satellite'])
+        observation["point_id"],
+        "completed",
+        observation["epoch"],
+        observation["satellite"],
+    )
+
 
 # configure scenario
 # start = datetime(2025, 1, 16, tzinfo=timezone.utc)  # nost simulation start
@@ -80,9 +68,7 @@ time_step_callback = timedelta(days=1)  # time step for callback
 
 # Add Collect_Observations entity
 entity = Collect_Observations(
-    constellation=Snowglobe_constellation(start_time), 
-    requests=[], 
-    application=app
+    constellation=Snowglobe_constellation(start_time), requests=[], application=app
 )
 
 # app.add_message_callback("appender", "topic", entity.message_received_from_appender)

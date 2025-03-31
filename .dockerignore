@@ -1,6 +1,18 @@
 data/
 backup/
-.env
+docs/
+# src/
+**/.env
+**/env.js
+**/*.yaml
 data_download.sh
 entrypoint.sh
 credentials
+Dockerfile
+**/*.md
+**/*.yml
+# **/*.txt
+**/*.geojson
+**/*.simg
+inputs/
+outputs/

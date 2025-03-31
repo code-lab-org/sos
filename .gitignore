@@ -175,7 +175,7 @@ backup/
 *.nc
 *.png
 *.geojson
-*.yml
+# *.yml
 *.yaml
 # Ignore all .env files anywhere in the repository
 **/.env
