@@ -1,0 +1,43 @@
+services:
+  manager:
+    image: codelaborg/sos_manager:latest
+    env_file: .env
+    volumes:
+      - ./sos.yaml:/opt/sos.yaml
+      - ./outputs:/opt/outputs
+      - ./inputs:/opt/inputs
+    network_mode: "host"
+    restart: "no"
+
+  planner:
+    image: codelaborg/sos_planner:latest
+    env_file: .env
+    volumes:
+      - ./sos.yaml:/opt/sos.yaml
+      - ~/.aws:/root/.aws
+      - ./outputs:/opt/outputs
+      - ./inputs:/opt/inputs
+    network_mode: "host"
+    restart: "no"
+
+  appender:
+    image: codelaborg/sos_appender:latest
+    env_file: .env
+    volumes:
+      - ./sos.yaml:/opt/sos.yaml
+      - ~/.aws:/root/.aws
+      - ./outputs:/opt/outputs
+      - ./inputs:/opt/inputs
+    network_mode: "host"
+    restart: "no"
+
+  simulator:
+    image: codelaborg/sos_simulator:latest
+    env_file: .env
+    volumes:
+      - ./sos.yaml:/opt/sos.yaml
+      - ~/.aws:/root/.aws
+      - ./outputs:/opt/outputs
+      - ./inputs:/opt/inputs
+    network_mode: "host"
+    restart: "no"
