@@ -641,13 +641,13 @@ class Environment(Observer):
         logger.info(f"Looking for end time: {end}")
         
         # gcom_tracks = gcom_tracks[gcom_tracks["time"] == end]
-        logger.info(gcom_tracks)
+        # logger.info(gcom_tracks)
         
-        if gcom_tracks.empty:
-            logger.warning("No GCOM tracks found for the specified end time.")
-            return None, None  
-        logger.info(type(gcom_tracks['time'].iloc[0]))
-        logger.info(type(end))
+        # if gcom_tracks.empty:
+        #     logger.warning("No GCOM tracks found for the specified end time.")
+        #     return None, None  
+        # logger.info(type(gcom_tracks['time'].iloc[0]))
+        # logger.info(type(end))
         
         # if gcom_tracks.empty:
         #     logger.warning("No GCOM tracks found for the specified end time.")
@@ -656,13 +656,13 @@ class Environment(Observer):
         # logger.info(f"Available GCOM track times: {gcom_tracks['time'].unique()}")
         # logger.info(f"Looking for end time: {end}")
 
-        file_date = gcom_tracks['time'].iloc[0]  
-        file_name = f"gcom_tracks_{file_date}.geojson"
+        # file_date = gcom_tracks['time'].iloc[0]  
+        # file_name = f"gcom_tracks_{file_date}.geojson"
 
-        # Save as GeoJSON
-        gcom_tracks.to_file(file_name, driver="GeoJSON")
+        # # Save as GeoJSON
+        # gcom_tracks.to_file(file_name, driver="GeoJSON")
 
-        logger.info(f"Saved GeoJSON file: {file_name}")
+        # logger.info(f"Saved GeoJSON file: {file_name}")
         
         
         gcom_eta = gcom_ds["combined_eta"].isel(time=1).rio.write_crs("EPSG:4326")
