@@ -317,7 +317,7 @@ class Environment(Observer):
         logger.info("Generating GCOM efficiency dataset successfully completed.")
 
         return output_file, sensor_gcom_dataset
-
+    
     def generate_sensor_capella(self, ds):
         """
         Generate the Capella efficiency dataset.
@@ -327,12 +327,25 @@ class Environment(Observer):
 
         Returns:
             output_file (str): The output file name
-            capella_dataset (xarray.Dataset): The new dataset
+            sensor_capella_dataset (xarray.Dataset): The new dataset
         """
         logger.info("Generating Capella efficiency dataset.")
         swe = ds["SWE_tavg"]
-        eta2_capella_values = xr.DataArray(
-            np.ones_like(swe.values),
+        T = 150
+        k = -0.03
+        epsilon = 0.05
+
+        def calculate_eta2(swe_value, threshold=T, k_value=k, intercept=epsilon):
+            # Logistic function with intercept
+            return intercept + (1 - intercept) / (
+                1 + np.exp(k_value * (swe_value - threshold))
+            )
+
+        swe_masked = swe.where(~np.isnan(swe))
+        eta2_values = calculate_eta2(swe_masked)
+        eta2_values = eta2_values.broadcast_like(swe)
+        eta2_da = xr.DataArray(
+            eta2_values.values,
             coords={
                 "time": swe["time"],
                 "y": swe["y"],
@@ -341,20 +354,57 @@ class Environment(Observer):
             dims=["time", "y", "x"],
             name="eta2",
         )
-        eta2_capella_values = eta2_capella_values.where(~np.isnan(swe), np.nan)
-        capella_dataset = xr.Dataset({"eta2": eta2_capella_values}).transpose(
-            "time", "y", "x"
-        )
-        for var in capella_dataset.variables:
-            if "grid_mapping" in capella_dataset[var].attrs:
-                del capella_dataset[var].attrs["grid_mapping"]
+        sensor_capella_dataset = xr.Dataset({"eta2": eta2_da}).transpose("time", "y", "x")
+        for var in sensor_capella_dataset.variables:
+            if "grid_mapping" in sensor_capella_dataset[var].attrs:
+                del sensor_capella_dataset[var].attrs["grid_mapping"]
         last_date = str(swe["time"][-1].values)[:10].replace("-", "")
         output_file = os.path.join(
             self.current_simulation_date, f"Efficiency_Sensor_Capella_{last_date}.nc"
         )
-        capella_dataset.to_netcdf(output_file)
+        sensor_capella_dataset.to_netcdf(output_file)
         logger.info("Generating Capella efficiency dataset successfully completed.")
-        return output_file, capella_dataset
+
+        return output_file, sensor_capella_dataset
+        
+
+    # def generate_sensor_capella(self, ds):
+    #     """
+    #     Generate the Capella efficiency dataset.
+
+    #     Args:
+    #         ds (xarray.Dataset): The dataset containing the SWE values
+
+    #     Returns:
+    #         output_file (str): The output file name
+    #         capella_dataset (xarray.Dataset): The new dataset
+    #     """
+    #     logger.info("Generating Capella efficiency dataset.")
+    #     swe = ds["SWE_tavg"]
+    #     eta2_capella_values = xr.DataArray(
+    #         np.ones_like(swe.values),
+    #         coords={
+    #             "time": swe["time"],
+    #             "y": swe["y"],
+    #             "x": swe["x"],
+    #         },
+    #         dims=["time", "y", "x"],
+    #         name="eta2",
+    #     )
+    #     eta2_capella_values = eta2_capella_values.where(~np.isnan(swe), np.nan)
+    #     capella_dataset = xr.Dataset({"eta2": eta2_capella_values}).transpose(
+    #         "time", "y", "x"
+    #     )
+    #     for var in capella_dataset.variables:
+    #         if "grid_mapping" in capella_dataset[var].attrs:
+    #             del capella_dataset[var].attrs["grid_mapping"]
+    #     last_date = str(swe["time"][-1].values)[:10].replace("-", "")
+    #     output_file = os.path.join(
+    #         self.current_simulation_date, f"Efficiency_Sensor_Capella_{last_date}.nc"
+    #     )
+    #     capella_dataset.to_netcdf(output_file)
+    #     logger.info("Generating Capella efficiency dataset successfully completed.")
+    #     return output_file, capella_dataset
 
     def combine_and_multiply_datasets(
         self, ds, eta5_file, eta0_file, eta2_file, weights, output_file
@@ -1197,6 +1247,7 @@ class Environment(Observer):
                 ######################
                 # ETA2 Capella dataset#
                 ######################
+                
                 # Generate the sensor capella dataset
                 sensor_capella_output_file, eta2_file_Capella = (
                     self.generate_sensor_capella(ds=combined_dataset)
