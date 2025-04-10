@@ -637,8 +637,8 @@ class Environment(Observer):
         logger.info("Computing ground tracks (P2) successfully completed.")
         gcom_tracks["time"] = pd.to_datetime(gcom_tracks["time"]).dt.tz_localize(None)
         
-        logger.info(f"Available GCOM track times: {gcom_tracks['time'].unique()}")
-        logger.info(f"Looking for end time: {end}")
+        # logger.info(f"Available GCOM track times: {gcom_tracks['time'].unique()}")
+        # logger.info(f"Looking for end time: {end}")
         
         # gcom_tracks = gcom_tracks[gcom_tracks["time"] == end]
         # logger.info(gcom_tracks)
