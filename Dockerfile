@@ -46,14 +46,6 @@ RUN cd /opt/Python-${PYTHON_VERSION} \
     && make install \
     && rm /opt/Python-${PYTHON_VERSION}.tgz /opt/Python-${PYTHON_VERSION} -rf
 
-# # Install NOS-T Tools library
-# RUN python3 -m pip install --upgrade pip
-# RUN wget https://github.com/code-lab-org/nost-tools/archive/refs/heads/main.zip \
-#     && unzip main.zip \
-#     && cd nost-tools-main \
-#     && python3 -m pip install .[examples] \
-#     && rm /opt/main.zip /opt/nost-tools-main -rf
-
 # Install Python packages
 RUN python3 -m pip install --upgrade pip
 RUN python3 -m pip install -r /opt/requirements.txt \
