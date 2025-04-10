@@ -317,7 +317,7 @@ class Environment(Observer):
         logger.info("Generating GCOM efficiency dataset successfully completed.")
 
         return output_file, sensor_gcom_dataset
-
+    
     def generate_sensor_capella(self, ds):
         """
         Generate the Capella efficiency dataset.
@@ -327,12 +327,25 @@ class Environment(Observer):
 
         Returns:
             output_file (str): The output file name
-            capella_dataset (xarray.Dataset): The new dataset
+            sensor_capella_dataset (xarray.Dataset): The new dataset
         """
         logger.info("Generating Capella efficiency dataset.")
         swe = ds["SWE_tavg"]
-        eta2_capella_values = xr.DataArray(
-            np.ones_like(swe.values),
+        T = 150
+        k = -0.03
+        epsilon = 0.05
+
+        def calculate_eta2(swe_value, threshold=T, k_value=k, intercept=epsilon):
+            # Logistic function with intercept
+            return intercept + (1 - intercept) / (
+                1 + np.exp(k_value * (swe_value - threshold))
+            )
+
+        swe_masked = swe.where(~np.isnan(swe))
+        eta2_values = calculate_eta2(swe_masked)
+        eta2_values = eta2_values.broadcast_like(swe)
+        eta2_da = xr.DataArray(
+            eta2_values.values,
             coords={
                 "time": swe["time"],
                 "y": swe["y"],
@@ -341,20 +354,57 @@ class Environment(Observer):
             dims=["time", "y", "x"],
             name="eta2",
         )
-        eta2_capella_values = eta2_capella_values.where(~np.isnan(swe), np.nan)
-        capella_dataset = xr.Dataset({"eta2": eta2_capella_values}).transpose(
-            "time", "y", "x"
-        )
-        for var in capella_dataset.variables:
-            if "grid_mapping" in capella_dataset[var].attrs:
-                del capella_dataset[var].attrs["grid_mapping"]
+        sensor_capella_dataset = xr.Dataset({"eta2": eta2_da}).transpose("time", "y", "x")
+        for var in sensor_capella_dataset.variables:
+            if "grid_mapping" in sensor_capella_dataset[var].attrs:
+                del sensor_capella_dataset[var].attrs["grid_mapping"]
         last_date = str(swe["time"][-1].values)[:10].replace("-", "")
         output_file = os.path.join(
             self.current_simulation_date, f"Efficiency_Sensor_Capella_{last_date}.nc"
         )
-        capella_dataset.to_netcdf(output_file)
+        sensor_capella_dataset.to_netcdf(output_file)
         logger.info("Generating Capella efficiency dataset successfully completed.")
-        return output_file, capella_dataset
+
+        return output_file, sensor_capella_dataset
+        
+
+    # def generate_sensor_capella(self, ds):
+    #     """
+    #     Generate the Capella efficiency dataset.
+
+    #     Args:
+    #         ds (xarray.Dataset): The dataset containing the SWE values
+
+    #     Returns:
+    #         output_file (str): The output file name
+    #         capella_dataset (xarray.Dataset): The new dataset
+    #     """
+    #     logger.info("Generating Capella efficiency dataset.")
+    #     swe = ds["SWE_tavg"]
+    #     eta2_capella_values = xr.DataArray(
+    #         np.ones_like(swe.values),
+    #         coords={
+    #             "time": swe["time"],
+    #             "y": swe["y"],
+    #             "x": swe["x"],
+    #         },
+    #         dims=["time", "y", "x"],
+    #         name="eta2",
+    #     )
+    #     eta2_capella_values = eta2_capella_values.where(~np.isnan(swe), np.nan)
+    #     capella_dataset = xr.Dataset({"eta2": eta2_capella_values}).transpose(
+    #         "time", "y", "x"
+    #     )
+    #     for var in capella_dataset.variables:
+    #         if "grid_mapping" in capella_dataset[var].attrs:
+    #             del capella_dataset[var].attrs["grid_mapping"]
+    #     last_date = str(swe["time"][-1].values)[:10].replace("-", "")
+    #     output_file = os.path.join(
+    #         self.current_simulation_date, f"Efficiency_Sensor_Capella_{last_date}.nc"
+    #     )
+    #     capella_dataset.to_netcdf(output_file)
+    #     logger.info("Generating Capella efficiency dataset successfully completed.")
+    #     return output_file, capella_dataset
 
     def combine_and_multiply_datasets(
         self, ds, eta5_file, eta0_file, eta2_file, weights, output_file
@@ -477,76 +527,144 @@ class Environment(Observer):
         )
         logger.info("Computing ground tracks (P1) successfully completed.")
         # logger.info(f"Execution ground track time end{self.app.simulator._time}")
-        amsr2 = Instrument(
+        # amsr2 = Instrument(
+        #     name="AMSR2",
+        #     field_of_regard=utils.swath_width_to_field_of_regard(700e3, 1450e3),
+        # )
+        # gcom_w = Satellite(
+        #     name="GCOM-W",
+        #     orbit=TwoLineElements(
+        #         tle=[
+        #             "1 38337U 12025A   24117.59466874  .00002074  00000+0  46994-3 0  9995",
+        #             "2 38337  98.2005  58.4072 0001734  89.8752  83.0178 14.57143724635212",
+        #         ]
+        #     ),
+        #     instruments=[amsr2],
+        # )
+
+        # satellite_instrument_pairs = [(gcom_w, amsr2)]
+
+        # # Function to compute ground tracks
+        # def get_ground_tracks(
+        #     start, frame_duration, frame, satellite_instrument_pairs, mask  # clip_geo,
+        # ):
+        #     """
+        #     Get ground tracks.
+
+        #     Args:
+        #         start (datetime): The start date.
+        #         frame_duration (timedelta): The frame duration.
+        #         frame (int): The frame number.
+        #         satellite_instrument_pairs (list): List of satellite-instrument pairs.
+        #         mask (GeoSeries): The mask.
+
+        #     Returns:
+        #         pd.DataFrame: The ground tracks.
+        #     """
+        #     return pd.concat(
+        #         [
+        #             compute_ground_track(
+        #                 gcom_w,  # satellite
+        #                 pd.date_range(
+        #                     start + frame * frame_duration,
+        #                     start + (frame + 1) * frame_duration,
+        #                     freq=timedelta(seconds=10),
+        #                 ),
+        #                 crs="EPSG:3857",
+        #                 mask=mask,
+        #             )
+        #             for satellite_instrument_pair in satellite_instrument_pairs
+        #         ]
+        #     ).clip(
+        #         mask
+        #     )  # clip_geo)
+
+        # # Compute ground tracks using vectorized operations
+        # logger.info("Computing ground tracks (P2).")
+        # gcom_tracks = pd.concat(
+        #     [
+        #         get_ground_tracks(
+        #             start,
+        #             frame_duration,
+        #             frame,
+        #             satellite_instrument_pairs,
+        #             mask=self.polygons[0],
+        #         )
+        #         for frame in range(num_frames)
+        #     ],
+        #     ignore_index=True,
+        # )
+        domain = box(-114, 37, -90, 50)
+        amsr2 = PointedInstrument(
             name="AMSR2",
-            field_of_regard=utils.swath_width_to_field_of_regard(700e3, 1450e3),
+            cross_track_field_of_view=utils.swath_width_to_field_of_regard(700e3, 1450e3),
+            along_track_field_of_view=utils.swath_width_to_field_of_regard(700e3, 10e3 * 10), # 10x to allow longer time step
+            req_target_sunlit=False, # restrict to descending (nighttime) overpasses
+            is_rectangular=True,
         )
+
+        # orbit from https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle
+        # note: tle MUST have an epoch close to start of mission period (use special data request if necessary)
         gcom_w = Satellite(
             name="GCOM-W",
             orbit=TwoLineElements(
-                tle=[
-                    "1 38337U 12025A   24117.59466874  .00002074  00000+0  46994-3 0  9995",
-                    "2 38337  98.2005  58.4072 0001734  89.8752  83.0178 14.57143724635212",
+                tle = [
+                    "1 38337U 12025A   25001.47767252  .00002770  00000+0  62493-3 0  9994",
+                    "2 38337  98.2252 304.6936 0001249  63.3270  72.0663 14.57087617671602"
                 ]
             ),
             instruments=[amsr2],
         )
-
-        satellite_instrument_pairs = [(gcom_w, amsr2)]
-
-        # Function to compute ground tracks
-        def get_ground_tracks(
-            start, frame_duration, frame, satellite_instrument_pairs, mask  # clip_geo,
-        ):
-            """
-            Get ground tracks.
-
-            Args:
-                start (datetime): The start date.
-                frame_duration (timedelta): The frame duration.
-                frame (int): The frame number.
-                satellite_instrument_pairs (list): List of satellite-instrument pairs.
-                mask (GeoSeries): The mask.
-
-            Returns:
-                pd.DataFrame: The ground tracks.
-            """
-            return pd.concat(
-                [
-                    compute_ground_track(
-                        gcom_w,  # satellite
-                        pd.date_range(
-                            start + frame * frame_duration,
-                            start + (frame + 1) * frame_duration,
-                            freq=timedelta(seconds=10),
-                        ),
-                        crs="EPSG:3857",
-                        mask=mask,
-                    )
-                    for satellite_instrument_pair in satellite_instrument_pairs
-                ]
-            ).clip(
-                mask
-            )  # clip_geo)
-
-        # Compute ground tracks using vectorized operations
-        logger.info("Computing ground tracks (P2).")
+        # parallel-process the ground track calculation for all frames
         gcom_tracks = pd.concat(
             [
-                get_ground_tracks(
-                    start,
-                    frame_duration,
-                    frame,
-                    satellite_instrument_pairs,
-                    mask=self.polygons[0],
-                )
+                compute_ground_track(
+                    gcom_w,
+                    pd.date_range(
+                        start + frame*frame_duration, 
+                        start + (frame + 1)*frame_duration,
+                        freq=time_step,
+                        inclusive="left"
+                    ),
+                    crs="spice",
+                    mask=domain,
+                ) 
                 for frame in range(num_frames)
             ],
-            ignore_index=True,
-        )
+            ignore_index=True
+        ).sort_values(by="time")
+
         logger.info("Computing ground tracks (P2) successfully completed.")
         gcom_tracks["time"] = pd.to_datetime(gcom_tracks["time"]).dt.tz_localize(None)
-        gcom_tracks = gcom_tracks[gcom_tracks["time"] == end]
+        
+        logger.info(f"Available GCOM track times: {gcom_tracks['time'].unique()}")
+        logger.info(f"Looking for end time: {end}")
+        
+        # gcom_tracks = gcom_tracks[gcom_tracks["time"] == end]
+        logger.info(gcom_tracks)
+        
+        if gcom_tracks.empty:
+            logger.warning("No GCOM tracks found for the specified end time.")
+            return None, None  
+        logger.info(type(gcom_tracks['time'].iloc[0]))
+        logger.info(type(end))
+        
+        # if gcom_tracks.empty:
+        #     logger.warning("No GCOM tracks found for the specified end time.")
+        #     return None, None  
+
+        # logger.info(f"Available GCOM track times: {gcom_tracks['time'].unique()}")
+        # logger.info(f"Looking for end time: {end}")
+
+        file_date = gcom_tracks['time'].iloc[0]  
+        file_name = f"gcom_tracks_{file_date}.geojson"
+
+        # Save as GeoJSON
+        gcom_tracks.to_file(file_name, driver="GeoJSON")
+
+        logger.info(f"Saved GeoJSON file: {file_name}")
+        
+        
         gcom_eta = gcom_ds["combined_eta"].isel(time=1).rio.write_crs("EPSG:4326")
         snowglobe_eta = (
             snowglobe_ds["combined_eta"].isel(time=1).rio.write_crs("EPSG:4326")
@@ -1129,6 +1247,7 @@ class Environment(Observer):
                 ######################
                 # ETA2 Capella dataset#
                 ######################
+                
                 # Generate the sensor capella dataset
                 sensor_capella_output_file, eta2_file_Capella = (
                     self.generate_sensor_capella(ds=combined_dataset)
