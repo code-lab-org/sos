@@ -7,7 +7,7 @@ COPY . /opt
 # Set environment variables
 USER root
 ARG DEBIAN_FRONTEND=noninteractive
-ARG PYTHON_VERSION=3.11.11
+ARG PYTHON_VERSION=3.9.21
 
 # Update package list
 RUN apt-get -o Acquire::Check-Valid-Until=false -o Acquire::Check-Date=false update -y
