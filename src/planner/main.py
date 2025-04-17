@@ -1070,7 +1070,7 @@ class Environment(Observer):
                 dataset1 = self.download_file(
                     s3=s3,
                     bucket="snow-observing-systems",
-                    key=f"inputs/LIS/LIS_HIST_{old_value_reformat}0000.d01.nc",
+                    key=f"inputs/LIS/open_loop/LIS_HIST_{old_value_reformat}0000.d01.nc",
                     filename=os.path.join(
                         self.input_directory,
                         f"LIS_HIST_{old_value_reformat}0000.d01.nc",
@@ -1080,7 +1080,7 @@ class Environment(Observer):
                 dataset2 = self.download_file(
                     s3=s3,
                     bucket="snow-observing-systems",
-                    key=f"inputs/LIS/LIS_HIST_{new_value_reformat}0000.d01.nc",
+                    key=f"inputs/LIS/open_loop/LIS_HIST_{new_value_reformat}0000.d01.nc",
                     filename=os.path.join(
                         self.input_directory,
                         f"LIS_HIST_{new_value_reformat}0000.d01.nc",
