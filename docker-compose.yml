@@ -23,6 +23,8 @@ services:
       - ./:/opt/
     network_mode: "host"
     restart: "no"
+    depends_on:
+      - manager
 
   appender:
     container_name: sos_appender
@@ -35,6 +37,8 @@ services:
       - ./:/opt/
     network_mode: "host"
     restart: "no"
+    depends_on:
+      - manager
 
   simulator:
     container_name: sos_simulator
@@ -47,3 +51,5 @@ services:
       - ./:/opt/
     network_mode: "host"
     restart: "no"
+    depends_on:
+      - manager
