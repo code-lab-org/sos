@@ -1,49 +1,64 @@
+version: '3.8'
 name: sos_execution_production
 services:
   manager:
     container_name: sos_manager
-    image: codelaborg/sos_manager:latest
+    image: codelaborg/sos:latest
+    command: python3 src/manager/main.py
     env_file: .env
     volumes:
-      - ~/.aws/credentials:/root/.aws/credentials:ro
       - ./sos.yaml:/opt/sos.yaml
-      - ./outputs:/opt/outputs
-      - ./inputs:/opt/inputs
-    network_mode: "host"
+      - ~/.aws/credentials:/root/.aws/credentials:ro
+      - ./:/opt/
+    networks:
+      - sos_network
     restart: "no"
 
   planner:
     container_name: sos_planner
-    image: codelaborg/sos_planner:latest
+    image: codelaborg/sos:latest
+    command: python3 src/planner/main.py
     env_file: .env
     volumes:
-      - ~/.aws/credentials:/root/.aws/credentials:ro
       - ./sos.yaml:/opt/sos.yaml
-      - ./outputs:/opt/outputs
-      - ./inputs:/opt/inputs
-    network_mode: "host"
+      - ~/.aws/credentials:/root/.aws/credentials:ro
+      - ./:/opt/
+    networks:
+      - sos_network
     restart: "no"
+    depends_on:
+      - manager
 
   appender:
     container_name: sos_appender
-    image: codelaborg/sos_appender:latest
+    image: codelaborg/sos:latest
+    command: python3 src/appender/main.py
     env_file: .env
     volumes:
-      - ~/.aws/credentials:/root/.aws/credentials:ro
       - ./sos.yaml:/opt/sos.yaml
-      - ./outputs:/opt/outputs
-      - ./inputs:/opt/inputs
-    network_mode: "host"
+      - ~/.aws/credentials:/root/.aws/credentials:ro
+      - ./:/opt/
+    networks:
+      - sos_network
     restart: "no"
+    depends_on:
+      - manager
 
   simulator:
     container_name: sos_simulator
-    image: codelaborg/sos_simulator:latest
+    image: codelaborg/sos:latest
+    command: python3 src/simulator/main.py
     env_file: .env
     volumes:
-      - ~/.aws/credentials:/root/.aws/credentials:ro
       - ./sos.yaml:/opt/sos.yaml
-      - ./outputs:/opt/outputs
-      - ./inputs:/opt/inputs
-    network_mode: "host"
+      - ~/.aws/credentials:/root/.aws/credentials:ro
+      - ./:/opt/
+    networks:
+      - sos_network
     restart: "no"
+    depends_on:
+      - manager
+
+networks:
+  sos_network:
+    driver: bridge
