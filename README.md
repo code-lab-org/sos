@@ -306,7 +306,7 @@ In the `sos` directory, create a YAML file named `sos.yaml` with the following c
 info:
   title: Novel Observing Strategies Testbed (NOS-T) YAML Configuration
   version: '1.0.0'
-  description: Version-controlled AsyncAPI document for RabbitMQ event broker
+  description: Version-controlled AsyncAPI document for RabbitMQ event broker with Keycloak authentication within NOS-T
 servers:
   rabbitmq:
     keycloak_authentication: False
@@ -314,27 +314,15 @@ servers:
     port: 5672
     tls: False
     virtual_host: "/"
-    message_expiration: "60000" # in milliseconds, message expiration time
-    delivery_mode: 2 # 1=transient, 2=durable
-    content_type: "text/plain"
-    heartbeat: 30 # in seconds
-    connection_attempts: 3
-    retry_delay: 5 # in seconds
-  keycloak:
-    host: "nost.smce.nasa.gov"
-    port: 8443
-    tls: True
-    token_refresh_interval: 10 #in seconds
-    realm: "NOS-T"
 execution:
   general:
     prefix: sos
   manager:
     sim_start_time: "2019-03-01T23:59:59+00:00"
     sim_stop_time: "2019-03-10T23:59:59+00:00"
-    start_time:
+    start_time: 
     time_step: "0:00:01"
-    time_scale_factor: 144 # 1 simulation day = 5 wallclock minutes
+    time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
     time_scale_updates: []
     time_status_step: "0:00:01" # 1 second * time scale factor
     time_status_init: "2019-03-01T23:59:59+00:00"
@@ -347,15 +335,32 @@ execution:
     init_retry_delay_s: 5
     init_max_retry: 5
     set_offset: True
-    shut_down_when_terminated: False
-  managed_application:
-    time_scale_factor: 144 # 1 simulation day = 5 wallclock minutes
-    time_step: "0:00:01" # 1 second * time scale factor
-    set_offset: True
-    time_status_step: "0:00:10" # 10 seconds * time scale factor
-    time_status_init: "2019-03-01T00:00:00+00:00"
-    shut_down_when_terminated: False
-    manager_app_name: "manager"
+    shut_down_when_terminated: True
+  managed_applications:
+    planner:
+      time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
+      time_step: "0:00:01" # 1 second * time scale factor
+      set_offset: True
+      time_status_step: "0:00:10" # 10 seconds * time scale factor
+      time_status_init: "2019-03-01T23:59:59+00:00"
+      shut_down_when_terminated: True
+      manager_app_name: "manager"
+    appender:
+      time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
+      time_step: "0:00:01" # 1 second * time scale factor
+      set_offset: True
+      time_status_step: "0:00:10" # 10 seconds * time scale factor
+      time_status_init: "2019-03-01T23:59:59+00:00"
+      shut_down_when_terminated: True
+      manager_app_name: "manager"
+    simulator:
+      time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
+      time_step: "0:01:00" # 1 second * time scale factor
+      set_offset: True
+      time_status_step: "0:00:10" # 10 seconds * time scale factor
+      time_status_init: "2019-03-01T23:59:59+00:00"
+      shut_down_when_terminated: True
+      manager_app_name: "manager"
 ```
 
 ### .env
@@ -365,8 +370,6 @@ In the `sos` directory, create a `.env` file with the following content specific
 ```sh
 USERNAME="admin"
 PASSWORD="admin"
-CLIENT_ID=""
-CLIENT_SECRET_KEY=""
 ```
 
 ### Conda
