@@ -1,18 +1,19 @@
 # This Script stores all the functions that are used in the simulator code
 # The functions are stored in a separate file to make the main code more readable
 
+# Standard library imports
 import logging
 import os
 import sys
-
-# Importing Libraries
+import time as t
 from datetime import datetime, timedelta, timezone
 from typing import List
 
+# Third-party imports
 import geopandas as gpd
 import pandas as pd
 from boto3.s3.transfer import TransferConfig
-from shapely import Geometry
+from shapely import Geometry, wkt
 from tatc.analysis import collect_ground_track, collect_multi_observations
 from tatc.schemas import (
     Point,
@@ -23,18 +24,16 @@ from tatc.schemas import (
 )
 from tatc.utils import swath_width_to_field_of_regard, swath_width_to_field_of_view
 
-logger = logging.getLogger(__name__)
-import time as t
-
-from shapely import wkt
-
+# Local application imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
-
 from src.sos_tools.aws_utils import AWSUtils
 from src.sos_tools.data_utils import DataUtils
 
-# Configure Constellation
+# Logger setup
+logger = logging.getLogger(__name__)
 
+
+# Configure Constellation
 
 def Snowglobe_constellation(start: datetime) -> List[Satellite]:
     roll_angle = (30 + 33.5) / 2

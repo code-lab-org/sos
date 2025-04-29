@@ -1,28 +1,16 @@
-from datetime import datetime, timedelta,timezone
+from datetime import datetime, timedelta
 import logging
-from typing import List, Tuple
-from constellation_config_files.schemas import VectorLayer
-
-# from geojson_pydantic import Polygon, MultiPolygon
-# from joblib import Parallel, delayed
-from nost_tools import Entity, Application
+from typing import List
 import numpy as np
-import geopandas as gpd
-import pandas as pd
-import shapely
-from shapely.geometry import Point
-from skyfield.api import wgs84
-from tatc.analysis import collect_ground_track, collect_observations
-from tatc.schemas import Satellite as TATC_Satellite, Point as TATC_Point
-from .function import (
-    compute_opportunity,
-    # update_requests,
-    Snowglobe_constellation,
+from tatc.schemas import Satellite as TATC_Satellite
+from constellation_config_files.schemas import VectorLayer
+from nost_tools import Application, Entity
+
+from .function import (    
     compute_ground_track_and_format,
-    # filter_requests,
-    read_master_file,
-    process_master_file,
-    convert_to_vector_layer_format
+    compute_opportunity,
+    convert_to_vector_layer_format,
+    process_master_file,    
 )
 
 # from .schemas import Request, Observation
@@ -135,8 +123,6 @@ class Collect_Observations(Entity):
 
         if self.new_request_flag:
             logger.info("requests received")
-            # self.requests = read_master_file(current_date)
-            # self.requests = read_master_file()
             self.requests = process_master_file(self.requests)
             self.new_request_flag = False
 

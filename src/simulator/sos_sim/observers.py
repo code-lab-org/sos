@@ -4,7 +4,6 @@ Provides simulation observers.
 
 from collections.abc import Callable
 from datetime import datetime, timedelta
-
 from nost_tools import Mode, Observer, Simulator
 
 
