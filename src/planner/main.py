@@ -1031,41 +1031,42 @@ class Environment(Observer):
         logger.warning(f"No matching file found for pattern: {file_name_pattern}")
         return None
 
-
-
     def download_file(self, s3, bucket_name, file_name_pattern, local_filename=None, check_interval_sec=3600, max_attempts=5):
         """
-        Download a file by searching in multiple directories with retries.
+        Download a file by first checking assimilation (up to max_attempts), then falling back to open_loop.
 
         Args:
             bucket_name (str): The S3 bucket name.
             file_name_pattern (str): File name pattern.
             local_filename (str): Local name to save the file as.
             check_interval_sec (int): Time between retries.
-            max_attempts (int): Maximum number of attempts.
-
+            max_attempts (int): Max attempts for assimilation.
+        
         Returns:
             xarray.Dataset: The loaded dataset.
         """
-        directories = ["inputs/LIS/assimilation/", "inputs/LIS/open_loop/"]
-        s3 = boto3.client("s3")
+        # Try assimilation first (wait up to max_attempts)
+        assimilation_dirs = ["inputs/LIS/assimilation/"]
+        open_loop_dirs = ["inputs/LIS/open_loop/"]
+
         file_key = None
-
         for attempt in range(max_attempts):
-            logger.info(f"Attempt {attempt + 1} to find file {file_name_pattern}")
-            file_key = self.find_most_recent_file(s3, bucket_name, directories, file_name_pattern)
-
+            logger.info(f"[Assimilation] Attempt {attempt + 1} to find file {file_name_pattern}")
+            file_key = self.find_most_recent_file(s3, bucket_name, assimilation_dirs, file_name_pattern)
             if file_key:
                 break
-            else:
-                if attempt < max_attempts - 1:
-                    logger.warning(f"File not found. Waiting {check_interval_sec / 60:.0f} minutes before retrying...")
-                    time.sleep(check_interval_sec)
+            if attempt < max_attempts - 1:
+                logger.warning(f"File not found in assimilation. Retrying in {check_interval_sec / 60:.0f} minutes...")
+                time.sleep(check_interval_sec)
+
+        # Fallback to open loop if not found
+        if not file_key:
+            logger.warning("Assimilation file not found. Trying open_loop.")
+            file_key = self.find_most_recent_file(s3, bucket_name, open_loop_dirs, file_name_pattern)
 
         if not file_key:
-            raise FileNotFoundError(f"File {file_name_pattern} not found in any of the directories after {max_attempts} attempts.")
+            raise FileNotFoundError(f"File {file_name_pattern} not found in assimilation or open_loop after {max_attempts} attempts.")
 
-        # Define local filename if not given
         if local_filename is None:
             local_filename = os.path.basename(file_key)
 
@@ -1077,6 +1078,52 @@ class Environment(Observer):
             logger.info(f"File already exists locally: {local_filename}")
 
         return xr.open_dataset(local_filename, engine="h5netcdf")
+
+
+    # def download_file(self, s3, bucket_name, file_name_pattern, local_filename=None, check_interval_sec=3600, max_attempts=5):
+    #     """
+    #     Download a file by searching in multiple directories with retries.
+
+    #     Args:
+    #         bucket_name (str): The S3 bucket name.
+    #         file_name_pattern (str): File name pattern.
+    #         local_filename (str): Local name to save the file as.
+    #         check_interval_sec (int): Time between retries.
+    #         max_attempts (int): Maximum number of attempts.
+
+    #     Returns:
+    #         xarray.Dataset: The loaded dataset.
+    #     """
+    #     directories = ["inputs/LIS/assimilation/", "inputs/LIS/open_loop/"]
+    #     s3 = boto3.client("s3")
+    #     file_key = None
+
+    #     for attempt in range(max_attempts):
+    #         logger.info(f"Attempt {attempt + 1} to find file {file_name_pattern}")
+    #         file_key = self.find_most_recent_file(s3, bucket_name, directories, file_name_pattern)
+
+    #         if file_key:
+    #             break
+    #         else:
+    #             if attempt < max_attempts - 1:
+    #                 logger.warning(f"File not found. Waiting {check_interval_sec / 60:.0f} minutes before retrying...")
+    #                 time.sleep(check_interval_sec)
+
+    #     if not file_key:
+    #         raise FileNotFoundError(f"File {file_name_pattern} not found in any of the directories after {max_attempts} attempts.")
+
+    #     # Define local filename if not given
+    #     if local_filename is None:
+    #         local_filename = os.path.basename(file_key)
+
+    #     if not os.path.exists(local_filename):
+    #         logger.info(f"Downloading {file_key} to {local_filename}...")
+    #         config = TransferConfig(use_threads=False)
+    #         s3.download_file(Bucket=bucket_name, Key=file_key, Filename=local_filename, Config=config)
+    #     else:
+    #         logger.info(f"File already exists locally: {local_filename}")
+
+    #     return xr.open_dataset(local_filename, engine="h5netcdf")
 
     
 
