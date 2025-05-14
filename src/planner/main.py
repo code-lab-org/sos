@@ -993,18 +993,26 @@ class Environment(Observer):
                 logger.info(f"Looking for subdirectories in assimilation path: {directory}")
                 pages = paginator.paginate(Bucket=bucket_name, Prefix=directory, Delimiter='/')
 
+                # subdirs = [
+                #     prefix["Prefix"]
+                #     for page in pages
+                #     for prefix in page.get("CommonPrefixes", [])
+                #     if os.path.basename(prefix["Prefix"].rstrip("/")).startswith("out_")
+                # ]
+                
+                #Not considering out_ prefix for subdirectories
                 subdirs = [
                     prefix["Prefix"]
                     for page in pages
                     for prefix in page.get("CommonPrefixes", [])
-                    if os.path.basename(prefix["Prefix"].rstrip("/")).startswith("out_")
                 ]
+
 
                 logger.info(f"Assimilation subdirs found: {subdirs}")
 
                 if subdirs:
                     most_recent_subdir = max(subdirs)
-                    logger.info(f"Most recent 'out_' assimilation subdir: {most_recent_subdir}")
+                    logger.info(f"Most recent assimilation subdir: {most_recent_subdir}")
 
                     pages = paginator.paginate(Bucket=bucket_name, Prefix=most_recent_subdir)
                     for page in pages:
@@ -1014,7 +1022,7 @@ class Environment(Observer):
                                 logger.info(f"Found matching file in assimilation: {obj['Key']}")
                                 return obj["Key"]
 
-        logger.warning("No matching file found in assimilation, trying open_loop.")
+        logger.warning("No matching file found in assimilation.")
 
         # Priority 2: open_loop
         for directory in directories:
@@ -1031,7 +1039,7 @@ class Environment(Observer):
         logger.warning(f"No matching file found for pattern: {file_name_pattern}")
         return None
 
-    def download_file(self, s3, bucket_name, file_name_pattern, local_filename=None, check_interval_sec=3600, max_attempts=5):
+    def download_file(self, s3, bucket_name, file_name_pattern, local_filename=None, check_interval_sec=60, max_attempts=5):
         """
         Download a file by first checking assimilation (up to max_attempts), then falling back to open_loop.
 
