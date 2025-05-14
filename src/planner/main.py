@@ -37,6 +37,7 @@ from tatc.utils import swath_width_to_field_of_regard, swath_width_to_field_of_v
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from src.sos_tools.aws_utils import AWSUtils
 from src.sos_tools.data_utils import DataUtils
+import boto3
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
@@ -906,27 +907,233 @@ class Environment(Observer):
 
         return raster_layer_encoded, top_left, top_right, bottom_left, bottom_right
 
-    def download_file(self, s3, bucket, key, filename):
+    # def download_file(self, s3, bucket, key, filename):
+    #     """
+    #     Download a file from an S3 bucket
+
+    #     Args:
+    #         s3: S3 client
+    #         bucket: S3 bucket name
+    #         key: S3 object key
+    #         filename: Filename to save the file as
+
+    #     Returns:
+    #         dataset (xarray.Dataset): The dataset
+    #     """
+    #     if not os.path.exists(filename):
+    #         logger.info(f"Downloading file from S3: {filename}")
+    #         config = TransferConfig(use_threads=False)
+    #         s3.download_file(Bucket=bucket, Key=key, Filename=filename, Config=config)
+    #     else:
+    #         logger.info(f"File already exists: {filename}")
+    #     dataset = xr.open_dataset(filename, engine="h5netcdf")
+    #     return dataset
+    
+    ###########
+    #New download approach
+    ###########
+    
+    # def find_most_recent_file(self, s3, bucket_name, directories, file_name_pattern):
+    #     paginator = s3.get_paginator("list_objects_v2")
+
+    #     # Prioritize assimilation
+    #     for directory in directories:
+    #         logger.debug(f"Searching in directory: {directory}")
+    #         if "assimilation" in directory:
+    #             # Get all subdirectories
+    #             pages = paginator.paginate(Bucket=bucket_name, Prefix=directory, Delimiter='/')
+    #             subdirs = [
+    #                 prefix["Prefix"]
+    #                 for page in pages
+    #                 for prefix in page.get("CommonPrefixes", [])
+    #             ]
+    #             if subdirs:
+    #                 most_recent_subdir = max(subdirs)
+    #                 logger.debug(f"Most recent assimilation subdir: {most_recent_subdir}")
+    #                 pages = paginator.paginate(Bucket=bucket_name, Prefix=most_recent_subdir)
+    #                 for page in pages:
+    #                     for obj in page.get("Contents", []):
+    #                         if obj["Key"].endswith(file_name_pattern):
+    #                             logger.info(f"Found matching file in assimilation: {obj['Key']}")
+    #                             return obj["Key"]
+
+    #     # If not found in assimilation, try open_loop
+    #     for directory in directories:
+    #         if "open_loop" in directory:
+    #             pages = paginator.paginate(Bucket=bucket_name, Prefix=directory)
+    #             for page in pages:
+    #                 for obj in page.get("Contents", []):
+    #                     if obj["Key"].endswith(file_name_pattern):
+    #                         logger.info(f"Found matching file in open_loop: {obj['Key']}")
+    #                         return obj["Key"]
+
+    #     return None
+
+    def find_most_recent_file(self, s3, bucket_name, directories, file_name_pattern):
         """
-        Download a file from an S3 bucket
+        Search for the most recent matching file across provided S3 directories,
+        prioritizing assimilation subdirectories starting with 'out_'.
 
         Args:
-            s3: S3 client
-            bucket: S3 bucket name
-            key: S3 object key
-            filename: Filename to save the file as
+            s3: Boto3 S3 client
+            bucket_name (str): Name of the S3 bucket
+            directories (list): List of top-level S3 prefixes to search
+            file_name_pattern (str): Expected file name suffix (e.g., 'LIS_HIST_*.nc')
 
         Returns:
-            dataset (xarray.Dataset): The dataset
+            str or None: Key of the most recent matching file if found, else None
         """
-        if not os.path.exists(filename):
-            logger.info(f"Downloading file from S3: {filename}")
+        import os
+        paginator = s3.get_paginator("list_objects_v2")
+
+        # Priority 1: assimilation (out_ subdirs)
+        for directory in directories:
+            logger.debug(f"Searching in directory: {directory}")
+            if "assimilation" in directory:
+                logger.info(f"Looking for subdirectories in assimilation path: {directory}")
+                pages = paginator.paginate(Bucket=bucket_name, Prefix=directory, Delimiter='/')
+
+                # subdirs = [
+                #     prefix["Prefix"]
+                #     for page in pages
+                #     for prefix in page.get("CommonPrefixes", [])
+                #     if os.path.basename(prefix["Prefix"].rstrip("/")).startswith("out_")
+                # ]
+                
+                #Not considering out_ prefix for subdirectories
+                subdirs = [
+                    prefix["Prefix"]
+                    for page in pages
+                    for prefix in page.get("CommonPrefixes", [])
+                ]
+
+
+                logger.info(f"Assimilation subdirs found: {subdirs}")
+
+                if subdirs:
+                    most_recent_subdir = max(subdirs)
+                    logger.info(f"Most recent assimilation subdir: {most_recent_subdir}")
+
+                    pages = paginator.paginate(Bucket=bucket_name, Prefix=most_recent_subdir)
+                    for page in pages:
+                        for obj in page.get("Contents", []):
+                            logger.debug(f"Found object in assimilation: {obj['Key']}")
+                            if obj["Key"].endswith(file_name_pattern):
+                                logger.info(f"Found matching file in assimilation: {obj['Key']}")
+                                return obj["Key"]
+
+        logger.warning("No matching file found in assimilation.")
+
+        # Priority 2: open_loop
+        for directory in directories:
+            if "open_loop" in directory:
+                logger.info(f"Looking into open_loop directory: {directory}")
+                pages = paginator.paginate(Bucket=bucket_name, Prefix=directory)
+                for page in pages:
+                    for obj in page.get("Contents", []):
+                        logger.debug(f"Found object in open_loop: {obj['Key']}")
+                        if obj["Key"].endswith(file_name_pattern):
+                            logger.info(f"Found matching file in open_loop: {obj['Key']}")
+                            return obj["Key"]
+
+        logger.warning(f"No matching file found for pattern: {file_name_pattern}")
+        return None
+
+    def download_file(self, s3, bucket_name, file_name_pattern, local_filename=None, check_interval_sec=60, max_attempts=5):
+        """
+        Download a file by first checking assimilation (up to max_attempts), then falling back to open_loop.
+
+        Args:
+            bucket_name (str): The S3 bucket name.
+            file_name_pattern (str): File name pattern.
+            local_filename (str): Local name to save the file as.
+            check_interval_sec (int): Time between retries.
+            max_attempts (int): Max attempts for assimilation.
+        
+        Returns:
+            xarray.Dataset: The loaded dataset.
+        """
+        # Try assimilation first (wait up to max_attempts)
+        assimilation_dirs = ["inputs/LIS/assimilation/"]
+        open_loop_dirs = ["inputs/LIS/open_loop/"]
+
+        file_key = None
+        for attempt in range(max_attempts):
+            logger.info(f"[Assimilation] Attempt {attempt + 1} to find file {file_name_pattern}")
+            file_key = self.find_most_recent_file(s3, bucket_name, assimilation_dirs, file_name_pattern)
+            if file_key:
+                break
+            if attempt < max_attempts - 1:
+                logger.warning(f"File not found in assimilation. Retrying in {check_interval_sec / 60:.0f} minutes...")
+                time.sleep(check_interval_sec)
+
+        # Fallback to open loop if not found
+        if not file_key:
+            logger.warning("Assimilation file not found. Trying open_loop.")
+            file_key = self.find_most_recent_file(s3, bucket_name, open_loop_dirs, file_name_pattern)
+
+        if not file_key:
+            raise FileNotFoundError(f"File {file_name_pattern} not found in assimilation or open_loop after {max_attempts} attempts.")
+
+        if local_filename is None:
+            local_filename = os.path.basename(file_key)
+
+        if not os.path.exists(local_filename):
+            logger.info(f"Downloading {file_key} to {local_filename}...")
             config = TransferConfig(use_threads=False)
-            s3.download_file(Bucket=bucket, Key=key, Filename=filename, Config=config)
+            s3.download_file(Bucket=bucket_name, Key=file_key, Filename=local_filename, Config=config)
         else:
-            logger.info(f"File already exists: {filename}")
-        dataset = xr.open_dataset(filename, engine="h5netcdf")
-        return dataset
+            logger.info(f"File already exists locally: {local_filename}")
+
+        return xr.open_dataset(local_filename, engine="h5netcdf")
+
+
+    # def download_file(self, s3, bucket_name, file_name_pattern, local_filename=None, check_interval_sec=3600, max_attempts=5):
+    #     """
+    #     Download a file by searching in multiple directories with retries.
+
+    #     Args:
+    #         bucket_name (str): The S3 bucket name.
+    #         file_name_pattern (str): File name pattern.
+    #         local_filename (str): Local name to save the file as.
+    #         check_interval_sec (int): Time between retries.
+    #         max_attempts (int): Maximum number of attempts.
+
+    #     Returns:
+    #         xarray.Dataset: The loaded dataset.
+    #     """
+    #     directories = ["inputs/LIS/assimilation/", "inputs/LIS/open_loop/"]
+    #     s3 = boto3.client("s3")
+    #     file_key = None
+
+    #     for attempt in range(max_attempts):
+    #         logger.info(f"Attempt {attempt + 1} to find file {file_name_pattern}")
+    #         file_key = self.find_most_recent_file(s3, bucket_name, directories, file_name_pattern)
+
+    #         if file_key:
+    #             break
+    #         else:
+    #             if attempt < max_attempts - 1:
+    #                 logger.warning(f"File not found. Waiting {check_interval_sec / 60:.0f} minutes before retrying...")
+    #                 time.sleep(check_interval_sec)
+
+    #     if not file_key:
+    #         raise FileNotFoundError(f"File {file_name_pattern} not found in any of the directories after {max_attempts} attempts.")
+
+    #     # Define local filename if not given
+    #     if local_filename is None:
+    #         local_filename = os.path.basename(file_key)
+
+    #     if not os.path.exists(local_filename):
+    #         logger.info(f"Downloading {file_key} to {local_filename}...")
+    #         config = TransferConfig(use_threads=False)
+    #         s3.download_file(Bucket=bucket_name, Key=file_key, Filename=local_filename, Config=config)
+    #     else:
+    #         logger.info(f"File already exists locally: {local_filename}")
+
+    #     return xr.open_dataset(local_filename, engine="h5netcdf")
+
+    
 
     def download_geojson(self, s3, bucket, key, filename):
         """
@@ -950,7 +1157,7 @@ class Environment(Observer):
 
         dataset = gpd.read_file(filename)
         return dataset
-
+    
     # def upload_file(self, s3, bucket, key, filename):
     #     """
     #     Upload a file to an S3 bucket
@@ -1067,21 +1274,44 @@ class Environment(Observer):
                 # Combined dataset#
                 ###################
                 # Get first dataset
+                # dataset1 = self.download_file(
+                #     s3=s3,
+                #     bucket="snow-observing-systems",
+                #     key=f"LIS_HIST_{old_value_reformat}0000.d01.nc", #f"inputs/LIS/open_loop/LIS_HIST_{old_value_reformat}0000.d01.nc"
+                #     filename=os.path.join(
+                #         self.input_directory,
+                #         f"LIS_HIST_{old_value_reformat}0000.d01.nc",
+                #     ),
+                # )
+                # # Get second dataset
+                # dataset2 = self.download_file(
+                #     s3=s3,
+                #     bucket="snow-observing-systems",
+                #     key=f"LIS_HIST_{new_value_reformat}0000.d01.nc", #f"inputs/LIS/open_loop/LIS_HIST_{new_value_reformat}0000.d01.nc"
+                #     filename=os.path.join(
+                #         self.input_directory,
+                #         f"LIS_HIST_{new_value_reformat}0000.d01.nc",
+                #     ),
+                # )
+                
+                ###################
+                # New Combined dataset#
+                ###################
                 dataset1 = self.download_file(
                     s3=s3,
-                    bucket="snow-observing-systems",
-                    key=f"inputs/LIS/open_loop/LIS_HIST_{old_value_reformat}0000.d01.nc",
-                    filename=os.path.join(
+                    bucket_name="snow-observing-systems",
+                    file_name_pattern=f"LIS_HIST_{old_value_reformat}0000.d01.nc",
+                    local_filename=os.path.join(
                         self.input_directory,
                         f"LIS_HIST_{old_value_reformat}0000.d01.nc",
                     ),
                 )
-                # Get second dataset
+
                 dataset2 = self.download_file(
                     s3=s3,
-                    bucket="snow-observing-systems",
-                    key=f"inputs/LIS/open_loop/LIS_HIST_{new_value_reformat}0000.d01.nc",
-                    filename=os.path.join(
+                    bucket_name="snow-observing-systems",
+                    file_name_pattern=f"LIS_HIST_{new_value_reformat}0000.d01.nc",
+                    local_filename=os.path.join(
                         self.input_directory,
                         f"LIS_HIST_{new_value_reformat}0000.d01.nc",
                     ),
