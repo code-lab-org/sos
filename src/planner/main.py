@@ -13,6 +13,7 @@ import pandas as pd
 import xarray as xr
 from boto3.s3.transfer import TransferConfig
 from constellation_config_files.schemas import SWEChangeLayer, VectorLayer
+from joblib import Parallel, delayed
 from nost_tools.application_utils import ShutDownObserver
 from nost_tools.configuration import ConnectionConfig
 from nost_tools.managed_application import ManagedApplication
@@ -23,9 +24,8 @@ from rasterio.features import geometry_mask
 from scipy.interpolate import griddata
 from shapely.geometry import Polygon, box
 from tatc import utils
-from tatc.analysis import collect_orbit_track, compute_ground_track
+from tatc.analysis import compute_ground_track
 from tatc.schemas import (
-    Instrument,
     PointedInstrument,
     Satellite,
     SunSynchronousOrbit,
@@ -35,9 +35,9 @@ from tatc.schemas import (
 from tatc.utils import swath_width_to_field_of_regard, swath_width_to_field_of_view
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
+
 from src.sos_tools.aws_utils import AWSUtils
 from src.sos_tools.data_utils import DataUtils
-import boto3
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
@@ -67,12 +67,13 @@ class Environment(Observer):
                 os.path.join("inputs", "vector"),
             ]
         )
+        self.parallel_compute = True
 
     def interpolate_dataset(
         self, dataset, variables_to_interpolate, lat_coords, lon_coords, time_coords
     ):
         """
-        Interpolate the dataset to a new grid.
+        Optimized interpolation of dataset to a new grid.
 
         Args:
             dataset (xarray.Dataset): The dataset to interpolate
@@ -84,31 +85,44 @@ class Environment(Observer):
         Returns:
             interpolated_dataset (xarray.Dataset): The interpolated dataset
         """
+        # Precompute meshgrid once
         xi = np.stack(np.meshgrid(lon_coords, lat_coords), axis=2).reshape(
             (lat_coords.size * lon_coords.size, 2)
         )
+
+        # Get coordinates once
+        lons = dataset.lon.values.flatten()
+        lats = dataset.lat.values.flatten()
+        points = list(zip(lons, lats))
+
         interpolated_vars = {}
+
         for var_name in variables_to_interpolate:
-            values = dataset[var_name].values
-            lons = dataset.lon.values
-            lats = dataset.lat.values
-            zi = griddata(
-                list(zip(lons.flatten(), lats.flatten())),
-                values.flatten(),
-                xi,
-                method="linear",
-            )
+            values = dataset[var_name].values.flatten()
+
+            # Filter out NaN values to improve interpolation performance
+            valid_mask = ~np.isnan(values)
+            if not np.all(valid_mask):
+                valid_points = [points[i] for i in range(len(points)) if valid_mask[i]]
+                valid_values = values[valid_mask]
+                zi = griddata(
+                    valid_points, valid_values, xi, method="linear", fill_value=np.nan
+                )
+            else:
+                zi = griddata(points, values, xi, method="linear")
+
             interpolated_vars[var_name] = xr.DataArray(
                 np.reshape(zi, (1, len(lat_coords), len(lon_coords))),
                 coords={"time": time_coords, "y": lat_coords, "x": lon_coords},
                 dims=["time", "y", "x"],
             ).rio.write_crs("EPSG:4326")
-        interpolated_dataset = xr.Dataset(interpolated_vars)
-        return interpolated_dataset
+
+        return xr.Dataset(interpolated_vars)
 
     def generate_combined_dataset(self, dataset1, dataset2, mo_basin):
         """
-        Generate a combined dataset by interpolating the two datasets to a new grid and clipping to the Missouri Basin.
+        Generate a combined dataset by interpolating the two datasets to a new grid and
+        clipping to the Missouri Basin. Optimized for performance with parallel processing.
 
         Args:
             dataset1 (xarray.Dataset): The first dataset
@@ -117,8 +131,9 @@ class Environment(Observer):
 
         Returns:
             output_file (str): The output file name
-            clipped_dataset (xarray.Dataset): The clipped
+            clipped_dataset (xarray.Dataset): The clipped dataset
         """
+        # Check if output file already exists
         last_date_ds1 = np.datetime_as_string(
             dataset1.time[-1].values, unit="D"
         ).replace("-", "")
@@ -129,35 +144,64 @@ class Environment(Observer):
         output_file = os.path.join(
             self.current_simulation_date, f"LIS_dataset_{last_date}.nc"
         )
+
         if os.path.exists(output_file):
             logger.info(
                 f"File {output_file} already exists. Reading the existing file."
             )
             clipped_dataset = xr.open_dataset(output_file)
             return output_file, clipped_dataset
+
         logger.info("Combining the two datasets.")
+        start_time = time.time()
         time_coords_ds1 = np.array([dataset1.time[0].values])
         time_coords_ds2 = np.array([dataset2.time[0].values])
+
+        # Use fewer grid points if resolution can be reduced
         lat_coords = np.linspace(37.024602, 49.739086, 29)
         lon_coords = np.linspace(-113.938141, -90.114221, 40)
         variables_to_interpolate = ["SWE_tavg", "AvgSurfT_tavg"]
-        new_ds1 = self.interpolate_dataset(
-            dataset1, variables_to_interpolate, lat_coords, lon_coords, time_coords_ds1
+
+        # Parallelize dataset interpolation
+        logger.debug("Starting parallel interpolation of datasets")
+        results = Parallel(
+            n_jobs=-1 if self.parallel_compute else 1, backend="threading"
+        )(
+            delayed(self.interpolate_dataset)(
+                ds, variables_to_interpolate, lat_coords, lon_coords, time_coords
+            )
+            for ds, time_coords in [
+                (dataset1, time_coords_ds1),
+                (dataset2, time_coords_ds2),
+            ]
         )
-        new_ds2 = self.interpolate_dataset(
-            dataset2, variables_to_interpolate, lat_coords, lon_coords, time_coords_ds2
-        )
+
+        new_ds1, new_ds2 = results
+        logger.debug("Parallel interpolation completed")
+
+        # Combine datasets and clip to Missouri Basin
         combined_dataset = xr.concat([new_ds1, new_ds2], dim="time")
         mo_basin = mo_basin.to_crs("EPSG:4326")
         combined_dataset = combined_dataset.rio.write_crs("EPSG:4326")
+
+        logger.debug("Clipping combined dataset to Missouri Basin")
         clipped_dataset = combined_dataset.rio.clip(
             mo_basin.geometry, all_touched=True, drop=True
         )
+
+        # Remove grid_mapping attributes
         for var in clipped_dataset.data_vars:
             if "grid_mapping" in clipped_dataset[var].attrs:
                 del clipped_dataset[var].attrs["grid_mapping"]
+
+        # Save to NetCDF
+        logger.debug(f"Saving combined dataset to {output_file}")
         clipped_dataset.to_netcdf(output_file)
-        logger.info(f"Combining the two datasets successfully completed.")
+        end_time = time.time()
+        logger.info(
+            f"Combining the two datasets successfully completed in {end_time - start_time:.2f} seconds."
+        )
+
         return output_file, clipped_dataset
 
     def calculate_eta(self, swe_change, threshold, k_value):
@@ -318,7 +362,7 @@ class Environment(Observer):
         logger.info("Generating GCOM efficiency dataset successfully completed.")
 
         return output_file, sensor_gcom_dataset
-    
+
     def generate_sensor_capella(self, ds):
         """
         Generate the Capella efficiency dataset.
@@ -355,7 +399,9 @@ class Environment(Observer):
             dims=["time", "y", "x"],
             name="eta2",
         )
-        sensor_capella_dataset = xr.Dataset({"eta2": eta2_da}).transpose("time", "y", "x")
+        sensor_capella_dataset = xr.Dataset({"eta2": eta2_da}).transpose(
+            "time", "y", "x"
+        )
         for var in sensor_capella_dataset.variables:
             if "grid_mapping" in sensor_capella_dataset[var].attrs:
                 del sensor_capella_dataset[var].attrs["grid_mapping"]
@@ -367,45 +413,6 @@ class Environment(Observer):
         logger.info("Generating Capella efficiency dataset successfully completed.")
 
         return output_file, sensor_capella_dataset
-        
-
-    # def generate_sensor_capella(self, ds):
-    #     """
-    #     Generate the Capella efficiency dataset.
-
-    #     Args:
-    #         ds (xarray.Dataset): The dataset containing the SWE values
-
-    #     Returns:
-    #         output_file (str): The output file name
-    #         capella_dataset (xarray.Dataset): The new dataset
-    #     """
-    #     logger.info("Generating Capella efficiency dataset.")
-    #     swe = ds["SWE_tavg"]
-    #     eta2_capella_values = xr.DataArray(
-    #         np.ones_like(swe.values),
-    #         coords={
-    #             "time": swe["time"],
-    #             "y": swe["y"],
-    #             "x": swe["x"],
-    #         },
-    #         dims=["time", "y", "x"],
-    #         name="eta2",
-    #     )
-    #     eta2_capella_values = eta2_capella_values.where(~np.isnan(swe), np.nan)
-    #     capella_dataset = xr.Dataset({"eta2": eta2_capella_values}).transpose(
-    #         "time", "y", "x"
-    #     )
-    #     for var in capella_dataset.variables:
-    #         if "grid_mapping" in capella_dataset[var].attrs:
-    #             del capella_dataset[var].attrs["grid_mapping"]
-    #     last_date = str(swe["time"][-1].values)[:10].replace("-", "")
-    #     output_file = os.path.join(
-    #         self.current_simulation_date, f"Efficiency_Sensor_Capella_{last_date}.nc"
-    #     )
-    #     capella_dataset.to_netcdf(output_file)
-    #     logger.info("Generating Capella efficiency dataset successfully completed.")
-    #     return output_file, capella_dataset
 
     def combine_and_multiply_datasets(
         self, ds, eta5_file, eta0_file, eta2_file, weights, output_file
@@ -500,107 +507,47 @@ class Environment(Observer):
         logger.info("Specifying constellation successfully completed.")
         time_step = timedelta(seconds=5)
         sim_times = pd.date_range(start, end + duration, freq=time_step)
-        logger.info("Computing orbit tracks.")
-        orbit_tracks = pd.concat(
-            [
-                collect_orbit_track(
-                    satellite=satellite,
-                    times=sim_times,
-                    mask=self.polygons[0],
-                )
-                for satellite in constellation.generate_members()
-            ]
-        )
-        logger.info("Computing orbit tracks successfully completed.")
+        # logger.info("Computing orbit tracks.")
+        # orbit_tracks = pd.concat(
+        #     [
+        #         collect_orbit_track(
+        #             satellite=satellite,
+        #             times=sim_times,
+        #             mask=self.polygons[0],
+        #         )
+        #         for satellite in constellation.generate_members()
+        #     ]
+        # )
+        # logger.info("Computing orbit tracks successfully completed.")
         logger.info("Computing ground tracks (P1).")
-        # logger.info(f"Execution ground track time start{self.app.simulator._time}")
+        start_time = time.time()
         ground_tracks = pd.concat(
-            [
-                compute_ground_track(
+            Parallel(n_jobs=-1 if self.parallel_compute else 1)(
+                delayed(compute_ground_track)(
                     satellite=satellite,
                     times=sim_times,
                     mask=self.polygons[0],
                     crs="spice",
                 )
                 for satellite in constellation.generate_members()
-            ],
+            ),
             ignore_index=True,
         )
-        logger.info("Computing ground tracks (P1) successfully completed.")
-        # logger.info(f"Execution ground track time end{self.app.simulator._time}")
-        # amsr2 = Instrument(
-        #     name="AMSR2",
-        #     field_of_regard=utils.swath_width_to_field_of_regard(700e3, 1450e3),
-        # )
-        # gcom_w = Satellite(
-        #     name="GCOM-W",
-        #     orbit=TwoLineElements(
-        #         tle=[
-        #             "1 38337U 12025A   24117.59466874  .00002074  00000+0  46994-3 0  9995",
-        #             "2 38337  98.2005  58.4072 0001734  89.8752  83.0178 14.57143724635212",
-        #         ]
-        #     ),
-        #     instruments=[amsr2],
-        # )
-
-        # satellite_instrument_pairs = [(gcom_w, amsr2)]
-
-        # # Function to compute ground tracks
-        # def get_ground_tracks(
-        #     start, frame_duration, frame, satellite_instrument_pairs, mask  # clip_geo,
-        # ):
-        #     """
-        #     Get ground tracks.
-
-        #     Args:
-        #         start (datetime): The start date.
-        #         frame_duration (timedelta): The frame duration.
-        #         frame (int): The frame number.
-        #         satellite_instrument_pairs (list): List of satellite-instrument pairs.
-        #         mask (GeoSeries): The mask.
-
-        #     Returns:
-        #         pd.DataFrame: The ground tracks.
-        #     """
-        #     return pd.concat(
-        #         [
-        #             compute_ground_track(
-        #                 gcom_w,  # satellite
-        #                 pd.date_range(
-        #                     start + frame * frame_duration,
-        #                     start + (frame + 1) * frame_duration,
-        #                     freq=timedelta(seconds=10),
-        #                 ),
-        #                 crs="EPSG:3857",
-        #                 mask=mask,
-        #             )
-        #             for satellite_instrument_pair in satellite_instrument_pairs
-        #         ]
-        #     ).clip(
-        #         mask
-        #     )  # clip_geo)
-
-        # # Compute ground tracks using vectorized operations
-        # logger.info("Computing ground tracks (P2).")
-        # gcom_tracks = pd.concat(
-        #     [
-        #         get_ground_tracks(
-        #             start,
-        #             frame_duration,
-        #             frame,
-        #             satellite_instrument_pairs,
-        #             mask=self.polygons[0],
-        #         )
-        #         for frame in range(num_frames)
-        #     ],
-        #     ignore_index=True,
-        # )
+        end_time = time.time()
+        # logger.info("Computing ground tracks (P1) successfully completed.")
+        logger.info(
+            f"Computing ground tracks (P1) successfully completed in {end_time - start_time:.2f} seconds."
+        )
         domain = box(-114, 37, -90, 50)
         amsr2 = PointedInstrument(
             name="AMSR2",
-            cross_track_field_of_view=utils.swath_width_to_field_of_regard(700e3, 1450e3),
-            along_track_field_of_view=utils.swath_width_to_field_of_regard(700e3, 10e3 * 10), # 10x to allow longer time step
-            req_target_sunlit=False, # restrict to descending (nighttime) overpasses
+            cross_track_field_of_view=utils.swath_width_to_field_of_regard(
+                700e3, 1450e3
+            ),
+            along_track_field_of_view=utils.swath_width_to_field_of_regard(
+                700e3, 10e3 * 10
+            ),  # 10x to allow longer time step
+            req_target_sunlit=False,  # restrict to descending (nighttime) overpasses
             is_rectangular=True,
         )
 
@@ -609,63 +556,37 @@ class Environment(Observer):
         gcom_w = Satellite(
             name="GCOM-W",
             orbit=TwoLineElements(
-                tle = [
+                tle=[
                     "1 38337U 12025A   25001.47767252  .00002770  00000+0  62493-3 0  9994",
-                    "2 38337  98.2252 304.6936 0001249  63.3270  72.0663 14.57087617671602"
+                    "2 38337  98.2252 304.6936 0001249  63.3270  72.0663 14.57087617671602",
                 ]
             ),
             instruments=[amsr2],
         )
-        # parallel-process the ground track calculation for all frames
+        logger.info("Computing ground tracks (P2).")
+        start_time = time.time()
         gcom_tracks = pd.concat(
-            [
-                compute_ground_track(
+            Parallel(n_jobs=-1 if self.parallel_compute else 1)(
+                delayed(compute_ground_track)(
                     gcom_w,
                     pd.date_range(
-                        start + frame*frame_duration, 
-                        start + (frame + 1)*frame_duration,
+                        start + frame * frame_duration,
+                        start + (frame + 1) * frame_duration,
                         freq=time_step,
-                        inclusive="left"
+                        inclusive="left",
                     ),
                     crs="spice",
                     mask=domain,
-                ) 
+                )
                 for frame in range(num_frames)
-            ],
-            ignore_index=True
+            ),
+            ignore_index=True,
         ).sort_values(by="time")
-
-        logger.info("Computing ground tracks (P2) successfully completed.")
+        end_time = time.time()
+        logger.info(
+            f"Computing ground tracks (P2) successfully completed in {end_time - start_time:.2f} seconds."
+        )
         gcom_tracks["time"] = pd.to_datetime(gcom_tracks["time"]).dt.tz_localize(None)
-        
-        # logger.info(f"Available GCOM track times: {gcom_tracks['time'].unique()}")
-        # logger.info(f"Looking for end time: {end}")
-        
-        # gcom_tracks = gcom_tracks[gcom_tracks["time"] == end]
-        # logger.info(gcom_tracks)
-        
-        # if gcom_tracks.empty:
-        #     logger.warning("No GCOM tracks found for the specified end time.")
-        #     return None, None  
-        # logger.info(type(gcom_tracks['time'].iloc[0]))
-        # logger.info(type(end))
-        
-        # if gcom_tracks.empty:
-        #     logger.warning("No GCOM tracks found for the specified end time.")
-        #     return None, None  
-
-        # logger.info(f"Available GCOM track times: {gcom_tracks['time'].unique()}")
-        # logger.info(f"Looking for end time: {end}")
-
-        # file_date = gcom_tracks['time'].iloc[0]  
-        # file_name = f"gcom_tracks_{file_date}.geojson"
-
-        # # Save as GeoJSON
-        # gcom_tracks.to_file(file_name, driver="GeoJSON")
-
-        # logger.info(f"Saved GeoJSON file: {file_name}")
-        
-        
         gcom_eta = gcom_ds["combined_eta"].isel(time=1).rio.write_crs("EPSG:4326")
         snowglobe_eta = (
             snowglobe_ds["combined_eta"].isel(time=1).rio.write_crs("EPSG:4326")
@@ -922,17 +843,17 @@ class Environment(Observer):
     #     """
     #     if not os.path.exists(filename):
     #         logger.info(f"Downloading file from S3: {filename}")
-    #         config = TransferConfig(use_threads=False)
+    #         config = TransferConfig(use_threads=True if self.parallel_compute else False)
     #         s3.download_file(Bucket=bucket, Key=key, Filename=filename, Config=config)
     #     else:
     #         logger.info(f"File already exists: {filename}")
     #     dataset = xr.open_dataset(filename, engine="h5netcdf")
     #     return dataset
-    
+
     ###########
-    #New download approach
+    # New download approach
     ###########
-    
+
     # def find_most_recent_file(self, s3, bucket_name, directories, file_name_pattern):
     #     paginator = s3.get_paginator("list_objects_v2")
 
@@ -969,7 +890,7 @@ class Environment(Observer):
 
     #     return None
 
-    def find_most_recent_file(self, s3, bucket_name, directories, file_name_pattern):
+    def find_most_recent_file(self, bucket_name, directories, file_name_pattern):
         """
         Search for the most recent matching file across provided S3 directories,
         prioritizing assimilation subdirectories starting with 'out_'.
@@ -983,15 +904,18 @@ class Environment(Observer):
         Returns:
             str or None: Key of the most recent matching file if found, else None
         """
-        import os
-        paginator = s3.get_paginator("list_objects_v2")
+        paginator = self.s3.get_paginator("list_objects_v2")
 
         # Priority 1: assimilation (out_ subdirs)
         for directory in directories:
             logger.debug(f"Searching in directory: {directory}")
             if "assimilation" in directory:
-                logger.info(f"Looking for subdirectories in assimilation path: {directory}")
-                pages = paginator.paginate(Bucket=bucket_name, Prefix=directory, Delimiter='/')
+                logger.info(
+                    f"Looking for subdirectories in assimilation path: {directory}"
+                )
+                pages = paginator.paginate(
+                    Bucket=bucket_name, Prefix=directory, Delimiter="/"
+                )
 
                 # subdirs = [
                 #     prefix["Prefix"]
@@ -999,27 +923,32 @@ class Environment(Observer):
                 #     for prefix in page.get("CommonPrefixes", [])
                 #     if os.path.basename(prefix["Prefix"].rstrip("/")).startswith("out_")
                 # ]
-                
-                #Not considering out_ prefix for subdirectories
+
+                # Not considering out_ prefix for subdirectories
                 subdirs = [
                     prefix["Prefix"]
                     for page in pages
                     for prefix in page.get("CommonPrefixes", [])
                 ]
 
-
                 logger.info(f"Assimilation subdirs found: {subdirs}")
 
                 if subdirs:
                     most_recent_subdir = max(subdirs)
-                    logger.info(f"Most recent assimilation subdir: {most_recent_subdir}")
+                    logger.info(
+                        f"Most recent assimilation subdir: {most_recent_subdir}"
+                    )
 
-                    pages = paginator.paginate(Bucket=bucket_name, Prefix=most_recent_subdir)
+                    pages = paginator.paginate(
+                        Bucket=bucket_name, Prefix=most_recent_subdir
+                    )
                     for page in pages:
                         for obj in page.get("Contents", []):
                             logger.debug(f"Found object in assimilation: {obj['Key']}")
                             if obj["Key"].endswith(file_name_pattern):
-                                logger.info(f"Found matching file in assimilation: {obj['Key']}")
+                                logger.info(
+                                    f"Found matching file in assimilation: {obj['Key']}"
+                                )
                                 return obj["Key"]
 
         logger.warning("No matching file found in assimilation.")
@@ -1033,13 +962,22 @@ class Environment(Observer):
                     for obj in page.get("Contents", []):
                         logger.debug(f"Found object in open_loop: {obj['Key']}")
                         if obj["Key"].endswith(file_name_pattern):
-                            logger.info(f"Found matching file in open_loop: {obj['Key']}")
+                            logger.info(
+                                f"Found matching file in open_loop: {obj['Key']}"
+                            )
                             return obj["Key"]
 
         logger.warning(f"No matching file found for pattern: {file_name_pattern}")
         return None
 
-    def download_file(self, s3, bucket_name, file_name_pattern, local_filename=None, check_interval_sec=60, max_attempts=5):
+    def download_file(
+        self,
+        bucket_name,
+        file_name_pattern,
+        local_filename=None,
+        check_interval_sec=10,
+        max_attempts=2,
+    ):
         """
         Download a file by first checking assimilation (up to max_attempts), then falling back to open_loop.
 
@@ -1049,7 +987,7 @@ class Environment(Observer):
             local_filename (str): Local name to save the file as.
             check_interval_sec (int): Time between retries.
             max_attempts (int): Max attempts for assimilation.
-        
+
         Returns:
             xarray.Dataset: The loaded dataset.
         """
@@ -1059,83 +997,47 @@ class Environment(Observer):
 
         file_key = None
         for attempt in range(max_attempts):
-            logger.info(f"[Assimilation] Attempt {attempt + 1} to find file {file_name_pattern}")
-            file_key = self.find_most_recent_file(s3, bucket_name, assimilation_dirs, file_name_pattern)
+            logger.info(
+                f"[Assimilation] Attempt {attempt + 1} to find file {file_name_pattern}"
+            )
+            file_key = self.find_most_recent_file(
+                bucket_name, assimilation_dirs, file_name_pattern
+            )
             if file_key:
                 break
             if attempt < max_attempts - 1:
-                logger.warning(f"File not found in assimilation. Retrying in {check_interval_sec / 60:.0f} minutes...")
+                logger.warning(
+                    f"File not found in assimilation. Retrying in {check_interval_sec / 60:.0f} minutes..."
+                )
                 time.sleep(check_interval_sec)
 
         # Fallback to open loop if not found
         if not file_key:
             logger.warning("Assimilation file not found. Trying open_loop.")
-            file_key = self.find_most_recent_file(s3, bucket_name, open_loop_dirs, file_name_pattern)
+            file_key = self.find_most_recent_file(
+                bucket_name, open_loop_dirs, file_name_pattern
+            )
 
         if not file_key:
-            raise FileNotFoundError(f"File {file_name_pattern} not found in assimilation or open_loop after {max_attempts} attempts.")
+            raise FileNotFoundError(
+                f"File {file_name_pattern} not found in assimilation or open_loop after {max_attempts} attempts."
+            )
 
         if local_filename is None:
             local_filename = os.path.basename(file_key)
 
         if not os.path.exists(local_filename):
             logger.info(f"Downloading {file_key} to {local_filename}...")
-            config = TransferConfig(use_threads=False)
-            s3.download_file(Bucket=bucket_name, Key=file_key, Filename=local_filename, Config=config)
+            config = TransferConfig(use_threads=True if self.parallel_compute else False)
+            self.s3.download_file(
+                Bucket=bucket_name, Key=file_key, Filename=local_filename, Config=config
+            )
         else:
             logger.info(f"File already exists locally: {local_filename}")
 
         return xr.open_dataset(local_filename, engine="h5netcdf")
 
-
-    # def download_file(self, s3, bucket_name, file_name_pattern, local_filename=None, check_interval_sec=3600, max_attempts=5):
-    #     """
-    #     Download a file by searching in multiple directories with retries.
-
-    #     Args:
-    #         bucket_name (str): The S3 bucket name.
-    #         file_name_pattern (str): File name pattern.
-    #         local_filename (str): Local name to save the file as.
-    #         check_interval_sec (int): Time between retries.
-    #         max_attempts (int): Maximum number of attempts.
-
-    #     Returns:
-    #         xarray.Dataset: The loaded dataset.
-    #     """
-    #     directories = ["inputs/LIS/assimilation/", "inputs/LIS/open_loop/"]
-    #     s3 = boto3.client("s3")
-    #     file_key = None
-
-    #     for attempt in range(max_attempts):
-    #         logger.info(f"Attempt {attempt + 1} to find file {file_name_pattern}")
-    #         file_key = self.find_most_recent_file(s3, bucket_name, directories, file_name_pattern)
-
-    #         if file_key:
-    #             break
-    #         else:
-    #             if attempt < max_attempts - 1:
-    #                 logger.warning(f"File not found. Waiting {check_interval_sec / 60:.0f} minutes before retrying...")
-    #                 time.sleep(check_interval_sec)
-
-    #     if not file_key:
-    #         raise FileNotFoundError(f"File {file_name_pattern} not found in any of the directories after {max_attempts} attempts.")
-
-    #     # Define local filename if not given
-    #     if local_filename is None:
-    #         local_filename = os.path.basename(file_key)
-
-    #     if not os.path.exists(local_filename):
-    #         logger.info(f"Downloading {file_key} to {local_filename}...")
-    #         config = TransferConfig(use_threads=False)
-    #         s3.download_file(Bucket=bucket_name, Key=file_key, Filename=local_filename, Config=config)
-    #     else:
-    #         logger.info(f"File already exists locally: {local_filename}")
-
-    #     return xr.open_dataset(local_filename, engine="h5netcdf")
-
-    
-
-    def download_geojson(self, s3, bucket, key, filename):
+    def download_geojson(self, key, filename, bucket="snow-observing-systems"):
         """
         Download a GeoJSON file from an S3 bucket
 
@@ -1150,28 +1052,30 @@ class Environment(Observer):
         """
         if not os.path.isfile(filename):
             logger.info(f"Downloading file from S3: {filename}")
-            config = TransferConfig(use_threads=False)
-            s3.download_file(Bucket=bucket, Key=key, Filename=filename, Config=config)
+            config = TransferConfig(use_threads=True if self.parallel_compute else False)
+            self.s3.download_file(
+                Bucket=bucket, Key=key, Filename=filename, Config=config
+            )
         else:
             logger.info(f"File already exists: {filename}")
 
         dataset = gpd.read_file(filename)
         return dataset
-    
-    # def upload_file(self, s3, bucket, key, filename):
-    #     """
-    #     Upload a file to an S3 bucket
 
-    #     Args:
-    #         s3: S3 client
-    #         bucket: S3 bucket name
-    #         key: S3 object key
-    #         filename: Filename to upload
-    #     """
-    #     logger.info(f"Uploading file to S3.")
-    #     config = TransferConfig(use_threads=False)
-    #     s3.upload_file(Filename=filename, Bucket=bucket, Key=key, Config=config)
-    #     logger.info(f"Uploading file to S3 successfully completed.")
+    def upload_file(self, key, filename, bucket="snow-observing-systems"):
+        """
+        Upload a file to an S3 bucket
+
+        Args:
+            s3: S3 client
+            bucket: S3 bucket name
+            key: S3 object key
+            filename: Filename to upload
+        """
+        logger.info(f"Uploading file to S3.")
+        config = TransferConfig(use_threads=True if self.parallel_compute else False)
+        self.s3.upload_file(Filename=filename, Bucket=bucket, Key=key, Config=config)
+        logger.info(f"Uploading file to S3 successfully completed.")
 
     def detect_level_change(self, new_value, old_value, level):
         """
@@ -1259,10 +1163,11 @@ class Environment(Observer):
 
                 # Establish connection to S3
                 s3 = AWSUtils().client
+                self.s3 = s3
 
                 mo_basin = self.download_geojson(
-                    s3=s3,
-                    bucket="snow-observing-systems",
+                    # s3=s3,
+                    # bucket="snow-observing-systems",
                     key="inputs/vector/WBDHU2_4326.geojson",
                     # filename="WBDHU2_4326.geojson",
                     filename="inputs/vector/WBDHU2_4326.geojson",
@@ -1293,12 +1198,11 @@ class Environment(Observer):
                 #         f"LIS_HIST_{new_value_reformat}0000.d01.nc",
                 #     ),
                 # )
-                
+
                 ###################
                 # New Combined dataset#
                 ###################
                 dataset1 = self.download_file(
-                    s3=s3,
                     bucket_name="snow-observing-systems",
                     file_name_pattern=f"LIS_HIST_{old_value_reformat}0000.d01.nc",
                     local_filename=os.path.join(
@@ -1308,7 +1212,6 @@ class Environment(Observer):
                 )
 
                 dataset2 = self.download_file(
-                    s3=s3,
                     bucket_name="snow-observing-systems",
                     file_name_pattern=f"LIS_HIST_{new_value_reformat}0000.d01.nc",
                     local_filename=os.path.join(
@@ -1321,11 +1224,8 @@ class Environment(Observer):
                     dataset1, dataset2, mo_basin
                 )
                 # Upload dataset to S3
-                s3.upload_file(
-                    Bucket="snow-observing-systems",
-                    Key=combined_output_file,
-                    Filename=combined_output_file,
-                    Config=TransferConfig(use_threads=False),
+                self.upload_file(
+                    key=combined_output_file, filename=combined_output_file
                 )
                 # Select the SWE_tavg variable for a specific time step (e.g., first time step)
                 swe_data = combined_dataset["SWE_tavg"].isel(time=0)  # SEND AS MESSAGE
@@ -1363,12 +1263,7 @@ class Environment(Observer):
                     ds=combined_dataset
                 )
                 # Upload dataset to S3
-                s3.upload_file(
-                    Bucket="snow-observing-systems",
-                    Key=swe_output_file,
-                    Filename=swe_output_file,
-                    Config=TransferConfig(use_threads=False),
-                )
+                self.upload_file(key=swe_output_file, filename=swe_output_file)
                 # Select the eta5 variable for a specific time step (e.g., first time step)
                 eta5_data = eta5_file["eta5"].isel(time=1)
                 eta5_layer_encoded, _, _, _, _ = self.encode(
@@ -1402,11 +1297,8 @@ class Environment(Observer):
                     ds=combined_dataset
                 )
                 # Upload dataset to S3
-                s3.upload_file(
-                    Bucket="snow-observing-systems",
-                    Key=surfacetemp_output_file,
-                    Filename=surfacetemp_output_file,
-                    Config=TransferConfig(use_threads=False),
+                self.upload_file(
+                    key=surfacetemp_output_file, filename=surfacetemp_output_file
                 )
                 # Select the eta0 variable for a specific time step (e.g., first time step)
                 eta0_data = eta0_file["eta0"].isel(time=1)
@@ -1442,11 +1334,8 @@ class Environment(Observer):
                     ds=combined_dataset
                 )
                 # Upload dataset to S3
-                s3.upload_file(
-                    Bucket="snow-observing-systems",
-                    Key=sensor_gcom_output_file,
-                    Filename=sensor_gcom_output_file,
-                    Config=TransferConfig(use_threads=False),
+                self.upload_file(
+                    key=sensor_gcom_output_file, filename=sensor_gcom_output_file
                 )
                 # Select the eta2 variable for a specific time step (e.g., first time step)
                 eta2_data_GCOM = eta2_file_GCOM["eta2"].isel(time=1)
@@ -1477,17 +1366,14 @@ class Environment(Observer):
                 ######################
                 # ETA2 Capella dataset#
                 ######################
-                
+
                 # Generate the sensor capella dataset
                 sensor_capella_output_file, eta2_file_Capella = (
                     self.generate_sensor_capella(ds=combined_dataset)
                 )
                 # Upload dataset to S3
-                s3.upload_file(
-                    Bucket="snow-observing-systems",
-                    Key=sensor_capella_output_file,
-                    Filename=sensor_capella_output_file,
-                    Config=TransferConfig(use_threads=False),
+                self.upload_file(
+                    key=sensor_capella_output_file, filename=sensor_capella_output_file
                 )
                 # Select the eta2 variable for a specific time step (e.g., first time step)
                 eta2_data_Capella = eta2_file_Capella["eta2"].isel(time=1)
@@ -1532,11 +1418,9 @@ class Environment(Observer):
                     )
                 )
                 # Upload dataset to S3
-                s3.upload_file(
-                    Bucket="snow-observing-systems",
-                    Key=gcom_combine_multiply_output_file,
-                    Filename=gcom_combine_multiply_output_file,
-                    Config=TransferConfig(use_threads=False),
+                self.upload_file(
+                    key=gcom_combine_multiply_output_file,
+                    filename=gcom_combine_multiply_output_file,
                 )
                 # Select the combined_eta variable for a specific time step (e.g., first time step)
                 gcom_eta = gcom_dataset["combined_eta"].isel(time=1)
@@ -1580,11 +1464,9 @@ class Environment(Observer):
                     )
                 )
                 # Upload dataset to S3
-                s3.upload_file(
-                    Bucket="snow-observing-systems",
-                    Key=capella_combine_multiply_output_file,
-                    Filename=capella_combine_multiply_output_file,
-                    Config=TransferConfig(use_threads=False),
+                self.upload_file(
+                    key=capella_combine_multiply_output_file,
+                    filename=capella_combine_multiply_output_file,
                 )
                 capella_eta_layer_encoded, _, _, _, _ = self.encode(
                     dataset=capella_dataset,
@@ -1621,11 +1503,8 @@ class Environment(Observer):
                     end=new_value,
                 )
                 # Upload dataset to S3
-                s3.upload_file(
-                    Bucket="snow-observing-systems",
-                    Key=final_eta_output_file,
-                    Filename=final_eta_output_file,
-                    Config=TransferConfig(use_threads=False),
+                self.upload_file(
+                    key=final_eta_output_file, filename=final_eta_output_file
                 )
                 # Clip Final Eta GDF and ground tracks to the Missouri Basin
                 final_eta_gdf_clipped = gpd.clip(final_eta_gdf, mo_basin)
@@ -1652,12 +1531,7 @@ class Environment(Observer):
                     final_eta_gdf=final_eta_gdf
                 )
                 # Upload dataset to S3
-                s3.upload_file(
-                    Bucket="snow-observing-systems",
-                    Key=output_geojson,
-                    Filename=output_geojson,
-                    Config=TransferConfig(use_threads=False),
-                )
+                self.upload_file(key=output_geojson, filename=output_geojson)
                 selected_cells_gdf["time"] = selected_cells_gdf["time"].astype(str)
                 selected_json_data = selected_cells_gdf.to_json()
                 self.app.send_message(
@@ -1732,6 +1606,9 @@ def main():
         config,
         True,
     )
+
+    while True:
+        pass
 
 
 if __name__ == "__main__":
