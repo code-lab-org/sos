@@ -19,7 +19,7 @@ services:
     command: python3 src/planner/main.py
     env_file: .env
     environment:
-      - DOWNLOAD_CHECK_INTERVAL=60
+      - DOWNLOAD_CHECK_INTERVAL=10
       - DOWNLOAD_MAX_ATTEMPTS=5
     volumes:
       - ./sos.yaml:/opt/sos.yaml
