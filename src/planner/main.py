@@ -975,8 +975,8 @@ class Environment(Observer):
         bucket_name,
         file_name_pattern,
         local_filename=None,
-        check_interval_sec=10,
-        max_attempts=2,
+        check_interval_sec=None,
+        max_attempts=None,
     ):
         """
         Download a file by first checking assimilation (up to max_attempts), then falling back to open_loop.
@@ -991,6 +991,17 @@ class Environment(Observer):
         Returns:
             xarray.Dataset: The loaded dataset.
         """
+        # Get values from environment variables if not provided
+        if check_interval_sec is None:
+            check_interval_sec = int(os.environ.get("DOWNLOAD_CHECK_INTERVAL", 10))
+
+        if max_attempts is None:
+            max_attempts = int(os.environ.get("DOWNLOAD_MAX_ATTEMPTS", 2))
+
+        logger.info(
+            f"Using check_interval_sec={check_interval_sec}, max_attempts={max_attempts} for downloads"
+        )
+
         # Try assimilation first (wait up to max_attempts)
         assimilation_dirs = ["inputs/LIS/assimilation/"]
         open_loop_dirs = ["inputs/LIS/open_loop/"]
