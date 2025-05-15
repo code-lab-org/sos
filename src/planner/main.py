@@ -1028,7 +1028,9 @@ class Environment(Observer):
 
         if not os.path.exists(local_filename):
             logger.info(f"Downloading {file_key} to {local_filename}...")
-            config = TransferConfig(use_threads=True if self.parallel_compute else False)
+            config = TransferConfig(
+                use_threads=True if self.parallel_compute else False
+            )
             self.s3.download_file(
                 Bucket=bucket_name, Key=file_key, Filename=local_filename, Config=config
             )
@@ -1052,7 +1054,9 @@ class Environment(Observer):
         """
         if not os.path.isfile(filename):
             logger.info(f"Downloading file from S3: {filename}")
-            config = TransferConfig(use_threads=True if self.parallel_compute else False)
+            config = TransferConfig(
+                use_threads=True if self.parallel_compute else False
+            )
             self.s3.download_file(
                 Bucket=bucket, Key=key, Filename=filename, Config=config
             )
