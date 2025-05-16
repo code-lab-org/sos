@@ -566,7 +566,7 @@ class Environment(Observer):
                 collect_orbit_track(
                     satellite=satellite,
                     times=sim_times,
-                    mask=self.polygons[0],
+                    # mask=self.polygons[0],
                 )
                 for satellite in constellation.generate_members()
             ]
@@ -579,7 +579,7 @@ class Environment(Observer):
                 compute_ground_track(
                     satellite=satellite,
                     times=sim_times,
-                    mask=self.polygons[0],
+                    # mask=self.polygons[0],
                     crs="spice",
                 )
                 for satellite in constellation.generate_members()

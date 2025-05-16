@@ -22,7 +22,8 @@ from .function import (
     # filter_requests,
     read_master_file,
     process_master_file,
-    convert_to_vector_layer_format
+    convert_to_vector_layer_format,
+    filter_and_sort_observations
 )
 
 # from .schemas import Request, Observation
@@ -53,13 +54,14 @@ class Collect_Observations(Entity):
         # declare state variables
         self.constellation = None
         self.requests = []
+        self.incomplete_requests = []
         self.next_requests = None
+        self.possible_observations = None
         self.observation_collected = None
         self.new_request_flag = False
 
     def initialize(self, init_time: datetime):
         super().initialize(init_time)
-
         # initialize state variables
         self.constellation = {sat.name: sat for sat in self.init_constellation}
         self.requests = self.init_requests.copy()
@@ -74,15 +76,17 @@ class Collect_Observations(Entity):
         super().tick(time_step)
         # logger.info("entering tick time",self._time,len(self.requests),"next time",self._next_time)
         # logger.info(f"entering tick time {self._time}, {len(self.requests)}, next time {self._next_time}")
-
         # Set all the tick operations here
 
-        self.observation_collected = compute_opportunity(
-           list(self.constellation.values()), self._time, time_step, self.requests
-        )
+        if self.possible_observations is not None:
+            self.observation_collected = filter_and_sort_observations(
+                self.possible_observations, self._time, self.incomplete_requests)
+        # self.observation_collected = compute_opportunity(
+        #    list(self.constellation.values()), self._time, time_step, self.requests
+        # )
         
         if self.observation_collected is not None:
-            if np.random.rand() <= 0.75:          
+            if np.random.rand() <= 1:   
 
                 # get the satellite that collected the observation
                 satellite = self.constellation[self.observation_collected["satellite"]]
@@ -105,6 +109,10 @@ class Collect_Observations(Entity):
                         row["simulator_satellite"] = self.observation_collected["satellite"]
                         row["simulator_polygon_groundtrack"] = self.observation_collected["ground_track"]
 
+                        # Remove from incomplete_requests
+                        if row["point"].id in self.incomplete_requests:
+                            self.incomplete_requests.remove(row["point"].id)
+
                     # logger.info(f"Type of polygon groundtrack{type(row['simulator_polygon_groundtrack'])}")
 
                 # Visualization
@@ -124,20 +132,21 @@ class Collect_Observations(Entity):
         # logger.info("entering tock time")
         super().tock()
         # logger.info("entering tock time")
-        if self.observation_collected is not None:            
-            self.requests = self.next_requests  
-        # else: logger.info("No observation collected")          
-
-        if isinstance(self.app.simulator._time, str):
-            current_date = self.app.simulator._time.replace("-", "")  # Already a string
-        else:
-            current_date = self.app.simulator._time.date().strftime("%Y%m%d")        
+        if self.observation_collected is not None:          
+            self.requests = self.next_requests
 
         if self.new_request_flag:
             logger.info("requests received")
             # self.requests = read_master_file(current_date)
             # self.requests = read_master_file()
             self.requests = process_master_file(self.requests)
+            self.incomplete_requests = [
+            r["point"].id
+            for r in self.requests
+            if r.get("simulator_simulation_status") is None or pd.isna(r.get("simulator_simulation_status"))
+            ]
+            self.possible_observations = compute_opportunity(
+            list(self.constellation.values()), self._time, timedelta(days=1), self.requests)      
             self.new_request_flag = False
 
         # This code should execute only when message is received from the appender    
@@ -146,4 +155,4 @@ class Collect_Observations(Entity):
         # handle message received
         # self.app.add_message_callback("appender", "master", self.on_appender)
         logger.info(f"Message succesfully received at {self.app.simulator._time}")
-        self.on_appender()  
+        self.on_appender()

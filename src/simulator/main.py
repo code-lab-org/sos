@@ -51,11 +51,6 @@ def log_observation(observation):
         observation["satellite"],
     )
 
-
-# configure scenario
-# start = datetime(2025, 1, 16, tzinfo=timezone.utc)  # nost simulation start
-# duration = timedelta(hours=1)  # nost simulation duration
-# time_step = timedelta(minutes=1)  # nost simulation time step
 time_step_callback = timedelta(days=1)  # time step for callback
 # time_scale_factor = 60  # 5 seconds wallclock for 5 minutes scenario
 # view_time_step = timedelta(seconds=2)  # time step for ground track

@@ -85,10 +85,7 @@ def compute_opportunity(
     # logger.info(f"Entered compute_opportunity,length of request is {len(filtered_requests)}, type of filtered request is,{type(filtered_requests)}")
     # logger.info(f"time :{type(time)}, duration: {type(duration)},combined: {type(time + duration)},tz info of time{time.tzinfo},tz info of combined{(time + duration).tzinfo}")
     time = time.replace(tzinfo=timezone.utc)
-    end = (time + duration).replace(tzinfo=timezone.utc)
-
-    # end = (time + duration)
-
+    end = (time + duration).replace(tzinfo=timezone.utc)   # end = (time + duration)
     filtered_requests = [
         request
         for request in requests
@@ -122,16 +119,38 @@ def compute_opportunity(
         #         for point in filtered_requests
         #     )
         if observation_results is not None and not observation_results.empty:
-            logger.info(f"Observation opportunity exist{time + duration}")
+            # logger.info(f"Observation opportunity exist{time + duration}")
+            id_to_eta = {
+            request["point"].id: request["planner_final_eta"]
+            for request in filtered_requests
+            }
             # observations = pd.concat(observation_results, ignore_index=True).sort_values(by="epoch", ascending=True)
             return observation_results.iloc[0]
         return None
     else:
         return None
+    
+
+# Filter and format the observation results
+
+def filter_and_sort_observations(df, sim_time,incomplete_ids):
+    # Filter for observations with incomplete simulation status
+    df = df[df["point_id"].isin(incomplete_ids)]
+    # Ensure sim_time is timezone-aware and same tz as df
+    if df['epoch'].dt.tz is not None and sim_time.tzinfo is None:
+        sim_time = sim_time.replace(tzinfo=df['epoch'].dt.tz)
+
+    # Step 1: Filter for observations within 1 minute of simulation time
+    one_minute_later = sim_time + timedelta(minutes=1)
+    mask = (df["epoch"] >= sim_time) & (df["epoch"] <= one_minute_later)
+    filtered = df[mask]
+
+    # Step 2: Sort by planner_final_eta descending
+    sorted_filtered = filtered.sort_values(by="planner_final_eta", ascending=False)
+    return sorted_filtered.iloc[0] if not sorted_filtered.empty else None
 
 
 # Computing Groundtrack and formatting into a dataframe
-
 
 def compute_ground_track_and_format(
     sat_object: Satellite, observation_time: datetime
@@ -146,6 +165,9 @@ def compute_ground_track_and_format(
     # Formatting the dataframe
     # results["geometry"].iloc[0]
     return results["geometry"].iloc[0]
+
+
+
 
 
 # CALLBACK FUNCTIONS
@@ -173,8 +195,9 @@ def read_master_file():
                 "simulator_simulation_status": r["simulator_simulation_status"],
                 "simulator_completion_date": r["simulator_completion_date"],
                 "simulator_satellite": r["simulator_satellite"],
+                "planner_final_eta": r["planner_final_eta"],
                 "simulator_polygon_groundtrack": r["simulator_polygon_groundtrack"],
-                "planner_geometry": r["geometry"],
+                "planner_geometry": r["geometry"]                
             },
             axis=1,
         ).tolist()
@@ -206,7 +229,7 @@ def write_back_to_appender(source, time):
         f"Checking if appender function is reading the source object{source},{len(source.requests)},{type(source.requests)},{type(time)},{time},{time.date()}"
     )
     logger.info(f"Simulator time on scenario callback{source.app.simulator._time}")
-    start_time = t.time()
+    # start_time = t.time()
     appender_data = process_master_file(source.requests)
     selected_json_data = pd.DataFrame(appender_data)
     # logger.info(f"Colums in selected json data{selected_json_data.columns}")
@@ -245,9 +268,9 @@ def write_back_to_appender(source, time):
         Filename=output_file,
         Config=TransferConfig(use_threads=False),
     )
-    end_time = t.time()
+    # end_time = t.time()
     # Calculate the total time taken
-    computation_time = end_time - start_time
+    # computation_time = end_time - start_time
     logger.info(f"Write back to appender time: {computation_time:.2f} seconds")
 
 
