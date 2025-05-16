@@ -11,6 +11,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import xarray as xr
+from rasterio.enums import Resampling
 from boto3.s3.transfer import TransferConfig
 from constellation_config_files.schemas import SWEChangeLayer, VectorLayer
 from nost_tools.application_utils import ShutDownObserver
@@ -140,7 +141,7 @@ class Environment(Observer):
         time_coords_ds2 = np.array([dataset2.time[0].values])
         lat_coords = np.linspace(37.024602, 49.739086, 29)
         lon_coords = np.linspace(-113.938141, -90.114221, 40)
-        variables_to_interpolate = ["SWE_tavg", "AvgSurfT_tavg"]
+        variables_to_interpolate = ["SWE_tavg", "AvgSurfT_tavg","Snowcover_tavg"]
         new_ds1 = self.interpolate_dataset(
             dataset1, variables_to_interpolate, lat_coords, lon_coords, time_coords_ds1
         )
@@ -367,6 +368,65 @@ class Environment(Observer):
         logger.info("Generating Capella efficiency dataset successfully completed.")
 
         return output_file, sensor_capella_dataset
+    
+    # MODIFIED BY DIVYA
+
+    def generate_snowcover(self, ds):   
+        """
+        Generate the snow cover dataset.
+
+        Args:
+            ds (xarray.Dataset): The dataset containing the snow cover values
+
+        Returns:
+            output_file (str): The output file name
+            snowcover_dataset (xarray.Dataset): The new dataset
+        """
+        logger.info("Generating snow cover dataset.")
+        sc = ds["Snowcover_tavg"]
+        snowcover_masked = sc.where(~np.isnan(sc))
+        logger.info("Generating Snow_cover efficiency dataset.")
+        T = 0.3
+        k = 0.5
+
+        eta_sc_values = self.calculate_eta(snowcover_masked, T, k)
+
+        return eta_sc_values
+
+
+    def generate_resolution(self, ds):
+        """
+        Generate the resolution dataset.
+
+        Args:
+            ds (xarray.Dataset): The dataset containing the SWE values
+
+        Returns:
+            output_file (str): The output file name
+            resolution_dataset (xarray.Dataset): The new dataset
+        """
+        logger.info("Generating resolution dataset.")
+        swe = ds["SWE_tavg"]
+        # Resampling to 5km and back
+        factor = 5
+        h = swe.rio.height / factor
+        w = swe.rio.width / factor
+        # Downsample
+        ds_5km = swe.rio.reproject(ds.rio.crs, shape=(int(h), int(w)), resampling=Resampling.bilinear)
+        # Upsample
+        ds_1km = ds_5km.rio.reproject_match(swe,1)
+        # Computing absolute difference
+        ds_abs = abs(ds_1km-swe)
+        # ds_abs_taskable = abs(ds_1km-ds_1km)
+        T = 40
+        k = -0.3
+
+        eta_res_values = self.calculate_eta(ds_abs, T, k)
+        eta_res_values_taskable = xr.ones_like(ds_1km).astype("float32")
+
+        return eta_res_values, eta_res_values_taskable      
+
+       
         
 
     # def generate_sensor_capella(self, ds):

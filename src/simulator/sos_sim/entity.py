@@ -147,10 +147,3 @@ class Collect_Observations(Entity):
         # self.app.add_message_callback("appender", "master", self.on_appender)
         logger.info(f"Message succesfully received at {self.app.simulator._time}")
         self.on_appender()  
-    
-       
-
-    
-
-    
-        
