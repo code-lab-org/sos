@@ -518,7 +518,7 @@ class Environment(Observer):
                 compute_ground_track(
                     satellite=satellite,
                     times=sim_times,
-                    mask=self.polygons[0],
+                    # mask=self.polygons[0],
                     crs="spice",
                 )
                 for satellite in constellation.generate_members()
@@ -627,7 +627,7 @@ class Environment(Observer):
                         inclusive="left"
                     ),
                     crs="spice",
-                    mask=domain,
+                    # mask=domain,
                 ) 
                 for frame in range(num_frames)
             ],

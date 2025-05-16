@@ -80,7 +80,7 @@ def compute_opportunity(
     # filter requests
     start_time = t.time()
     # logger.info(f"{type(const)},{const}")
-    filtered_requests = requests
+    # filtered_requests = requests
     # logger.info(f"Entered compute_opportunity,length of request is {len(filtered_requests)}, type of filtered request is,{type(filtered_requests)}")
     # logger.info(f"time :{type(time)}, duration: {type(duration)},combined: {type(time + duration)},tz info of time{time.tzinfo},tz info of combined{(time + duration).tzinfo}")
     time = time.replace(tzinfo=timezone.utc)
@@ -96,7 +96,7 @@ def compute_opportunity(
     ]
 
     if filtered_requests:
-        column_names = list(filtered_requests[0].keys())
+        # column_names = list(filtered_requests[0].keys())
         # logger.info(f"columns in filtered request{column_names}")
 
         # collect observation
@@ -113,17 +113,15 @@ def compute_opportunity(
         # Calculate the total time taken
         computation_time = end_time - start_time
         logger.info(f"Compute opportunity time: {computation_time:.2f} seconds")
-
-        # observation_results = Parallel(n_jobs=-1)(
-        #         delayed(collect_multi_observations)(
-        #             point, constellation, time, time + duration
-        #         )
-        #         for point in filtered_requests
-        #     )
+       
         if observation_results is not None and not observation_results.empty:
             logger.info(f"Observation opportunity exist{time + duration}")
             # observations = pd.concat(observation_results, ignore_index=True).sort_values(by="epoch", ascending=True)
-            return observation_results.iloc[0]
+            # return observation_results.iloc[0]
+            logger.info(
+                f"Observation opportunity exist, length of observation results{len(observation_results)}"
+            )
+            return observation_results
         return None
     else:
         return None
