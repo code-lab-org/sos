@@ -25,7 +25,6 @@ from tatc.utils import swath_width_to_field_of_regard, swath_width_to_field_of_v
 
 logger = logging.getLogger(__name__)
 
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 
 from src.sos_tools.aws_utils import AWSUtils
