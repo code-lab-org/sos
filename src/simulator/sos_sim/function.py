@@ -35,7 +35,6 @@ from src.sos_tools.data_utils import DataUtils
 
 # Configure Constellation
 
-
 def Snowglobe_constellation(start: datetime) -> List[Satellite]:
     roll_angle = (30 + 33.5) / 2
     roll_range = 33.5 - 30
@@ -71,7 +70,6 @@ def Snowglobe_constellation(start: datetime) -> List[Satellite]:
 
 # Compute next observation opportunity using TATC collect observations
 
-
 def compute_opportunity(
     const: List[Satellite],
     time: datetime,
@@ -79,7 +77,7 @@ def compute_opportunity(
     requests: List[dict],
 ) -> gpd.GeoSeries:
     # filter requests
-    start_time = t.time()
+    # start_time = t.time()
     # logger.info(f"{type(const)},{const}")
     filtered_requests = requests
     # logger.info(f"Entered compute_opportunity,length of request is {len(filtered_requests)}, type of filtered request is,{type(filtered_requests)}")
@@ -94,7 +92,7 @@ def compute_opportunity(
     ]
 
     if filtered_requests:
-        column_names = list(filtered_requests[0].keys())
+        # column_names = list(filtered_requests[0].keys())
         # logger.info(f"columns in filtered request{column_names}")
 
         # collect observation
@@ -106,26 +104,15 @@ def compute_opportunity(
             ignore_index=True,
         ).sort_values(by="epoch", ascending=True)
 
-        end_time = t.time()
-
-        # Calculate the total time taken
-        computation_time = end_time - start_time
-        logger.info(f"Compute opportunity time: {computation_time:.2f} seconds")
-
-        # observation_results = Parallel(n_jobs=-1)(
-        #         delayed(collect_multi_observations)(
-        #             point, constellation, time, time + duration
-        #         )
-        #         for point in filtered_requests
-        #     )
         if observation_results is not None and not observation_results.empty:
             # logger.info(f"Observation opportunity exist{time + duration}")
             id_to_eta = {
             request["point"].id: request["planner_final_eta"]
             for request in filtered_requests
-            }
+            }            
+            observation_results["planner_final_eta"] = observation_results["point_id"].map(id_to_eta)
             # observations = pd.concat(observation_results, ignore_index=True).sort_values(by="epoch", ascending=True)
-            return observation_results.iloc[0]
+            return observation_results
         return None
     else:
         return None
@@ -133,7 +120,11 @@ def compute_opportunity(
 
 # Filter and format the observation results
 
-def filter_and_sort_observations(df, sim_time,incomplete_ids):
+def filter_and_sort_observations(df, sim_time,incomplete_ids,time_step_constr):
+    
+    logger.info(
+        f"Filtering and sorting observations, type of df is {type(df)}, length of df is {len(df)}"
+    )
     # Filter for observations with incomplete simulation status
     df = df[df["point_id"].isin(incomplete_ids)]
     # Ensure sim_time is timezone-aware and same tz as df
@@ -141,12 +132,20 @@ def filter_and_sort_observations(df, sim_time,incomplete_ids):
         sim_time = sim_time.replace(tzinfo=df['epoch'].dt.tz)
 
     # Step 1: Filter for observations within 1 minute of simulation time
-    one_minute_later = sim_time + timedelta(minutes=1)
-    mask = (df["epoch"] >= sim_time) & (df["epoch"] <= one_minute_later)
+    time_step_later = sim_time + time_step_constr
+    logger.info(
+        f"Filtering observations, sim_time: {sim_time}, time_step_later: {time_step_later}, type of sim_time is {type(sim_time)}, type of time_step_later is {type(time_step_later)}")
+    mask = (df["epoch"] >= sim_time) & (df["epoch"] <= time_step_later)
     filtered = df[mask]
-
+    
+    logger.info(
+        f"Filtered observations, type of filtered is {type(filtered)}, length of filtered is {len(filtered)}")
+    
     # Step 2: Sort by planner_final_eta descending
     sorted_filtered = filtered.sort_values(by="planner_final_eta", ascending=False)
+    logger.info(
+        f"Sorted observations, type of sorted is {sorted_filtered}, length of sorted is {len(sorted_filtered)}"
+    )
     return sorted_filtered.iloc[0] if not sorted_filtered.empty else None
 
 
@@ -166,13 +165,8 @@ def compute_ground_track_and_format(
     # results["geometry"].iloc[0]
     return results["geometry"].iloc[0]
 
-
-
-
-
 # CALLBACK FUNCTIONS
 # The data from the appender is a geodataframe, reading and converting that to a list of dictionaries
-
 
 def read_master_file():
     print("Reading Master file")
@@ -271,13 +265,14 @@ def write_back_to_appender(source, time):
     # end_time = t.time()
     # Calculate the total time taken
     # computation_time = end_time - start_time
-    logger.info(f"Write back to appender time: {computation_time:.2f} seconds")
+    # logger.info(f"Write back to appender time: {computation_time:.2f} seconds")
 
 
 # the master file from the appender is in geojson format, and the requests are in a list of dictionaries, writing back the completed requests to the master file(triggered on available requests callback)
+
 def process_master_file(existing_request):
     logger.info(f"Processing master file")
-    start_time = t.time()
+    # start_time = t.time()
     master = read_master_file()
     master_processed = [
         request
@@ -300,10 +295,10 @@ def process_master_file(existing_request):
                     unprocessed_request[key] = value
                 #   unprocessed_request.update(request)  # Update only fields, don't replace dict
 
-    end_time = t.time()
+    # end_time = t.time()
     # Calculate the total time taken
-    computation_time = end_time - start_time
-    logger.info(f"Process master file time: {computation_time:.2f} seconds")
+    # computation_time = end_time - start_time
+    # logger.info(f"Process master file time: {computation_time:.2f} seconds")
 
     # Return the combined list of processed and unprocessed requests
     return master_processed + master_unprocessed
@@ -313,7 +308,7 @@ def process_master_file(existing_request):
 
 
 def convert_to_vector_layer_format(visual_requests):
-    start_time = t.time()
+    # start_time = t.time()
     vector_data = pd.DataFrame(visual_requests)
     vector_data["geometry"] = vector_data["planner_geometry"].apply(
         lambda x: wkt.loads(x) if isinstance(x, str) else x
@@ -330,10 +325,10 @@ def convert_to_vector_layer_format(visual_requests):
     vector_data_gdf["planner_geometry"] = vector_data_gdf["planner_geometry"].astype(
         str
     )
-    logger.info(f"type of vector data gdf{vector_data_gdf.dtypes}")
+    # logger.info(f"type of vector data gdf{vector_data_gdf.dtypes}")
 
-    end_time = t.time()
+    # end_time = t.time()
     # Calculate the total time taken
-    computation_time = end_time - start_time
-    logger.info(f"Covnert to vector layer time: {computation_time:.2f} seconds")
+    # computation_time = end_time - start_time
+    # logger.info(f"Covnert to vector layer time: {computation_time:.2f} seconds")
     return vector_data_gdf.to_json()

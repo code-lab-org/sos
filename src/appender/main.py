@@ -2,7 +2,7 @@ import json
 import logging
 import os
 import sys
-
+from datetime import datetime, timedelta, timezone
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -13,15 +13,10 @@ from nost_tools.configuration import ConnectionConfig
 from nost_tools.managed_application import ManagedApplication
 from nost_tools.observer import Observer
 from nost_tools.simulator import Mode, Simulator
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
-
-
 from src.sos_tools.aws_utils import AWSUtils
 from src.sos_tools.data_utils import DataUtils
-
 logging.basicConfig(level=logging.INFO)
-
 logger = logging.getLogger()
 
 
@@ -73,12 +68,31 @@ class Environment(Observer):
         """
         gdf["simulator_simulation_status"] = np.nan  # None
         gdf["simulator_completion_date"] = pd.NaT
-        gdf["simulator_expiration_date"] = pd.NaT
+        # logger.info(f"Type planner time {type(gdf['planner_time'])}")
+        gdf["simulator_expiration_date"] = pd.to_datetime(gdf["planner_time"]) + timedelta(days=2)
+        # logger.info(f"Type planner time after conversion{type(gdf['planner_time'])}")
+        gdf["simulator_expiration_status"] = np.nan  # None
         gdf["simulator_satellite"] = np.nan  # None
         gdf["simulator_polygon_groundtrack"] = np.nan  # None
         gdf["planner_latitude"] = gdf["planner_centroid"].y
         gdf["planner_longitude"] = gdf["planner_centroid"].x
-        gdf["planner_centroid"] = gdf["planner_centroid"].to_wkt()
+        gdf["planner_centroid"] = gdf["planner_centroid"].to_wkt()    
+        logger.info(f"Computing simulator expiration status")        
+        # current_sim_time = self.app.simulator._time  # Must be datetime
+        # current_sim_time = pd.to_datetime(current_sim_time)
+        # gdf["simulator_expiration_date"] = pd.to_datetime(gdf["simulator_expiration_date"], errors="coerce")
+
+        # logger.info(f"datatype of all columns {gdf.dtypes}")
+        # logger.info(f"current simulation time {current_sim_time} and datatype {type(current_sim_time)}")
+
+        # Now safely compare
+        # gdf["simulator_expiration_status"] = np.where(
+        #     gdf["simulator_expiration_date"] < current_sim_time,
+        #     "expired",
+        #     "valid"
+        # )
+
+        gdf["simulator_expiration_date"] = gdf["simulator_expiration_date"].astype(str)
 
         return gdf
 
@@ -125,8 +139,10 @@ class Environment(Observer):
         component_gdf["simulator_id"] = range(
             self.counter, self.counter + len(component_gdf)
         )
+        
         component_gdf = self.reorder_columns(component_gdf)
         component_gdf = component_gdf.to_crs(epsg=4326)
+
         logger.info("Processing component GeoJSON successfully completed.")
         return component_gdf
 

@@ -5,7 +5,6 @@ import os
 import sys
 import time
 from datetime import datetime, timedelta, timezone
-
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -141,7 +140,7 @@ class Environment(Observer):
         time_coords_ds2 = np.array([dataset2.time[0].values])
         lat_coords = np.linspace(37.024602, 49.739086, 29)
         lon_coords = np.linspace(-113.938141, -90.114221, 40)
-        variables_to_interpolate = ["SWE_tavg", "AvgSurfT_tavg","Snowcover_tavg"]
+        variables_to_interpolate = ["SWE_tavg", "AvgSurfT_tavg"]#,"Snowcover_tavg"]
         new_ds1 = self.interpolate_dataset(
             dataset1, variables_to_interpolate, lat_coords, lon_coords, time_coords_ds1
         )
@@ -1099,7 +1098,7 @@ class Environment(Observer):
         logger.warning(f"No matching file found for pattern: {file_name_pattern}")
         return None
 
-    def download_file(self, s3, bucket_name, file_name_pattern, local_filename=None, check_interval_sec=60, max_attempts=5):
+    def download_file(self, s3, bucket_name, file_name_pattern, local_filename=None, check_interval_sec=60, max_attempts=1):
         """
         Download a file by first checking assimilation (up to max_attempts), then falling back to open_loop.
 
