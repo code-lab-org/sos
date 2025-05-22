@@ -3,7 +3,6 @@
 
 import logging
 from datetime import datetime, timedelta, timezone
-
 from nost_tools.application_utils import ShutDownObserver
 from nost_tools.configuration import ConnectionConfig
 from nost_tools.managed_application import ManagedApplication
