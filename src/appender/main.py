@@ -334,6 +334,9 @@ def main():
     app.add_message_callback("planner", "selected_cells", environment.on_planner)
     # app.add_message_callback("simulator", "selected_cells", environment.on_simulator)
 
+    while True:
+        pass
+
 
 if __name__ == "__main__":
     main()
