@@ -160,14 +160,6 @@ class Environment(Observer):
         # Use fewer grid points if resolution can be reduced
         lat_coords = np.linspace(37.024602, 49.739086, 29)
         lon_coords = np.linspace(-113.938141, -90.114221, 40)
-<<<<<<< HEAD
-        variables_to_interpolate = ["SWE_tavg", "AvgSurfT_tavg"]#,"Snowcover_tavg"]
-        new_ds1 = self.interpolate_dataset(
-            dataset1, variables_to_interpolate, lat_coords, lon_coords, time_coords_ds1
-        )
-        new_ds2 = self.interpolate_dataset(
-            dataset2, variables_to_interpolate, lat_coords, lon_coords, time_coords_ds2
-=======
         variables_to_interpolate = ["SWE_tavg", "AvgSurfT_tavg"]
 
         # Parallelize dataset interpolation
@@ -182,7 +174,6 @@ class Environment(Observer):
                 (dataset1, time_coords_ds1),
                 (dataset2, time_coords_ds2),
             ]
->>>>>>> main
         )
 
         new_ds1, new_ds2 = results
@@ -422,7 +413,6 @@ class Environment(Observer):
         logger.info("Generating Capella efficiency dataset successfully completed.")
 
         return output_file, sensor_capella_dataset
-<<<<<<< HEAD
     
     # MODIFIED BY DIVYA
 
@@ -521,8 +511,6 @@ class Environment(Observer):
     #     capella_dataset.to_netcdf(output_file)
     #     logger.info("Generating Capella efficiency dataset successfully completed.")
     #     return output_file, capella_dataset
-=======
->>>>>>> main
 
     def combine_and_multiply_datasets(
         self, ds, eta5_file, eta0_file, eta2_file, weights, output_file
@@ -617,20 +605,6 @@ class Environment(Observer):
         logger.info("Specifying constellation successfully completed.")
         time_step = timedelta(seconds=5)
         sim_times = pd.date_range(start, end + duration, freq=time_step)
-<<<<<<< HEAD
-        logger.info("Computing orbit tracks.")
-        orbit_tracks = pd.concat(
-            [
-                collect_orbit_track(
-                    satellite=satellite,
-                    times=sim_times,
-                    # mask=self.polygons[0],
-                )
-                for satellite in constellation.generate_members()
-            ]
-        )
-        logger.info("Computing orbit tracks successfully completed.")
-=======
         # logger.info("Computing orbit tracks.")
         # orbit_tracks = pd.concat(
         #     [
@@ -643,7 +617,6 @@ class Environment(Observer):
         #     ]
         # )
         # logger.info("Computing orbit tracks successfully completed.")
->>>>>>> main
         logger.info("Computing ground tracks (P1).")
         start_time = time.time()
         ground_tracks = pd.concat(
@@ -1095,9 +1068,6 @@ class Environment(Observer):
         logger.warning(f"No matching file found for pattern: {file_name_pattern}")
         return None
 
-<<<<<<< HEAD
-    def download_file(self, s3, bucket_name, file_name_pattern, local_filename=None, check_interval_sec=60, max_attempts=1):
-=======
     def download_file(
         self,
         bucket_name,
@@ -1106,7 +1076,6 @@ class Environment(Observer):
         check_interval_sec=None,
         max_attempts=None,
     ):
->>>>>>> main
         """
         Download a file by first checking assimilation (up to max_attempts), then falling back to open_loop.
 

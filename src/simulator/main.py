@@ -87,5 +87,3 @@ entity.add_observer(
 
 app.add_message_callback("appender", "master", entity.message_received_from_appender)
 
-while True:
-    pass
