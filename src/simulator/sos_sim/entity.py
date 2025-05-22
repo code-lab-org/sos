@@ -1,7 +1,6 @@
 import logging
 from datetime import datetime, timedelta
 from typing import List
-
 import numpy as np
 from constellation_config_files.schemas import VectorLayer
 

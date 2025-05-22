@@ -190,7 +190,7 @@ def read_master_file():
         List[dict]: A list of dictionaries representing the master file data.
     """
     logger.info("Reading master file")
-    start_time = t.time()
+    # start_time = t.time()
     output_filename = "outputs/master.geojson"
     if os.path.exists(output_filename):
         request_data = gpd.read_file(output_filename)
@@ -218,10 +218,10 @@ def read_master_file():
         print(f"Master file not found. Returning an empty list.")
         request_points = []
 
-    end_time = t.time()
+    # end_time = t.time()
     # Calculate the total time taken
-    computation_time = end_time - start_time
-    logger.debug(f"Reading master file time: {computation_time:.2f} seconds")
+    # computation_time = end_time - start_time
+    # logger.debug(f"Reading master file time: {computation_time:.2f} seconds")
     return request_points
 
 
@@ -349,11 +349,10 @@ def convert_to_vector_layer_format(visual_requests):
         str
     )
     # logger.info(f"type of vector data gdf{vector_data_gdf.dtypes}")
-
     # end_time = t.time()
     # Calculate the total time taken
     # computation_time = end_time - start_time
     # logger.info(
-        f"Conversion to vector layer processing time: {computation_time:.2f} seconds"
-    )
+    # f"Conversion to vector layer processing time: {computation_time:.2f} seconds"
+    # )
     return vector_data_gdf.to_json()

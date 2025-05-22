@@ -795,7 +795,7 @@ class Environment(Observer):
                 f"Selected_Cells_Optimization_{unique_time.strftime('%Y%m%d')}.geojson",
             )
             selected_blocks_gdf.to_file(output_geojson, driver="GeoJSON")
-            logger.info(f"Optimization output daved as {output_geojson}")
+            logger.info(f"Optimization output saved as {output_geojson}")
 
             print(
                 f"Selected cells saved to '{output_geojson}' with time: {unique_time}"
