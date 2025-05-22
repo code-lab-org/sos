@@ -30,10 +30,6 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../.
 from src.sos_tools.aws_utils import AWSUtils
 from src.sos_tools.data_utils import DataUtils
 
-<<<<<<< HEAD
-# Configure Constellation
-=======
->>>>>>> main
 
 def Snowglobe_constellation(start: datetime) -> List[Satellite]:
     """
@@ -72,6 +68,7 @@ def Snowglobe_constellation(start: datetime) -> List[Satellite]:
     satellites = constellation.generate_members()
     return satellites
 
+
 def compute_opportunity(
     const: List[Satellite],
     time: datetime,
@@ -79,11 +76,6 @@ def compute_opportunity(
     requests: List[dict],
     parallel_compute: bool = True,
 ) -> gpd.GeoSeries:
-<<<<<<< HEAD
-    # filter requests
-    # start_time = t.time()
-    # logger.info(f"{type(const)},{const}")
-=======
     """
     Compute the next observation opportunity for a given time and duration using TATC collect observations.
     Args:
@@ -95,16 +87,11 @@ def compute_opportunity(
     Returns:
         gpd.GeoSeries: The observation opportunity as a GeoSeries.
     """
-    start_time = t.time()
->>>>>>> main
+    # start_time = t.time()
     filtered_requests = requests
     time = time.replace(tzinfo=timezone.utc)
-<<<<<<< HEAD
-    end = (time + duration).replace(tzinfo=timezone.utc)   # end = (time + duration)
-=======
     end = (time + duration).replace(tzinfo=timezone.utc)
 
->>>>>>> main
     filtered_requests = [
         request
         for request in requests
@@ -113,12 +100,7 @@ def compute_opportunity(
     ]
 
     if filtered_requests:
-<<<<<<< HEAD
         # column_names = list(filtered_requests[0].keys())
-        # logger.info(f"columns in filtered request{column_names}")
-=======
-        column_names = list(filtered_requests[0].keys())
->>>>>>> main
 
         # Define a helper function that will be executed in parallel
         def collect_observations_for_request(request):
@@ -133,7 +115,6 @@ def compute_opportunity(
         observation_results = pd.concat(
             observation_results_list, ignore_index=True
         ).sort_values(by="epoch", ascending=True)
-<<<<<<< HEAD
 
         if observation_results is not None and not observation_results.empty:
             # logger.info(f"Observation opportunity exist{time + duration}")
@@ -144,14 +125,6 @@ def compute_opportunity(
             observation_results["planner_final_eta"] = observation_results["point_id"].map(id_to_eta)
             # observations = pd.concat(observation_results, ignore_index=True).sort_values(by="epoch", ascending=True)
             return observation_results
-=======
-        end_time = t.time()
-        computation_time = end_time - start_time
-        logger.info(f"Opportunity processing time: {computation_time:.2f} seconds")
-        if observation_results is not None and not observation_results.empty:
-            logger.info(f"Observation opportunity exists: {time + duration}")
-            return observation_results.iloc[0]
->>>>>>> main
         return None
     else:
         return None
@@ -188,11 +161,8 @@ def filter_and_sort_observations(df, sim_time,incomplete_ids,time_step_constr):
     return sorted_filtered.iloc[0] if not sorted_filtered.empty else None
 
 
-<<<<<<< HEAD
 # Computing Groundtrack and formatting into a dataframe
 
-=======
->>>>>>> main
 def compute_ground_track_and_format(
     sat_object: Satellite, observation_time: datetime
 ) -> Geometry:
@@ -212,11 +182,6 @@ def compute_ground_track_and_format(
     logger.info(f"Length of results: {len(results)}, Type of results: {type(results)}")
     return results["geometry"].iloc[0]
 
-<<<<<<< HEAD
-# CALLBACK FUNCTIONS
-# The data from the appender is a geodataframe, reading and converting that to a list of dictionaries
-=======
->>>>>>> main
 
 def read_master_file():
     """
@@ -317,11 +282,6 @@ def write_back_to_appender(source, time):
     # logger.info(f"Write back to appender time: {computation_time:.2f} seconds")
 
 
-<<<<<<< HEAD
-# the master file from the appender is in geojson format, and the requests are in a list of dictionaries, writing back the completed requests to the master file(triggered on available requests callback)
-
-=======
->>>>>>> main
 def process_master_file(existing_request):
     """
     Process the master file and update the existing requests with the new data.
@@ -364,9 +324,6 @@ def process_master_file(existing_request):
 
 
 def convert_to_vector_layer_format(visual_requests):
-<<<<<<< HEAD
-    # start_time = t.time()
-=======
     """
     Convert the visual requests to a GeoDataFrame and then to a GeoJSON format.
     Args:
@@ -374,8 +331,7 @@ def convert_to_vector_layer_format(visual_requests):
     Returns:
         str: The GeoJSON representation of the visual requests.
     """
-    start_time = t.time()
->>>>>>> main
+    # start_time = t.time()
     vector_data = pd.DataFrame(visual_requests)
     vector_data["geometry"] = vector_data["planner_geometry"].apply(
         lambda x: wkt.loads(x) if isinstance(x, str) else x
@@ -396,13 +352,8 @@ def convert_to_vector_layer_format(visual_requests):
 
     # end_time = t.time()
     # Calculate the total time taken
-<<<<<<< HEAD
     # computation_time = end_time - start_time
-    # logger.info(f"Covnert to vector layer time: {computation_time:.2f} seconds")
-=======
-    computation_time = end_time - start_time
-    logger.info(
+    # logger.info(
         f"Conversion to vector layer processing time: {computation_time:.2f} seconds"
     )
->>>>>>> main
     return vector_data_gdf.to_json()
