@@ -116,6 +116,14 @@ def compute_opportunity(
             observation_results_list, ignore_index=True
         ).sort_values(by="epoch", ascending=True)
 
+        # observation_results = pd.concat(
+        #     [
+        #         collect_multi_observations(request["point"], const, time, end)
+        #         for request in filtered_requests
+        #     ],
+        #     ignore_index=True,
+        # ).sort_values(by="epoch", ascending=True)
+
         if observation_results is not None and not observation_results.empty:
             # logger.info(f"Observation opportunity exist{time + duration}")
             id_to_eta = {
