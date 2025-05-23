@@ -101,19 +101,27 @@ def compute_opportunity(
     if filtered_requests:
         # column_names = list(filtered_requests[0].keys())
 
-        # Define a helper function that will be executed in parallel
         # def collect_observations_for_request(request):
-        #     return collect_multi_observations(request["point"], const, time, end)
+        #     try:
+        #         return collect_multi_observations(request["point"], const, time, end)
+        #     except Exception as e:
+        #         print(f"Error processing request {request}: {e}")
+        #         return pd.DataFrame()
 
-        # Execute the collection in parallel
         # observation_results_list = Parallel(n_jobs=-1 if parallel_compute else 1)(
         #     delayed(collect_observations_for_request)(request)
         #     for request in filtered_requests
         # )
-        # # Combine the results and sort them
-        # observation_results = pd.concat(
-        #     observation_results_list, ignore_index=True
-        # ).sort_values(by="epoch", ascending=True)
+
+        # # Remove any empty results
+        # observation_results_list = [df for df in observation_results_list if not df.empty]
+
+        # if observation_results_list:
+        #     observation_results = pd.concat(
+        #         observation_results_list, ignore_index=True
+        #     ).sort_values(by="epoch", ascending=True)
+        # else:
+        #     observation_results = pd.DataFrame()
 
         observation_results = pd.concat(
             [

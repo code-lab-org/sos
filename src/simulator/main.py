@@ -85,5 +85,5 @@ entity.add_observer(
 # simulator.execute(start, duration, time_step, None, time_scale_factor)
 app.add_message_callback("appender", "master", entity.message_received_from_appender)
 
-while True:
-    pass
+# while True:
+#     pass
