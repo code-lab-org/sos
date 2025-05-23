@@ -7,7 +7,6 @@ import sys
 import time as t
 from datetime import datetime, timedelta, timezone
 from typing import List
-
 import geopandas as gpd
 import pandas as pd
 from boto3.s3.transfer import TransferConfig
@@ -103,26 +102,26 @@ def compute_opportunity(
         # column_names = list(filtered_requests[0].keys())
 
         # Define a helper function that will be executed in parallel
-        def collect_observations_for_request(request):
-            return collect_multi_observations(request["point"], const, time, end)
+        # def collect_observations_for_request(request):
+        #     return collect_multi_observations(request["point"], const, time, end)
 
         # Execute the collection in parallel
-        observation_results_list = Parallel(n_jobs=-1 if parallel_compute else 1)(
-            delayed(collect_observations_for_request)(request)
-            for request in filtered_requests
-        )
-        # Combine the results and sort them
-        observation_results = pd.concat(
-            observation_results_list, ignore_index=True
-        ).sort_values(by="epoch", ascending=True)
-
+        # observation_results_list = Parallel(n_jobs=-1 if parallel_compute else 1)(
+        #     delayed(collect_observations_for_request)(request)
+        #     for request in filtered_requests
+        # )
+        # # Combine the results and sort them
         # observation_results = pd.concat(
-        #     [
-        #         collect_multi_observations(request["point"], const, time, end)
-        #         for request in filtered_requests
-        #     ],
-        #     ignore_index=True,
+        #     observation_results_list, ignore_index=True
         # ).sort_values(by="epoch", ascending=True)
+
+        observation_results = pd.concat(
+            [
+                collect_multi_observations(request["point"], const, time, end)
+                for request in filtered_requests
+            ],
+            ignore_index=True,
+        ).sort_values(by="epoch", ascending=True)
 
         if observation_results is not None and not observation_results.empty:
             # logger.info(f"Observation opportunity exist{time + duration}")
