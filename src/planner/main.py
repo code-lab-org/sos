@@ -38,6 +38,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")
 
 from src.sos_tools.aws_utils import AWSUtils
 from src.sos_tools.data_utils import DataUtils
+from scipy.special import expit
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
@@ -203,6 +204,98 @@ class Environment(Observer):
         )
 
         return output_file, clipped_dataset
+    
+
+# MODIFIED BY DIVYA
+
+    def generate_combined_dataset_resolution(self, dataset1, dataset2, mo_basin):
+        """
+        Customized for the resolution layer to interpolate to 1km grid
+        Generate a combined dataset by interpolating the two datasets to a new grid and
+        clipping to the Missouri Basin. Optimized for performance with parallel processing.
+
+        Args:
+            dataset1 (xarray.Dataset): The first dataset
+            dataset2 (xarray.Dataset): The second dataset
+            mo_basin (GeoSeries): The Missouri Basin polygon
+
+        Returns:
+            output_file (str): The output file name
+            clipped_dataset (xarray.Dataset): The clipped dataset
+        """
+        # Check if output file already exists
+        last_date_ds1 = np.datetime_as_string(
+            dataset1.time[-1].values, unit="D"
+        ).replace("-", "")
+        last_date_ds2 = np.datetime_as_string(
+            dataset2.time[-1].values, unit="D"
+        ).replace("-", "")
+        last_date = max(last_date_ds1, last_date_ds2)
+        output_file = os.path.join(
+            self.current_simulation_date, f"LIS_dataset_resolution_{last_date}.nc"
+        )
+
+        if os.path.exists(output_file):
+            logger.info(
+                f"File {output_file} already exists. Reading the existing file."
+            )
+            clipped_dataset = xr.open_dataset(output_file)
+            return output_file, clipped_dataset
+
+        logger.info("Combining the two datasets.")
+        start_time = time.time()
+        time_coords_ds1 = np.array([dataset1.time[0].values])
+        time_coords_ds2 = np.array([dataset2.time[0].values])
+
+        # Defining latitude and longitude coordinates for 1km resolution
+        lat_res = 0.009  # ~1 km
+        lon_res = 0.011  # ~1 km
+        lat_coords = np.arange(dataset1['lat'].values.min(), dataset1['lat'].values.max(), lat_res)
+        lon_coords = np.arange(dataset1['lon'].values.min(), dataset1['lon'].values.max(), lon_res)
+        variables_to_interpolate = ["SWE_tavg"]
+
+        # Parallelize dataset interpolation
+        logger.debug("Starting parallel interpolation of datasets")
+        results = Parallel(
+            n_jobs=-1 if self.parallel_compute else 1, backend="threading"
+        )(
+            delayed(self.interpolate_dataset)(
+                ds, variables_to_interpolate, lat_coords, lon_coords, time_coords
+            )
+            for ds, time_coords in [
+                (dataset1, time_coords_ds1),
+                (dataset2, time_coords_ds2),
+            ]
+        )
+
+        new_ds1, new_ds2 = results
+        logger.debug("Parallel interpolation completed")
+
+        # Combine datasets and clip to Missouri Basin
+        combined_dataset = xr.concat([new_ds1, new_ds2], dim="time")
+        mo_basin = mo_basin.to_crs("EPSG:4326")
+        combined_dataset = combined_dataset.rio.write_crs("EPSG:4326")
+        logger.debug("Clipping combined dataset to Missouri Basin")
+        
+        clipped_dataset = combined_dataset.rio.clip(
+            mo_basin.geometry, all_touched=True, drop=True
+        )
+
+        # Remove grid_mapping attributes
+        for var in clipped_dataset.data_vars:
+            if "grid_mapping" in clipped_dataset[var].attrs:
+                del clipped_dataset[var].attrs["grid_mapping"]
+
+        # Save to NetCDF
+        logger.debug(f"Saving combined dataset to {output_file}")
+        clipped_dataset.to_netcdf(output_file)
+        end_time = time.time()
+        logger.info(
+            f"Combining the two datasets successfully completed in {end_time - start_time:.2f} seconds."
+        )
+
+        return output_file, clipped_dataset
+
 
     def calculate_eta(self, swe_change, threshold, k_value):
         """
@@ -438,11 +531,10 @@ class Environment(Observer):
 
         return eta_sc_values
 
-
+    # MODIFIED BY DIVYA
     def generate_resolution(self, ds):
         """
         Generate the resolution dataset.
-
         Args:
             ds (xarray.Dataset): The dataset containing the SWE values
 
@@ -451,29 +543,46 @@ class Environment(Observer):
             resolution_dataset (xarray.Dataset): The new dataset
         """
         logger.info("Generating resolution dataset.")
-        swe = ds["SWE_tavg"]
-        # Resampling to 5km and back
-        factor = 5
-        h = swe.rio.height / factor
-        w = swe.rio.width / factor
-        # Downsample
-        ds_5km = swe.rio.reproject(ds.rio.crs, shape=(int(h), int(w)), resampling=Resampling.bilinear)
-        # Upsample
-        ds_1km = ds_5km.rio.reproject_match(swe,1)
-        # Computing absolute difference
-        ds_abs = abs(ds_1km-swe)
-        # ds_abs_taskable = abs(ds_1km-ds_1km)
-        T = 40
-        k = -0.3
+        res_x, res_y = ds.rio.resolution()
+        res_x = abs(res_x)
+        res_y = abs(res_y)
+        factor = 50 # in km
 
-        eta_res_values = self.calculate_eta(ds_abs, T, k)
-        eta_res_values_taskable = xr.ones_like(ds_1km).astype("float32")
+        # Convert 50 km to degrees
+        scale_x = res_x * factor
+        scale_y = res_y * factor
 
-        return eta_res_values, eta_res_values_taskable      
+        # New dimensions
+        height = int((ds.rio.height * res_y) / scale_y)
+        width = int((ds.rio.width * res_x) / scale_x)
 
-       
-        
+        ds_50km = ds.rio.reproject(
+        ds.rio.crs,
+        shape=(int(height), int(width)),
+        resampling=Resampling.bilinear
+        )
 
+        ds_1km = ds_50km.rio.reproject_match(ds)
+        ds_abs = abs(ds_1km-ds)        
+        k = 0.7
+        T = np.nanmedian(ds_abs['SWE_tavg'].values)
+        eta_res_values = expit(-k * (ds_abs - T))
+
+        resolution_file = os.path.join(
+            self.current_simulation_date, "resolution_taskable.nc"
+        )
+
+        if os.path.exists(resolution_file):
+            logger.info(
+                f"File {resolution_file} already exists. Reading the existing file."
+            )
+            eta_res_values_taskable = xr.open_dataset(resolution_file)     
+        else:    
+            eta_res_values_taskable = xr.ones_like(eta_res_values).astype("float32")            
+
+        return eta_res_values, eta_res_values_taskable   
+
+      
     # def generate_sensor_capella(self, ds):
     #     """
     #     Generate the Capella efficiency dataset.
@@ -1340,6 +1449,17 @@ class Environment(Observer):
                 self.upload_file(
                     key=combined_output_file, filename=combined_output_file
                 )
+                # MODIFIED BY DIVYA 
+                # Resolution layer processing
+                combined_output_file_resolution, combined_dataset_resolution = self.generate_combined_dataset_resolution(
+                    dataset1, dataset2, mo_basin
+                )
+                # Upload dataset to S3
+                self.upload_file(
+                    key=combined_output_file_resolution, filename=combined_output_file_resolution
+                )
+
+
                 # Select the SWE_tavg variable for a specific time step (e.g., first time step)
                 swe_data = combined_dataset["SWE_tavg"].isel(time=0)  # SEND AS MESSAGE
                 swe_layer_encoded, top_left, top_right, bottom_left, bottom_right = (
@@ -1371,6 +1491,17 @@ class Environment(Observer):
                 ###############
                 # ETA5 dataset#
                 ###############
+
+                # MODIFIED BY DIVYA
+                # Generate the resolution dataset
+                resolution_output_file, resolution_dataset = (
+                    self.generate_resolution_dataset(
+                        ds=combined_dataset_resolution
+                    )
+                )
+
+                ###############
+
                 # Generate the SWE difference
                 swe_output_file, eta5_file = self.generate_swe_difference(
                     ds=combined_dataset

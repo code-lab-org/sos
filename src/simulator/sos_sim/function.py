@@ -1,6 +1,5 @@
 # This Script stores all the functions that are used in the simulator code
 # The functions are stored in a separate file to make the main code more readable
-
 import logging
 import os
 import sys
