@@ -521,6 +521,8 @@ class Environment(Observer):
             snowcover_dataset (xarray.Dataset): The new dataset
         """
         logger.info("Generating snow cover dataset.")
+        # check datavariables in the dataset    
+        logger.info(f"Dataset variables: {ds.data_vars}")
         sc = ds["Snowcover_tavg"]
         snowcover_masked = sc.where(~np.isnan(sc))
         logger.info("Generating Snow_cover efficiency dataset.")
@@ -550,6 +552,7 @@ class Environment(Observer):
             resolution_dataset (xarray.Dataset): The new dataset
         """
         logger.info("Generating resolution dataset.")
+        ds = ds.rio.write_crs("EPSG:4326", inplace=False)
         res_x, res_y = ds.rio.resolution()
         res_x = abs(res_x)
         res_y = abs(res_y)
@@ -603,10 +606,22 @@ class Environment(Observer):
         eta_res_values_taskable = eta_res_values_taskable.rio.write_crs(
             "EPSG:4326", inplace=False
         )
+        
+        logger.info("Reprojecting resolution datasets to match target resolution.")
+        logger.info(f"taskable data {eta_res_values_taskable}")
 
         resolution_nontaskable_50km = eta_res_values.rio.reproject_match(target_resolution_file,Resampling=Resampling.bilinear) 
         resolution_taskable_50km = eta_res_values_taskable.rio.reproject_match(target_resolution_file,Resampling=Resampling.bilinear)  
-        resolution_taskable_50km = gpd.clip(resolution_taskable_50km, mo_basin)  
+
+        logger.info("Reprojecting resolution datasets successfully completed.")
+
+        # resolution_taskable_50km = resolution_taskable_50km.rio.write_crs("EPSG:4326", inplace=False)
+        resolution_taskable_50km = resolution_taskable_50km.rio.clip(mo_basin.geometry) 
+
+        # # Remove grid_mapping attributes
+        # for var in resolution_taskable_50km.data_vars:
+        #     if "grid_mapping" in resolution_taskable_50km[var].attrs:
+        #         del resolution_taskable_50km[var].attrs["grid_mapping"] 
 
         # Saving as netcdf 
         resolution_nontaskable_50km.to_netcdf(resolution_file_nontaskable)
@@ -1235,7 +1250,7 @@ class Environment(Observer):
             check_interval_sec = int(os.environ.get("DOWNLOAD_CHECK_INTERVAL", 10))
 
         if max_attempts is None:
-            max_attempts = int(os.environ.get("DOWNLOAD_MAX_ATTEMPTS", 2))
+            max_attempts = int(os.environ.get("DOWNLOAD_MAX_ATTEMPTS", 1))
 
         logger.info(
             f"Using check_interval_sec={check_interval_sec}, max_attempts={max_attempts} for downloads"
@@ -1574,7 +1589,7 @@ class Environment(Observer):
                 # Generate the resolution dataset
                 resolution_dataset_nontaskable_eta, resolution_dataset_taskable_eta, resolution_output_file = (
                     self.generate_resolution(
-                        ds=combined_dataset_resolution,target_resolution_file = eta0_file, mask = mo_basin
+                        ds=combined_dataset_resolution,target_resolution_file = eta0_file, mo_basin = mo_basin
                     )
                 )
 
