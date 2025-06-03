@@ -203,8 +203,7 @@ class Environment(Observer):
             f"Combining the two datasets successfully completed in {end_time - start_time:.2f} seconds."
         )
 
-        return output_file, clipped_dataset
-    
+        return output_file, clipped_dataset    
 
 # MODIFIED BY DIVYA
 
@@ -269,7 +268,7 @@ class Environment(Observer):
         )
 
         new_ds1, new_ds2 = results
-        logger.debug("Parallel interpolation completed")
+        logger.debug("Parallel interpolation for resolution completed")
 
         # Combine datasets and clip to Missouri Basin
         combined_dataset = xr.concat([new_ds1, new_ds2], dim="time")
@@ -287,11 +286,11 @@ class Environment(Observer):
                 del clipped_dataset[var].attrs["grid_mapping"]
 
         # Save to NetCDF
-        logger.debug(f"Saving combined dataset to {output_file}")
+        logger.debug(f"Saving combined dataset for resolution to {output_file}")
         clipped_dataset.to_netcdf(output_file)
         end_time = time.time()
         logger.info(
-            f"Combining the two datasets successfully completed in {end_time - start_time:.2f} seconds."
+            f"Combining the two resolution datasets successfully completed in {end_time - start_time:.2f} seconds."
         )
 
         return output_file, clipped_dataset
@@ -528,6 +527,7 @@ class Environment(Observer):
         k = 0.5
 
         eta_sc_values = self.calculate_eta(snowcover_masked, T, k)
+        eta_sc_values.to_netcdf("eta_snowcover.nc")
 
         return eta_sc_values
 
@@ -567,6 +567,7 @@ class Environment(Observer):
         k = 0.7
         T = np.nanmedian(ds_abs['SWE_tavg'].values)
         eta_res_values = expit(-k * (ds_abs - T))
+        eta_res_values.to_netcdf("eta_resolution.nc")
 
         resolution_file = os.path.join(
             self.current_simulation_date, "resolution_taskable.nc"
@@ -578,7 +579,8 @@ class Environment(Observer):
             )
             eta_res_values_taskable = xr.open_dataset(resolution_file)     
         else:    
-            eta_res_values_taskable = xr.ones_like(eta_res_values).astype("float32")            
+            eta_res_values_taskable = xr.ones_like(eta_res_values).astype("float32")  
+            eta_res_values_taskable.to_netcdf(resolution_file)          
 
         return eta_res_values, eta_res_values_taskable   
 
@@ -1487,19 +1489,18 @@ class Environment(Observer):
                     )
                     logger.info("Publishing message successfully completed.")
                     time.sleep(15)
+               
 
-                ###############
-                # ETA5 dataset#
-                ###############
-
-                # MODIFIED BY DIVYA
+                # MODIFIED BY DIVYA - Resolution
                 # Generate the resolution dataset
-                resolution_output_file, resolution_dataset = (
-                    self.generate_resolution_dataset(
+                resolution_dataset_nontaskable, resolution_dataset_taskable = (
+                    self.generate_resolution(
                         ds=combined_dataset_resolution
                     )
                 )
 
+                 ###############
+                # ETA5 dataset#
                 ###############
 
                 # Generate the SWE difference
