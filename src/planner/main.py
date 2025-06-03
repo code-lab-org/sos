@@ -573,8 +573,15 @@ class Environment(Observer):
         ds_abs = abs(ds_1km-ds)        
         k = 0.7
         T = np.nanmedian(ds_abs['SWE_tavg'].values)
+
+        swe = ds["SWE_tavg"]
+        last_date = str(swe["time"][-1].values)[:10].replace("-", "")
+        resolution_file_nontaskable = os.path.join(
+            self.current_simulation_date, f"efficiency_resolution_nontaskable{last_date}.nc"
+        )
+
         eta_res_values = expit(-k * (ds_abs - T))
-        eta_res_values.to_netcdf("eta_resolution.nc")
+        
 
         resolution_file_taskable = os.path.join(
             self.current_simulation_date, "resolution_taskable.nc"
@@ -586,14 +593,7 @@ class Environment(Observer):
             )
             eta_res_values_taskable = xr.open_dataset(resolution_file_taskable)     
         else:    
-            eta_res_values_taskable = xr.ones_like(eta_res_values).astype("float32")  
-            eta_res_values_taskable.to_netcdf(resolution_file_taskable)
-
-        swe = ds["SWE_tavg"]
-        last_date = str(swe["time"][-1].values)[:10].replace("-", "")
-        resolution_file_nontaskable = os.path.join(
-            self.current_simulation_date, f"efficiency_resolution_nontaskable{last_date}.nc"
-        )
+            eta_res_values_taskable = xr.ones_like(eta_res_values).astype("float32")        
     
         # Reprojecting to the standard resolution of the other layers
         target_resolution_file = target_resolution_file.rio.write_crs("EPSG:4326", inplace=False)
@@ -607,6 +607,10 @@ class Environment(Observer):
         resolution_nontaskable_50km = eta_res_values.rio.reproject_match(target_resolution_file,Resampling=Resampling.bilinear) 
         resolution_taskable_50km = eta_res_values_taskable.rio.reproject_match(target_resolution_file,Resampling=Resampling.bilinear)  
         resolution_taskable_50km = gpd.clip(resolution_taskable_50km, mo_basin)  
+
+        # Saving as netcdf 
+        resolution_nontaskable_50km.to_netcdf(resolution_file_nontaskable)
+        resolution_taskable_50km.to_netcdf(resolution_file_taskable)
 
         return resolution_nontaskable_50km, resolution_taskable_50km,resolution_file_nontaskable   
 
@@ -1568,7 +1572,7 @@ class Environment(Observer):
 
                 # MODIFIED BY DIVYA - Resolution - adding here as I need eta0_file for resolution
                 # Generate the resolution dataset
-                resolution_dataset_nontaskable, resolution_dataset_taskable, resolution_output_file = (
+                resolution_dataset_nontaskable_eta, resolution_dataset_taskable_eta, resolution_output_file = (
                     self.generate_resolution(
                         ds=combined_dataset_resolution,target_resolution_file = eta0_file, mask = mo_basin
                     )
@@ -1581,7 +1585,7 @@ class Environment(Observer):
 
                 # Generate the snow cover dataset
                 snow_cover_eta_file, snow_cover_eta_output_file = (
-                    self.generate_snow_cover(
+                    self.generate_snowcover(
                         ds=combined_dataset
                     )
                 )
@@ -1591,7 +1595,8 @@ class Environment(Observer):
                     key=snow_cover_eta_output_file, filename=snow_cover_eta_output_file
                 )
 
-                # COMMENT BY DIVYA - will add layer- encoding if required later            
+                # COMMENT BY DIVYA - will add layer- encoding if required later    
+                # Use snow_cover_eta_file , resolution_dataset_nontaskable_eta, resolution_dataset_taskable_eta for further steps      
                 
 
 
