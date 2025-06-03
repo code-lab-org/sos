@@ -161,7 +161,7 @@ class Environment(Observer):
         # Use fewer grid points if resolution can be reduced
         lat_coords = np.linspace(37.024602, 49.739086, 29)
         lon_coords = np.linspace(-113.938141, -90.114221, 40)
-        variables_to_interpolate = ["SWE_tavg", "AvgSurfT_tavg"]
+        variables_to_interpolate = ["SWE_tavg", "AvgSurfT_tavg","Snowcover_tavg"]
 
         # Parallelize dataset interpolation
         logger.debug("Starting parallel interpolation of datasets")
@@ -498,6 +498,7 @@ class Environment(Observer):
             if "grid_mapping" in sensor_capella_dataset[var].attrs:
                 del sensor_capella_dataset[var].attrs["grid_mapping"]
         last_date = str(swe["time"][-1].values)[:10].replace("-", "")
+        
         output_file = os.path.join(
             self.current_simulation_date, f"Efficiency_Sensor_Capella_{last_date}.nc"
         )
@@ -526,13 +527,19 @@ class Environment(Observer):
         T = 0.3
         k = 0.5
 
-        eta_sc_values = self.calculate_eta(snowcover_masked, T, k)
-        eta_sc_values.to_netcdf("eta_snowcover.nc")
+        
+        last_date = str(sc["time"][-1].values)[:10].replace("-", "")
+        snow_cover_file = os.path.join(
+            self.current_simulation_date, f"efficiency_snowcover_{last_date}.nc"
+        )
 
-        return eta_sc_values
+        eta_sc_values = self.calculate_eta(snowcover_masked, T, k)
+        eta_sc_values.to_netcdf(snow_cover_file)
+
+        return eta_sc_values, snow_cover_file
 
     # MODIFIED BY DIVYA
-    def generate_resolution(self, ds):
+    def generate_resolution(self, ds, target_resolution_file, mo_basin):
         """
         Generate the resolution dataset.
         Args:
@@ -569,20 +576,39 @@ class Environment(Observer):
         eta_res_values = expit(-k * (ds_abs - T))
         eta_res_values.to_netcdf("eta_resolution.nc")
 
-        resolution_file = os.path.join(
+        resolution_file_taskable = os.path.join(
             self.current_simulation_date, "resolution_taskable.nc"
-        )
+        )        
 
-        if os.path.exists(resolution_file):
+        if os.path.exists(resolution_file_taskable):
             logger.info(
-                f"File {resolution_file} already exists. Reading the existing file."
+                f"File {resolution_file_taskable} already exists. Reading the existing file."
             )
-            eta_res_values_taskable = xr.open_dataset(resolution_file)     
+            eta_res_values_taskable = xr.open_dataset(resolution_file_taskable)     
         else:    
             eta_res_values_taskable = xr.ones_like(eta_res_values).astype("float32")  
-            eta_res_values_taskable.to_netcdf(resolution_file)          
+            eta_res_values_taskable.to_netcdf(resolution_file_taskable)
 
-        return eta_res_values, eta_res_values_taskable   
+        swe = ds["SWE_tavg"]
+        last_date = str(swe["time"][-1].values)[:10].replace("-", "")
+        resolution_file_nontaskable = os.path.join(
+            self.current_simulation_date, f"efficiency_resolution_nontaskable{last_date}.nc"
+        )
+    
+        # Reprojecting to the standard resolution of the other layers
+        target_resolution_file = target_resolution_file.rio.write_crs("EPSG:4326", inplace=False)
+        eta_res_values = eta_res_values.rio.write_crs(
+            "EPSG:4326", inplace=False
+        )
+        eta_res_values_taskable = eta_res_values_taskable.rio.write_crs(
+            "EPSG:4326", inplace=False
+        )
+
+        resolution_nontaskable_50km = eta_res_values.rio.reproject_match(target_resolution_file,Resampling=Resampling.bilinear) 
+        resolution_taskable_50km = eta_res_values_taskable.rio.reproject_match(target_resolution_file,Resampling=Resampling.bilinear)  
+        resolution_taskable_50km = gpd.clip(resolution_taskable_50km, mo_basin)  
+
+        return resolution_nontaskable_50km, resolution_taskable_50km,resolution_file_nontaskable   
 
       
     # def generate_sensor_capella(self, ds):
@@ -1491,13 +1517,7 @@ class Environment(Observer):
                     time.sleep(15)
                
 
-                # MODIFIED BY DIVYA - Resolution
-                # Generate the resolution dataset
-                resolution_dataset_nontaskable, resolution_dataset_taskable = (
-                    self.generate_resolution(
-                        ds=combined_dataset_resolution
-                    )
-                )
+                
 
                  ###############
                 # ETA5 dataset#
@@ -1545,6 +1565,36 @@ class Environment(Observer):
                 self.upload_file(
                     key=surfacetemp_output_file, filename=surfacetemp_output_file
                 )
+
+                # MODIFIED BY DIVYA - Resolution - adding here as I need eta0_file for resolution
+                # Generate the resolution dataset
+                resolution_dataset_nontaskable, resolution_dataset_taskable, resolution_output_file = (
+                    self.generate_resolution(
+                        ds=combined_dataset_resolution,target_resolution_file = eta0_file, mask = mo_basin
+                    )
+                )
+
+                # Upload dataset to S3
+                self.upload_file(
+                    key=resolution_output_file, filename=resolution_output_file
+                )
+
+                # Generate the snow cover dataset
+                snow_cover_eta_file, snow_cover_eta_output_file = (
+                    self.generate_snow_cover(
+                        ds=combined_dataset
+                    )
+                )
+
+                # Upload dataset to S3
+                self.upload_file(
+                    key=snow_cover_eta_output_file, filename=snow_cover_eta_output_file
+                )
+
+                # COMMENT BY DIVYA - will add layer- encoding if required later            
+                
+
+
                 # Select the eta0 variable for a specific time step (e.g., first time step)
                 eta0_data = eta0_file["eta0"].isel(time=1)
                 eta0_layer_encoded, _, _, _, _ = self.encode(
@@ -1662,6 +1712,26 @@ class Environment(Observer):
                         output_file="Combined_Efficiency_Weighted_Product_GCOM",
                     )
                 )
+
+                # MODIFIED BY DIVYA - Combine and multiply files - commenting out for now
+
+                # # Define the weights for each dataset
+                # weights = {"eta5": 0.4, "eta0": 0.2, "eta2": 0.2, "snow_cover_eta": 0.1, "resolution_eta": 0.1}
+                # # Process GCOM datasets
+                # gcom_combine_multiply_output_file, gcom_dataset = (
+                #     self.combine_and_multiply_datasets(
+                #         ds=combined_dataset,
+                #         eta5_file=eta5_file,
+                #         eta0_file=eta0_file,
+                #         eta2_file=eta2_file_GCOM,
+                #         resolution_eta_file=resolution_dataset_nontaskable,
+                #         snow_cover_eta_file=snow_cover_eta_file,
+                #         weights=weights,
+                #         output_file="Combined_Efficiency_Weighted_Product_GCOM",
+                #     )
+                # )
+
+
                 # Upload dataset to S3
                 self.upload_file(
                     key=gcom_combine_multiply_output_file,
