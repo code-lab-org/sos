@@ -429,7 +429,7 @@
                     const conn = await amqp.connect();
                     const ch = await conn.channel();
                     console.log("Connected to the broker.");
-                    await ch.exchangeDeclare("sos", "topic", { durable: false, autoDelete: true });
+                    await ch.exchangeDeclare("sos", "topic", { durable: true, autoDelete: true });
                     const q = await ch.queue("", { exclusive: true });
                     await q.bind("sos", "sos.#");
                     await q.subscribe({ noAck: true }, (msg) => {

@@ -588,15 +588,16 @@ class Environment(Observer):
 
         resolution_file_taskable = os.path.join(
             self.current_simulation_date, "resolution_taskable.nc"
-        )        
+        )      
 
-        if os.path.exists(resolution_file_taskable):
-            logger.info(
-                f"File {resolution_file_taskable} already exists. Reading the existing file."
-            )
-            eta_res_values_taskable = xr.open_dataset(resolution_file_taskable)     
-        else:    
-            eta_res_values_taskable = xr.ones_like(eta_res_values).astype("float32")        
+        # if os.path.exists(resolution_file_taskable):
+        #     logger.info(
+        #         f"File {resolution_file_taskable} already exists. Reading the existing file."
+        #     )
+        #     eta_res_values_taskable = xr.open_dataset(resolution_file_taskable)     
+        # else:  
+          
+        eta_res_values_taskable = xr.ones_like(eta_res_values).astype("float32")        
     
         # Reprojecting to the standard resolution of the other layers
         target_resolution_file = target_resolution_file.rio.write_crs("EPSG:4326", inplace=False)
