@@ -267,7 +267,7 @@ def write_back_to_appender(source, time):
         "simulator_polygon_groundtrack"
     ].apply(lambda x: wkt.loads(x) if isinstance(x, str) else x)
     gdf = gpd.GeoDataFrame(selected_json_data, geometry="simulator_polygon_groundtrack")
-    gdf.to_file(f"outputs/master_simulator.geojson", driver="GeoJSON")
+    gdf.to_file(f"outputs/master.geojson", driver="GeoJSON")
     logger.info(f"{source.app.app_name} sending message.")
     date_sim_time = source.app.simulator._time
     date_sim = str(date_sim_time.date()).replace("-", "")
