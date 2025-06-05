@@ -3,6 +3,8 @@ from datetime import datetime, timedelta
 from typing import List
 import numpy as np
 from constellation_config_files.schemas import VectorLayer
+from skyfield.api import load, wgs84, EarthSatellite
+from skyfield.framelib import itrs
 
 # from geojson_pydantic import Polygon, MultiPolygon
 # from joblib import Parallel, delayed
@@ -164,3 +166,33 @@ class Collect_Observations(Entity):
     def message_received_from_appender(self, ch, method, properties, body):
         logger.info(f"Message succesfully received at {self.app.simulator._time}")
         self.on_appender()
+
+
+class SatelliteVisualization(Entity):
+    """
+    Visualizes the satellites on Cesium.
+    """
+    ts = load.timescale()
+    PROPERTY_POSITION = "position"
+
+    def __init__(self, 
+        constellation: List[TATC_Satellite], 
+        application: Application):
+        super().__init__()
+        self.names = {sat.name: sat for sat in constellation}
+        
+        self.app = application
+
+    def initialize(self, init_time: datetime):
+        """
+        Initilizes the entity with the given start time.
+        """
+        super().initialize(init_time)       
+        
+
+    def tick(self, time_step: timedelta):
+        """
+        Calculate and update the parameters required to visualize satellite positions.
+        """
+
+        
