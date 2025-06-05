@@ -83,7 +83,7 @@ class Collect_Observations(Entity):
         logger.info(f"Type of date {type(self._time)} and self.last_observation_time {type(self.last_observation_time)}")         
         
         t1 = self._time.replace(tzinfo=None)
-        t2 = self.last_observation_time.replace(tzinfo=None) + timedelta(seconds=30)
+        t2 = self.last_observation_time.replace(tzinfo=None) + timedelta(seconds=59) #timedelta(seconds=30)
         logger.info(f"t1 {t1} and t2 {t2}")
 
         if t1 > t2:
@@ -91,11 +91,11 @@ class Collect_Observations(Entity):
             if self.possible_observations is not None:
                 logger.info(f"Number of possible observations {len(self.possible_observations)}")
                 self.observation_collected = filter_and_sort_observations(
-                    self.possible_observations, self._time, self.incomplete_requests,timedelta(seconds=30))     
+                    self.possible_observations, self._time, self.incomplete_requests,timedelta(minutes=1))     # change here 
             
             if self.observation_collected is not None:
 
-                if np.random.rand() <= 1:
+                if np.random.rand() <= 0.75:  # Simulate a 75% chance of collecting an observation
                     # Get the satellite that collected the observation
                     satellite = self.constellation[self.observation_collected["satellite"]]
                     # Call the groundtrack function
