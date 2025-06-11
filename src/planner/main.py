@@ -358,7 +358,7 @@ class Environment(Observer):
 
     def generate_surface_temp(self, ds):
         """
-        Generate the surface temperature dataset.
+        Generate the surface temperature efficiency dataset.
 
         Args:
             ds (xarray.Dataset): The dataset containing the SWE and surface temperature values
@@ -367,7 +367,7 @@ class Environment(Observer):
             output_file (str): The output file name
             surface_temp_dataset (xarray.Dataset): The new dataset
         """
-        logger.info("Generating surface temperature dataset.")
+        logger.info("Generating surface temperature efficiency dataset.")
         swe = ds["SWE_tavg"]
         surface_temp = ds["AvgSurfT_tavg"] - 273.15
         temp_masked = surface_temp.where(~np.isnan(surface_temp))
@@ -532,8 +532,9 @@ class Environment(Observer):
         
         last_date = str(sc["time"][-1].values)[:10].replace("-", "")
         snow_cover_file = os.path.join(
-            self.current_simulation_date, f"efficiency_snowcover_{last_date}.nc"
+            self.current_simulation_date, f"Efficiency_snowcover_{last_date}.nc"
         )
+        logger.info(f"Saving snow cover file to: {snow_cover_file}")
 
         eta_sc_values = self.calculate_eta(snowcover_masked, T, k)
         eta_sc_values.to_netcdf(snow_cover_file)
@@ -670,7 +671,7 @@ class Environment(Observer):
     #     return output_file, capella_dataset
 
     def combine_and_multiply_datasets(
-        self, ds, eta5_file, eta0_file, eta2_file, weights, output_file
+        self, ds, eta5_file, eta0_file, eta2_file,eta_sc_file,eta_res_file, weights, output_file
     ):
         """
         Combine three datasets by applying weights and performing grid-cell multiplication.
@@ -692,13 +693,19 @@ class Environment(Observer):
         eta5_ds = eta5_file
         eta0_ds = eta0_file
         eta2_ds = eta2_file
+        eta_sc_ds = eta_sc_file
+        eta_res_ds = eta_res_file
         eta5 = eta5_ds["eta5"]
         eta0 = eta0_ds["eta0"]
         eta2 = eta2_ds["eta2"]
+        eta_sc = eta_sc_ds["eta_sc_values"]
+        eta_res= eta_res_ds["eta_res_values"]
         weighted_eta5 = eta5 * weights["eta5"]
         weighted_eta0 = eta0 * weights["eta0"]
         weighted_eta2 = eta2 * weights["eta2"]
-        combined_values = weighted_eta5 * weighted_eta0 * weighted_eta2
+        weighted_eta_sc = eta_sc * weights["eta_sc"]
+        weighted_eta_res = eta_res * weights["eta_res"]
+        combined_values = weighted_eta5 * weighted_eta0 * weighted_eta2 * weighted_eta_sc * weighted_eta_res
         combined_dataset = xr.Dataset({"combined_eta": combined_values})
         combined_dataset["combined_eta"] = combined_dataset[
             "combined_eta"
@@ -1083,67 +1090,6 @@ class Environment(Observer):
 
         return raster_layer_encoded, top_left, top_right, bottom_left, bottom_right
 
-    # def download_file(self, s3, bucket, key, filename):
-    #     """
-    #     Download a file from an S3 bucket
-
-    #     Args:
-    #         s3: S3 client
-    #         bucket: S3 bucket name
-    #         key: S3 object key
-    #         filename: Filename to save the file as
-
-    #     Returns:
-    #         dataset (xarray.Dataset): The dataset
-    #     """
-    #     if not os.path.exists(filename):
-    #         logger.info(f"Downloading file from S3: {filename}")
-    #         config = TransferConfig(use_threads=True if self.parallel_compute else False)
-    #         s3.download_file(Bucket=bucket, Key=key, Filename=filename, Config=config)
-    #     else:
-    #         logger.info(f"File already exists: {filename}")
-    #     dataset = xr.open_dataset(filename, engine="h5netcdf")
-    #     return dataset
-
-    ###########
-    # New download approach
-    ###########
-
-    # def find_most_recent_file(self, s3, bucket_name, directories, file_name_pattern):
-    #     paginator = s3.get_paginator("list_objects_v2")
-
-    #     # Prioritize assimilation
-    #     for directory in directories:
-    #         logger.debug(f"Searching in directory: {directory}")
-    #         if "assimilation" in directory:
-    #             # Get all subdirectories
-    #             pages = paginator.paginate(Bucket=bucket_name, Prefix=directory, Delimiter='/')
-    #             subdirs = [
-    #                 prefix["Prefix"]
-    #                 for page in pages
-    #                 for prefix in page.get("CommonPrefixes", [])
-    #             ]
-    #             if subdirs:
-    #                 most_recent_subdir = max(subdirs)
-    #                 logger.debug(f"Most recent assimilation subdir: {most_recent_subdir}")
-    #                 pages = paginator.paginate(Bucket=bucket_name, Prefix=most_recent_subdir)
-    #                 for page in pages:
-    #                     for obj in page.get("Contents", []):
-    #                         if obj["Key"].endswith(file_name_pattern):
-    #                             logger.info(f"Found matching file in assimilation: {obj['Key']}")
-    #                             return obj["Key"]
-
-    #     # If not found in assimilation, try open_loop
-    #     for directory in directories:
-    #         if "open_loop" in directory:
-    #             pages = paginator.paginate(Bucket=bucket_name, Prefix=directory)
-    #             for page in pages:
-    #                 for obj in page.get("Contents", []):
-    #                     if obj["Key"].endswith(file_name_pattern):
-    #                         logger.info(f"Found matching file in open_loop: {obj['Key']}")
-    #                         return obj["Key"]
-
-    #     return None
 
     def find_most_recent_file(self, bucket_name, directories, file_name_pattern):
         """
@@ -1445,9 +1391,7 @@ class Environment(Observer):
                 mo_basin = self.process_geojson(mo_basin)
                 self.polygons = mo_basin.geometry
 
-                ###################
                 # Combined dataset#
-                ###################
                 # Get first dataset
                 # dataset1 = self.download_file(
                 #     s3=s3,
@@ -1468,10 +1412,8 @@ class Environment(Observer):
                 #         f"LIS_HIST_{new_value_reformat}0000.d01.nc",
                 #     ),
                 # )
-
-                ###################
-                # New Combined dataset#
-                ###################
+                
+                # New Combined dataset
                 dataset1 = self.download_file(
                     bucket_name="snow-observing-systems",
                     file_name_pattern=f"LIS_HIST_{old_value_reformat}0000.d01.nc",
@@ -1509,7 +1451,7 @@ class Environment(Observer):
 
 
                 # Select the SWE_tavg variable for a specific time step (e.g., first time step)
-                swe_data = combined_dataset["SWE_tavg"].isel(time=0)  # SEND AS MESSAGE
+                swe_data = combined_dataset["SWE_tavg"].isel(time=1)  # SEND AS MESSAGE
                 swe_layer_encoded, top_left, top_right, bottom_left, bottom_right = (
                     self.encode(
                         dataset=combined_dataset,
@@ -1537,12 +1479,8 @@ class Environment(Observer):
                     time.sleep(15)
                
 
-                
-
-                 ###############
+            
                 # ETA5 dataset#
-                ###############
-
                 # Generate the SWE difference
                 swe_output_file, eta5_file = self.generate_swe_difference(
                     ds=combined_dataset
@@ -1574,9 +1512,8 @@ class Environment(Observer):
                     )
                     logger.info("Publishing message successfully completed.")
 
-                ###############
-                # ETA0 dataset#
-                ###############
+               
+                # ETA0 dataset
                 # Generate the surface temperature dataset
                 surfacetemp_output_file, eta0_file = self.generate_surface_temp(
                     ds=combined_dataset
@@ -1600,7 +1537,7 @@ class Environment(Observer):
                 )
 
                 # Generate the snow cover dataset
-                snow_cover_eta_file, snow_cover_eta_output_file = (
+                snow_cover_eta_file, eta_sc_file = (
                     self.generate_snowcover(
                         ds=combined_dataset
                     )
@@ -1608,7 +1545,7 @@ class Environment(Observer):
 
                 # Upload dataset to S3
                 self.upload_file(
-                    key=snow_cover_eta_output_file, filename=snow_cover_eta_output_file
+                    key=eta_sc_file, filename=eta_sc_file
                 )
 
                 # COMMENT BY DIVYA - will add layer- encoding if required later    
@@ -1642,9 +1579,8 @@ class Environment(Observer):
                     logger.info("Publishing message successfully completed.")
                     time.sleep(15)
 
-                ###################
-                # ETA2 GCOM dataset#
-                ###################
+               
+                # ETA2 GCOM dataset
                 # Generate the sensor GCOM dataset
                 sensor_gcom_output_file, eta2_file_GCOM = self.generate_sensor_gcom(
                     ds=combined_dataset
@@ -1679,10 +1615,8 @@ class Environment(Observer):
                     logger.info("Publishing message successfully completed.")
                     time.sleep(15)
 
-                ######################
-                # ETA2 Capella dataset#
-                ######################
 
+                # ETA2 Capella dataset
                 # Generate the sensor capella dataset
                 sensor_capella_output_file, eta2_file_Capella = (
                     self.generate_sensor_capella(ds=combined_dataset)
@@ -1717,11 +1651,10 @@ class Environment(Observer):
                     logger.info("Publishing message successfully completed.")
                     time.sleep(15)
 
-                ###########
-                # GCOM ETA#
-                ###########
+                # GCOM Final ETA
                 # Define the weights for each dataset
-                weights = {"eta5": 0.5, "eta0": 0.3, "eta2": 0.2}
+                #weights = {"eta5": 0.5, "eta0": 0.3, "eta2": 0.2}
+                weights = {"eta5": 0.5, "eta0": 0.3, "eta2": 0.2, "eta_sc": 0.3, "eta_res": 0.2}
                 # Process GCOM datasets
                 gcom_combine_multiply_output_file, gcom_dataset = (
                     self.combine_and_multiply_datasets(
@@ -1729,6 +1662,8 @@ class Environment(Observer):
                         eta5_file=eta5_file,
                         eta0_file=eta0_file,
                         eta2_file=eta2_file_GCOM,
+                        eta_sc_file = eta_sc_file,
+                        eta_res_file = resolution_dataset_nontaskable_eta,
                         weights=weights,
                         output_file="Combined_Efficiency_Weighted_Product_GCOM",
                     )
@@ -1785,9 +1720,7 @@ class Environment(Observer):
                     logger.info("Publishing message successfully completed.")
                     time.sleep(15)
 
-                #############
-                # Capella ETA#
-                #############
+                # Capella Final ETA
                 # Process Capella datasets
                 capella_combine_multiply_output_file, capella_dataset = (
                     self.combine_and_multiply_datasets(
@@ -1795,6 +1728,8 @@ class Environment(Observer):
                         eta5_file=eta5_file,
                         eta0_file=eta0_file,
                         eta2_file=eta2_file_Capella,
+                        eta_sc_file = eta_sc_file,
+                        eta_res_file = resolution_dataset_taskable_eta,
                         weights=weights,
                         output_file="Combined_Efficiency_Weighted_Product_Capella",
                     )
@@ -1828,9 +1763,8 @@ class Environment(Observer):
                     logger.info("Publishing message successfully completed.")
                     time.sleep(15)
 
-                ###########
-                # Final ETA#
-                ###########
+
+                # Reward
                 final_eta_output_file, final_eta_gdf = self.process(
                     gcom_ds=gcom_dataset,
                     snowglobe_ds=capella_dataset,
@@ -1860,9 +1794,7 @@ class Environment(Observer):
                     VectorLayer(vector_layer=all_json_data).model_dump_json(),
                 )
 
-                ########################
                 # Find Optimal Solution#
-                ########################
                 output_geojson, selected_cells_gdf = self.find_optimal_solution(
                     final_eta_gdf=final_eta_gdf
                 )
