@@ -618,7 +618,7 @@ class Environment(Observer):
         logger.info("Reprojecting resolution datasets successfully completed.")
 
         # resolution_taskable_50km = resolution_taskable_50km.rio.write_crs("EPSG:4326", inplace=False)
-        resolution_taskable_50km = resolution_taskable_50km.rio.clip(mo_basin.geometry) 
+        # resolution_taskable_50km = resolution_taskable_50km.rio.clip(mo_basin.geometry) 
 
         # # Remove grid_mapping attributes
         # for var in resolution_taskable_50km.data_vars:
@@ -698,8 +698,8 @@ class Environment(Observer):
         eta5 = eta5_ds["eta5"]
         eta0 = eta0_ds["eta0"]
         eta2 = eta2_ds["eta2"]
-        eta_sc = eta_sc_ds["eta_sc_values"]
-        eta_res= eta_res_ds["eta_res_values"]
+        eta_sc = eta_sc_ds 
+        eta_res= eta_res_ds["SWE_tavg"]
         weighted_eta5 = eta5 * weights["eta5"]
         weighted_eta0 = eta0 * weights["eta0"]
         weighted_eta2 = eta2 * weights["eta2"]
@@ -1527,7 +1527,7 @@ class Environment(Observer):
                 # Generate the resolution dataset
                 resolution_dataset_nontaskable_eta, resolution_dataset_taskable_eta, resolution_output_file = (
                     self.generate_resolution(
-                        ds=combined_dataset_resolution,target_resolution_file = eta0_file, mo_basin = mo_basin
+                        ds=combined_dataset_resolution,target_resolution_file = eta5_file, mo_basin = mo_basin
                     )
                 )
 
@@ -1537,7 +1537,7 @@ class Environment(Observer):
                 )
 
                 # Generate the snow cover dataset
-                snow_cover_eta_file, eta_sc_file = (
+                eta_sc_values, eta_sc_file = (
                     self.generate_snowcover(
                         ds=combined_dataset
                     )
@@ -1662,7 +1662,7 @@ class Environment(Observer):
                         eta5_file=eta5_file,
                         eta0_file=eta0_file,
                         eta2_file=eta2_file_GCOM,
-                        eta_sc_file = eta_sc_file,
+                        eta_sc_file = eta_sc_values,
                         eta_res_file = resolution_dataset_nontaskable_eta,
                         weights=weights,
                         output_file="Combined_Efficiency_Weighted_Product_GCOM",
@@ -1728,7 +1728,7 @@ class Environment(Observer):
                         eta5_file=eta5_file,
                         eta0_file=eta0_file,
                         eta2_file=eta2_file_Capella,
-                        eta_sc_file = eta_sc_file,
+                        eta_sc_file = eta_sc_values,
                         eta_res_file = resolution_dataset_taskable_eta,
                         weights=weights,
                         output_file="Combined_Efficiency_Weighted_Product_Capella",
