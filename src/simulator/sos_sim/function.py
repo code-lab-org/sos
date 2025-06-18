@@ -1,7 +1,10 @@
 # This Script stores all the functions that are used in the simulator code
 # The functions are stored in a separate file to make the main code more readable
 import logging
+import numpy as np
 import os
+from skyfield.api import load, wgs84, EarthSatellite
+from skyfield.framelib import itrs
 import sys
 import time as t
 from datetime import datetime, timedelta, timezone
@@ -370,3 +373,51 @@ def convert_to_vector_layer_format(visual_requests):
     # f"Conversion to vector layer processing time: {computation_time:.2f} seconds"
     # )
     return vector_data_gdf.to_json()
+
+##################################################################################################################################
+##################################################################################################################################
+# The following functions are used in the Satellite_position class in the entity.py file
+
+def get_elevation_angle(t, sat, loc):
+    """
+    Returns the elevation angle (degrees) of satellite with respect to the topocentric horizon.
+
+    Args:
+        t (:obj:`Time`): Time object of skyfield.timelib module
+        sat (:obj:`EarthSatellite`): Skyview EarthSatellite object from skyfield.sgp4lib module
+        loc (:obj:`GeographicPosition`): Geographic location on surface specified by latitude-longitude from skyfield.toposlib module
+
+    Returns:
+        float : alt.degrees
+            Elevation angle (degrees) of satellite with respect to the topocentric horizon
+    """
+    difference = sat - loc
+    topocentric = difference.at(t)
+    # NOTE: Topos uses term altitude for what we are referring to as elevation
+    alt, az, distance = topocentric.altaz()
+    return alt.degrees
+
+def compute_sensor_radius(altitude, min_elevation):
+    """
+    Computes the sensor radius for a satellite at current altitude given minimum elevation constraints.
+
+    Args:
+        altitude (float): Altitude (meters) above surface of the observation
+        min_elevation (float): Minimum angle (degrees) with horizon for visibility
+
+    Returns:
+        float : sensor_radius
+            The radius (meters) of the nadir pointing sensors circular view of observation
+    """
+    earth_equatorial_radius = 6378137.0
+    earth_polar_radius = 6356752.314245179
+    earth_mean_radius = (2 * earth_equatorial_radius + earth_polar_radius) / 3
+    # rho is the angular radius of the earth viewed by the satellite
+    sin_rho = earth_mean_radius / (earth_mean_radius + altitude)
+    # eta is the nadir angle between the sub-satellite direction and the target location on the surface
+    eta = np.degrees(np.arcsin(np.cos(np.radians(min_elevation)) * sin_rho))
+    # calculate swath width half angle from trigonometry
+    sw_HalfAngle = 90 - eta - min_elevation
+    if sw_HalfAngle < 0.0:
+        return 0.0
+    return earth_mean_radius * np.radians(sw_HalfAngle)

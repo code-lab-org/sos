@@ -7,11 +7,11 @@ from nost_tools.application_utils import ShutDownObserver
 from nost_tools.configuration import ConnectionConfig
 from nost_tools.managed_application import ManagedApplication
 from nost_tools.observer import ScenarioTimeIntervalCallback
-from sos_sim.entity import Collect_Observations
+from sos_sim.entity import Collect_Observations, SatelliteVisualization
 from sos_sim.function import Snowglobe_constellation, write_back_to_appender
 
 # from sos_sim.observers import ScenarioTimeIntervalCallback
-start_time = datetime(2019, 3, 1, tzinfo=timezone.utc)
+start_time = datetime(2025, 1, 1, tzinfo=timezone.utc)
 
 # configure logging
 logging.basicConfig(level=logging.INFO)
@@ -73,6 +73,8 @@ simulator.add_entity(entity)
 #         PropertyChangeCallback(Collect_Observations.PROPERTY_OBSERVATION, log_observation)
 #     )
 
+
+
 # Add Observers
 entity.add_observer(
     ScenarioTimeIntervalCallback(write_back_to_appender, time_step_callback)
@@ -84,6 +86,12 @@ entity.add_observer(
 # # execute the simulator
 # simulator.execute(start, duration, time_step, None, time_scale_factor)
 app.add_message_callback("appender", "master", entity.message_received_from_appender)
+
+entity_2 = SatelliteVisualization(
+    constellation=Snowglobe_constellation(start_time), application=app
+)
+
+simulator.add_entity(entity_2)
 
 # while True:
 #     pass
