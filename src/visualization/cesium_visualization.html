@@ -80,12 +80,15 @@
             var BROKER_CLIENT_USERNAME = USERNAME;
             var BROKER_CLIENT_PASSWORD = PASSWORD;
             Cesium.Ion.defaultAccessToken = CESIUM_ACCESS_TOKEN;
+            var polyColor = Cesium.Color.fromAlpha(Cesium.Color.YELLOW, parseFloat(0.2));
 
             const viewer = new Cesium.Viewer('cesiumContainer');
             const positions = {};
             const previousSensorCircles = {};
+            const previousLabelEntities = {};
+            const previousBeamEntities = {};
             let firstUpdate = true;
-            let previousLabelEntities = {};
+            // let previousLabelEntities = {};
             let snowLayer, resolutionLayer;
             let optimizationLayer, optimizationLayerAll, optimizationLayerSelected, missouriLayer;
             let gcomLayer, capellaLayer;
@@ -144,133 +147,356 @@
                 } else if (topic === "sos.manager.stop") {
                     console.log("Stop command received.");
                     viewer.clockViewModel.multiplier = 0;
-                } else if (topic === "sos.constellation.location") {
+                } else if (topic === "sos.simulator.location") {
                     const position = new Cesium.Cartesian3(payload.ecef[0], payload.ecef[1], payload.ecef[2]);
+                    const position_target = new Cesium.Cartesian3(payload.target[0], payload.target[1], payload.target[2]);
                     const altitude_km = payload.altitude / 1000;
                     const radius_km = payload.radius / 1000;
                     const swath_km = payload.swath / 1000;
 
-                    if (!positions[payload.name]) {
-                        positions[payload.name] = [];
-                    }
-                    positions[payload.name].push(position);
+                    console.log("Position:", new Cesium.Cartesian3(payload.ecef[0], payload.ecef[1], payload.ecef[2]));
+                    console.log("Position:", position);
+                    // console.log("Target Position:", position_target);
 
-                    if (previousSensorCircles[payload.name]) {
-                        previousSensorCircles[payload.name].forEach(circle => {
-                            viewer.scene.primitives.remove(circle);
-                        });
-                        previousSensorCircles[payload.name].length = 0;
-                    } else {
-                        previousSensorCircles[payload.name] = [];
-                    }
 
-                    if (previousLabelEntities[payload.name]) {
-                        viewer.entities.remove(previousLabelEntities[payload.name]);
-                    }
+                    // MODIFIED CODE ADDED BY DIVYA
+                    // Function to create or update entity
+                    
+                    function createOrUpdateEntity(name, position, color, pixelSize, showlabel = true) {
+                        if (!previousLabelEntities[name]) {
+                            const entityOptions = {
+                                name: name,
+                                position: position,
+                                point: {
+                                    pixelSize: pixelSize,
+                                    color: color,
+                                }
+                            };
 
-                    let color = Cesium.Color.RED;
-                    if (payload.name === 'GCOM-W1 (SHIZUKU)') {
-                        color = Cesium.Color.GREEN;
-                    } else if (payload.name === 'CAPELLA-14 (ACADIA-4)') {
-                        color = Cesium.Color.YELLOW;
-                    }
-
-                    const dotcolor = payload.state ? Cesium.Color.LIME : Cesium.Color.RED;
-
-                    previousLabelEntities[payload.name] = viewer.entities.add({
-                        position: position,
-                        point: {
-                            pixelSize: 10,
-                            color: dotcolor,
-                        },
-                        label: {
-                            text: payload.name,
-                            font: '10pt Arial',
-                            style: Cesium.LabelStyle.FILL,
-                            fillColor: dotcolor,
-                            verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
-                            pixelOffset: new Cesium.Cartesian2(0, -15),
-                            eyeOffset: new Cesium.Cartesian3(0, 0, -5000),
-                        }
-                    });
-
-                    const sensorRadius = payload.radius;
-                    const sensorHeight = payload.altitude;
-                    const hollowRadius = payload.radius * (5 / 50);
-
-                    const outerCone = new Cesium.CylinderGeometry({
-                        length: sensorHeight * 2,
-                        topRadius: 0.0,
-                        bottomRadius: sensorRadius,
-                        vertexFormat: Cesium.PerInstanceColorAppearance.VERTEX_FORMAT
-                    });
-
-                    const outerConeInstance = new Cesium.GeometryInstance({
-                        geometry: outerCone,
-                        modelMatrix: Cesium.Matrix4.multiplyByTranslation(
-                            Cesium.Transforms.eastNorthUpToFixedFrame(position),
-                            new Cesium.Cartesian3(0.0, 0.0, -sensorHeight),
-                            new Cesium.Matrix4()
-                        ),
-                        attributes: {
-                            color: Cesium.ColorGeometryInstanceAttribute.fromColor(color.withAlpha(0.2))
-                        }
-                    });
-
-                    const outerPrimitive = new Cesium.Primitive({
-                        geometryInstances: outerConeInstance,
-                        appearance: new Cesium.PerInstanceColorAppearance()
-                    });
-
-                    viewer.scene.primitives.add(outerPrimitive);
-                    previousSensorCircles[payload.name].push(outerPrimitive);
-
-                    if (payload.name === "CAPELLA-14 (ACADIA-4)") {
-                        const innerCone = new Cesium.CylinderGeometry({
-                            length: sensorHeight * 2,
-                            topRadius: 0.0,
-                            bottomRadius: hollowRadius,
-                            vertexFormat: Cesium.PerInstanceColorAppearance.VERTEX_FORMAT
-                        });
-
-                        const innerConeInstance = new Cesium.GeometryInstance({
-                            geometry: innerCone,
-                            modelMatrix: Cesium.Matrix4.multiplyByTranslation(
-                                Cesium.Transforms.eastNorthUpToFixedFrame(position),
-                                new Cesium.Cartesian3(0.0, 0.0, -sensorHeight),
-                                new Cesium.Matrix4()
-                            ),
-                            attributes: {
-                                color: Cesium.ColorGeometryInstanceAttribute.fromColor(Cesium.Color.BLACK.withAlpha(0.6))
+                            // Only add label if showlabel is true
+                            if (showlabel) {
+                                entityOptions.label = {
+                                    text: name,
+                                    font: '12pt sans-serif',
+                                    fillColor: color,
+                                    outlineColor: Cesium.Color.BLACK,
+                                    outlineWidth: 2,
+                                    style: Cesium.LabelStyle.FILL_AND_OUTLINE,
+                                    verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                                    pixelOffset: new Cesium.Cartesian2(0, -15),
+                                };
                             }
-                        });
 
-                        const innerPrimitive = new Cesium.Primitive({
-                            geometryInstances: innerConeInstance,
-                            appearance: new Cesium.PerInstanceColorAppearance()
-                        });
-
-                        viewer.scene.primitives.add(innerPrimitive);
-                        previousSensorCircles[payload.name].push(innerPrimitive);
+                            previousLabelEntities[name] = viewer.entities.add(entityOptions);
+                        } else {
+                            previousLabelEntities[name].position = position;
+                        }
                     }
 
-                    if (!positions[payload.name]) {
-                        positions[payload.name] = [];
-                    }
 
-                    if (positions[payload.name].polylineEntity) {
-                        viewer.entities.remove(positions[payload.name].polylineEntity);
-                    }
-
-                    if (positions[payload.name].length > 1) {
-                        positions[payload.name].polylineEntity = viewer.entities.add({
-                            polyline: {
-                                positions: positions[payload.name],
-                                width: 0.5,
-                                material: color
+                    function updateBeam(sourEntity, tarEntity, beamKey) {
+                        function getCircleBoundries(center, radius, density = 0.009) {
+                            try {
+                                if (!center || radius <= 0) return null;
+                                var cep = Cesium.EllipseGeometryLibrary.computeEllipsePositions({
+                                    center: center,
+                                    semiMajorAxis: radius,
+                                    semiMinorAxis: radius,
+                                    rotation: 0,
+                                    granularity: density
+                                }, false, true);
+                                if (!cep || !cep.outerPositions) return null;
+                                var pnts = Cesium.Cartesian3.unpackArray(cep.outerPositions);
+                                pnts.push(pnts[0]); // close polygon
+                                return pnts;
+                            } catch (err) {
+                                return null;
                             }
-                        });
+                        }
+
+                        const polyColor = Cesium.Color.fromAlpha(Cesium.Color.YELLOW, 0.2);
+                        let tarPosition = tarEntity.position.getValue(viewer.clock.currentTime);
+                        let circularPoss = getCircleBoundries(tarPosition, 250000, 0.020);
+                        let sourPosition = sourEntity.position.getValue(viewer.clock.currentTime);
+
+                        if (!circularPoss) return;
+
+                        if (!previousBeamEntities[beamKey]) {
+                            previousBeamEntities[beamKey] = [];
+                            for (let i = 0; i < circularPoss.length - 1; i++) {
+                                let hierarchy = new Cesium.PolygonHierarchy([
+                                    circularPoss[i],
+                                    sourPosition,
+                                    circularPoss[i + 1]
+                                ]);
+                                let poly = viewer.entities.add({
+                                    polygon: {
+                                        hierarchy: hierarchy,
+                                        perPositionHeight: true,
+                                        outline: false,
+                                        material: polyColor,
+                                    }
+                                });
+                                previousBeamEntities[beamKey].push(poly);
+                            }
+                        } else {
+                            // Update existing polygons
+                            for (let i = 0; i < previousBeamEntities[beamKey].length; i++) {
+                                let j = i + 1;
+                                previousBeamEntities[beamKey][i].polygon.hierarchy = new Cesium.PolygonHierarchy([
+                                    circularPoss[i],
+                                    sourPosition,
+                                    circularPoss[j]
+                                ]);
+                            }
+                        }
                     }
+
+                    createOrUpdateEntity(payload.name, position, Cesium.Color.BLUE, 10,true);
+                    createOrUpdateEntity(payload.name + "_target", position_target, Cesium.Color.RED, 5,false);
+                    updateBeam(previousLabelEntities[payload.name], previousLabelEntities[payload.name + "_target"],payload.name);
+
+                    // viewer.scene.postUpdate.addEventListener(() => {
+                    //     console.log("Running postUpdate");
+                    //     for (let beamKey in previousBeamEntities) {
+                    //         const sourceEntity = previousLabelEntities[beamKey];
+                    //         const targetEntity = previousLabelEntities[beamKey + "_target"];
+                    //         if (sourceEntity && targetEntity) {
+                    //             updateBeam(sourceEntity, targetEntity, beamKey);
+                    //         }
+                    //     }
+                    // });
+
+                    // Function to update and fill beam between two entities
+
+                    // function updateBeam(sourEntity, tarEntity) {
+                    //     function getCircleBoundries(center, radius, density = 0.009) {
+                    //         try {
+                    //             if (!center || radius <= 0) {
+                    //                 return null;
+                    //             }
+                    //             var cep = Cesium.EllipseGeometryLibrary.computeEllipsePositions({
+                    //                 center: center,
+                    //                 semiMajorAxis: radius,
+                    //                 semiMinorAxis: radius,
+                    //                 rotation: 0,
+                    //                 granularity: density
+                    //             }, false, true);
+                    //             if (!cep || !cep.outerPositions) {
+                    //                 return null;
+                    //             }
+                    //             var pnts = Cesium.Cartesian3.unpackArray(cep.outerPositions);
+                    //             var first = pnts[0];
+                    //             pnts[pnts.length] = first;
+                    //             return pnts;
+                    //         } catch (err) {
+                    //             return null;
+                    //         }
+                    //     }
+                    //     var polyColor = Cesium.Color.fromAlpha(Cesium.Color.YELLOW, parseFloat(0.2));
+
+                    //     let tarPosition = tarEntity.position.getValue(viewer.clock.currentTime);
+                    //     let circularPoss = getCircleBoundries(tarPosition, 250000, 0.020);
+                    //     let sourPosition = sourEntity.position.getValue(viewer.clock.currentTime);
+                    //     let array = [];
+                    //     for (let i = 0; i < circularPoss.length; i++) {
+                    //         let j = i + 1 < circularPoss.length ? i + 1 : 0;
+                    //         array.push([circularPoss[i], sourPosition, circularPoss[j]]);
+                    //     }
+
+                    //     for (let k = 0; k < array.length; k++) {
+                    //         viewer.entities.add({
+                    //             polygon: {
+                    //                 hierarchy: new Cesium.PolygonHierarchy(array[k]),
+                    //                 perPositionHeight: true,
+                    //                 outline: false,
+                    //                 material: polyColor
+                    //             }
+                    //         });
+                    //     }
+                    //     }
+
+                    // // END OF FUNCTION UPDATE BEAM  
+                    // // DEFINING SOURCE AND TARGET ENTITIES 
+
+                    // let sourceEntity = viewer.entities.add({
+                    //     name: "sourceEntity",
+                    //     position: position,
+                    //     point: {
+                    //         pixelSize: 10,
+                    //         color: Cesium.Color.BLUE,
+                    //     }
+                    //     // model: {
+                    //     //     uri: "../SampleData/models/CesiumAir/Cesium_Air.glb",
+                    //     //     minimumPixelSize: 128,
+                    //     //     maximumScale: 20000,
+                    //     //     },
+
+                    //     // billboard: {
+                    //     // image: "https://raw.githubusercontent.com/hfg-gmuend/openmoji/master/color/618x618/1F6F0.png",
+                    //     // scale: 0.08,                        
+                    //     // verticalOrigin: Cesium.VerticalOrigin.BOTTOM
+                    //     // }
+                    // });
+
+                    // let targetEntity = viewer.entities.add({
+                    // name: "targetEntity",
+                    // position: position_target,
+                    // point: {
+                    //     pixelSize: 5,
+                    //     color: Cesium.Color.RED,
+                    //     outlineColor: Cesium.Color.WHITE,
+                    //     outlineWidth: 2,
+                    //     clampToGround: true
+                    // },
+                    // });
+                    // updateBeam(sourceEntity, targetEntity);
+
+                    // if (!previousLabelEntities[payload.name]) {
+                    //     previousLabelEntities[payload.name] = viewer.entities.add({
+                    //         position: position,
+                    //         point: {
+                    //             pixelSize: 10,
+                    //             color: Cesium.Color.YELLOW,
+                    //         },
+                    //         label: {
+                    //             text: payload.name,
+                    //             font: '10pt Arial',
+                    //             style: Cesium.LabelStyle.FILL,
+                    //             fillColor: Cesium.Color.YELLOW,
+                    //             verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                    //             pixelOffset: new Cesium.Cartesian2(0, -15),
+                    //             eyeOffset: new Cesium.Cartesian3(0, 0, -5000),
+                    //         }
+                    //     });
+                    // }
+
+                   // END OF MODIFIED CODE
+
+                    // if (!positions[payload.name]) {
+                    //     positions[payload.name] = [];
+                    // }
+                    // positions[payload.name].push(position);
+
+                    // if (previousSensorCircles[payload.name]) {
+                    //     previousSensorCircles[payload.name].forEach(circle => {
+                    //         viewer.scene.primitives.remove(circle);
+                    //     });
+                    //     previousSensorCircles[payload.name].length = 0;
+                    // } else {
+                    //     previousSensorCircles[payload.name] = [];
+                    // }
+
+                    // if (previousLabelEntities[payload.name]) {
+                    //     viewer.entities.remove(previousLabelEntities[payload.name]);
+                    // }
+
+                    // let color = Cesium.Color.RED;
+                    // if (payload.name === 'GCOM-W1 (SHIZUKU)') {
+                    //     color = Cesium.Color.GREEN;
+                    // } else {
+                    //     color = Cesium.Color.YELLOW;
+                    // }
+                    // // } else if (payload.name === 'CAPELLA-14 (ACADIA-4)') {
+                    // //     color = Cesium.Color.YELLOW;
+                    // // }
+
+                    // const dotcolor = payload.state ? Cesium.Color.LIME : Cesium.Color.RED;
+
+                    // previousLabelEntities[payload.name] = viewer.entities.add({
+                    //     position: position,
+                    //     point: {
+                    //         pixelSize: 10,
+                    //         color: dotcolor,
+                    //     },
+                    //     label: {
+                    //         text: payload.name,
+                    //         font: '10pt Arial',
+                    //         style: Cesium.LabelStyle.FILL,
+                    //         fillColor: dotcolor,
+                    //         verticalOrigin: Cesium.VerticalOrigin.BOTTOM,
+                    //         pixelOffset: new Cesium.Cartesian2(0, -15),
+                    //         eyeOffset: new Cesium.Cartesian3(0, 0, -5000),
+                    //     }
+                    // });
+
+                    // const sensorRadius = payload.radius;
+                    // const sensorHeight = payload.altitude;
+                    // const hollowRadius = payload.radius * (5 / 50);
+
+                    // const outerCone = new Cesium.CylinderGeometry({
+                    //     length: sensorHeight * 2,
+                    //     topRadius: 0.0,
+                    //     bottomRadius: sensorRadius,
+                    //     vertexFormat: Cesium.PerInstanceColorAppearance.VERTEX_FORMAT
+                    // });
+
+                    // const outerConeInstance = new Cesium.GeometryInstance({
+                    //     geometry: outerCone,
+                    //     modelMatrix: Cesium.Matrix4.multiplyByTranslation(
+                    //         Cesium.Transforms.eastNorthUpToFixedFrame(position),
+                    //         new Cesium.Cartesian3(0.0, 0.0, -sensorHeight),
+                    //         new Cesium.Matrix4()
+                    //     ),
+                    //     attributes: {
+                    //         color: Cesium.ColorGeometryInstanceAttribute.fromColor(color.withAlpha(0.2))
+                    //     }
+                    // });
+
+                    // const outerPrimitive = new Cesium.Primitive({
+                    //     geometryInstances: outerConeInstance,
+                    //     appearance: new Cesium.PerInstanceColorAppearance()
+                    // });
+
+                    // viewer.scene.primitives.add(outerPrimitive);
+                    // previousSensorCircles[payload.name].push(outerPrimitive);
+
+                    // if (payload.name === "CAPELLA-14 (ACADIA-4)") {
+                    //     const innerCone = new Cesium.CylinderGeometry({
+                    //         length: sensorHeight * 2,
+                    //         topRadius: 0.0,
+                    //         bottomRadius: hollowRadius,
+                    //         vertexFormat: Cesium.PerInstanceColorAppearance.VERTEX_FORMAT
+                    //     });
+
+                    //     const innerConeInstance = new Cesium.GeometryInstance({
+                    //         geometry: innerCone,
+                    //         modelMatrix: Cesium.Matrix4.multiplyByTranslation(
+                    //             Cesium.Transforms.eastNorthUpToFixedFrame(position),
+                    //             new Cesium.Cartesian3(0.0, 0.0, -sensorHeight),
+                    //             new Cesium.Matrix4()
+                    //         ),
+                    //         attributes: {
+                    //             color: Cesium.ColorGeometryInstanceAttribute.fromColor(Cesium.Color.BLACK.withAlpha(0.6))
+                    //         }
+                    //     });
+
+                    //     const innerPrimitive = new Cesium.Primitive({
+                    //         geometryInstances: innerConeInstance,
+                    //         appearance: new Cesium.PerInstanceColorAppearance()
+                    //     });
+
+                    //     viewer.scene.primitives.add(innerPrimitive);
+                    //     previousSensorCircles[payload.name].push(innerPrimitive);
+                    // }
+
+                    // if (!positions[payload.name]) {
+                    //     positions[payload.name] = [];
+                    // }
+
+                    // if (positions[payload.name].polylineEntity) {
+                    //     viewer.entities.remove(positions[payload.name].polylineEntity);
+                    // }
+
+                    // if (positions[payload.name].length > 1) {
+                    //     positions[payload.name].polylineEntity = viewer.entities.add({
+                    //         polyline: {
+                    //             positions: positions[payload.name],
+                    //             width: 0.5,
+                    //             material: color
+                    //         }
+                    //     });
+                    // }
                 } else if (topic === "sos.snow.layer") {
                     handleLayerMessage(payload, 'snow_layer', 'toggleSnowLayer');
                 } else if (topic === "sos.resolution.layer") {
