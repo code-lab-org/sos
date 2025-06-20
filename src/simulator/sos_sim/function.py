@@ -1,5 +1,6 @@
 # This Script stores all the functions that are used in the simulator code
 # The functions are stored in a separate file to make the main code more readable
+
 import logging
 import numpy as np
 import os
@@ -23,11 +24,8 @@ from tatc.schemas import (
     WalkerConstellation,
 )
 from tatc.utils import swath_width_to_field_of_regard, swath_width_to_field_of_view
-
 logger = logging.getLogger(__name__)
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
-
 from src.sos_tools.aws_utils import AWSUtils
 from src.sos_tools.data_utils import DataUtils
 
@@ -69,7 +67,6 @@ def Snowglobe_constellation(start: datetime) -> List[Satellite]:
     satellites = constellation.generate_members()
     return satellites
 
-
 def compute_opportunity(
     const: List[Satellite],
     time: datetime,
@@ -100,31 +97,7 @@ def compute_opportunity(
         or pd.isna(request.get("simulator_simulation_status"))
     ]
 
-    if filtered_requests:
-        # column_names = list(filtered_requests[0].keys())
-
-        # def collect_observations_for_request(request):
-        #     try:
-        #         return collect_multi_observations(request["point"], const, time, end)
-        #     except Exception as e:
-        #         print(f"Error processing request {request}: {e}")
-        #         return pd.DataFrame()
-
-        # observation_results_list = Parallel(n_jobs=-1 if parallel_compute else 1)(
-        #     delayed(collect_observations_for_request)(request)
-        #     for request in filtered_requests
-        # )
-
-        # # Remove any empty results
-        # observation_results_list = [df for df in observation_results_list if not df.empty]
-
-        # if observation_results_list:
-        #     observation_results = pd.concat(
-        #         observation_results_list, ignore_index=True
-        #     ).sort_values(by="epoch", ascending=True)
-        # else:
-        #     observation_results = pd.DataFrame()
-
+    if filtered_requests:       
         observation_results = pd.concat(
             [
                 collect_multi_observations(request["point"], const, time, end)
@@ -135,25 +108,84 @@ def compute_opportunity(
 
         if observation_results is not None and not observation_results.empty:
             # logger.info(f"Observation opportunity exist{time + duration}")
-            id_to_eta = {
-            request["point"].id: request["planner_final_eta"]
-            for request in filtered_requests
-            }            
-            observation_results["planner_final_eta"] = observation_results["point_id"].map(id_to_eta)
-            # observations = pd.concat(observation_results, ignore_index=True).sort_values(by="epoch", ascending=True)
+            # Calulating computation time
+            start = t.time()
+            id_to_meta = {
+                request["point"].id: {
+                    "planner_final_eta": request["planner_final_eta"],
+                    "collected_within_last_3_days": request["collected_within_last_3_days"]
+                }
+                for request in filtered_requests
+            }        
+
+            observation_results["planner_final_eta"] = observation_results["point_id"].map(
+                lambda pid: id_to_meta.get(pid, {}).get("planner_final_eta")
+            )
+
+            observation_results["collected_within_last_3_days"] = observation_results["point_id"].map(
+                lambda pid: id_to_meta.get(pid, {}).get("collected_within_last_3_days", False)
+            )
+
+            end_time = t.time()
+            computation_time = end_time - start
+            logger.info(
+                f"Observation opportunity computation time: {computation_time:.2f} seconds"
+            )
+
             return observation_results
-        return None
+
+        # return None
     else:
+        logger.info("No filtered requests found for observation opportunity.")
         return None
+
+    # :
+
+    # if filtered_requests:
+
+    #     observation_results = pd.concat(
+    #         [
+    #             collect_multi_observations(request["point"], const, time, end)
+    #             for request in filtered_requests
+    #         ],
+    #         ignore_index=True,
+    #     ).sort_values(by="epoch", ascending=True)
+
+    #     if observation_results is not None and not observation_results.empty:
+    #         # logger.info(f"Observation opportunity exist{time + duration}")
+    #         id_to_meta = {
+    #             request["point"].id: {
+    #                 "planner_final_eta": request["planner_final_eta"],
+    #                 "collected_recently": request["collected_within_last_3_days"]
+    #             }
+    #             for request in filtered_requests
+    #         }           
+            
+    #     observation_results["planner_final_eta"] = observation_results["point_id"].map(
+    #         lambda pid: id_to_meta.get(pid, {}).get("planner_final_eta")
+    #     )
+
+    #     observation_results["collected_recently"] = observation_results["point_id"].map(
+    #         lambda pid: id_to_meta.get(pid, {}).get("collected_recently", False)
+    #     )
+
+    #         return observation_results
+    #     return None
+    # else:
+    #     return None
     
 
 # Filter and format the observation results
 
 def filter_and_sort_observations(df, sim_time,incomplete_ids,time_step_constr):
-    
+
     logger.info(
-        f"Filtering and sorting observations, type of df is {type(df)}, length of df is {len(df)}"
+        f"Filtering and sorting observations"
     )
+
+    # logger.info(
+    #     f"Filtering and sorting observations, type of df is {type(df)}, length of df is {len(df)}"
+    # )
     # Filter for observations with incomplete simulation status
     df = df[df["point_id"].isin(incomplete_ids)]
     # Ensure sim_time is timezone-aware and same tz as df
@@ -162,19 +194,27 @@ def filter_and_sort_observations(df, sim_time,incomplete_ids,time_step_constr):
 
     # Step 1: Filter for observations within 1 minute of simulation time
     time_step_later = sim_time + time_step_constr
-    logger.info(
-        f"Filtering observations, sim_time: {sim_time}, time_step_later: {time_step_later}, type of sim_time is {type(sim_time)}, type of time_step_later is {type(time_step_later)}")
+    # logger.info(
+    #     f"Filtering observations, sim_time: {sim_time}, time_step_later: {time_step_later}, type of sim_time is {type(sim_time)}, type of time_step_later is {type(time_step_later)}"
+    # )
+
     mask = (df["epoch"] >= sim_time) & (df["epoch"] <= time_step_later)
     filtered = df[mask]
     
+    # logger.info(
+    #     f"Filtered observations, type of filtered is {type(filtered)}, length of filtered is {len(filtered)}"
+    # )
+
+    # Step 2: Sort by planner_final_eta descending and collected recently
+
     logger.info(
-        f"Filtered observations, type of filtered is {type(filtered)}, length of filtered is {len(filtered)}")
-    
-    # Step 2: Sort by planner_final_eta descending
-    sorted_filtered = filtered.sort_values(by="planner_final_eta", ascending=False)
-    logger.info(
-        f"Sorted observations, type of sorted is {sorted_filtered}, length of sorted is {len(sorted_filtered)}"
+        f"Sorting observations by collected_within_last_3_days and planner_final_eta"
     )
+
+    sorted_filtered = filtered.sort_values(by=["collected_within_last_3_days", "planner_final_eta"], ascending=[True, False])
+    # logger.info(
+    #     f"Sorted observations, type of sorted is {sorted_filtered}, length of sorted is {len(sorted_filtered)}"
+    # )
     return sorted_filtered.iloc[0] if not sorted_filtered.empty else None
 
 
@@ -191,12 +231,12 @@ def compute_ground_track_and_format(
     Returns:
         Geometry: The ground track as a Shapely geometry object.
     """
-    logger.info(
-        f"Computing ground track for {sat_object.name} at {observation_time}, type of observation time is {type(observation_time)}"
-    )
+    # logger.info(
+    #     f"Computing ground track for {sat_object.name} at {observation_time}, type of observation time is {type(observation_time)}"
+    # )
     observation_time = observation_time.replace(tzinfo=timezone.utc)
     results = collect_ground_track(sat_object, [observation_time], crs="spice")
-    logger.info(f"Length of results: {len(results)}, Type of results: {type(results)}")
+    # logger.info(f"Length of results: {len(results)}, Type of results: {type(results)}")
     return results["geometry"].iloc[0]
 
 
@@ -206,7 +246,7 @@ def read_master_file():
     Returns:
         List[dict]: A list of dictionaries representing the master file data.
     """
-    logger.info("Reading master file")
+    # logger.info("Reading master file")
     # start_time = t.time()
     output_filename = "outputs/master.geojson"
     if os.path.exists(output_filename):
@@ -225,6 +265,7 @@ def read_master_file():
                 "simulator_simulation_status": r["simulator_simulation_status"],
                 "simulator_completion_date": r["simulator_completion_date"],
                 "simulator_satellite": r["simulator_satellite"],
+                "collected_within_last_3_days": r["collected_within_last_3_days"],
                 "planner_final_eta": r["planner_final_eta"],
                 "simulator_polygon_groundtrack": r["simulator_polygon_groundtrack"],
                 "planner_geometry": r["geometry"]                
@@ -256,22 +297,62 @@ def write_back_to_appender(source, time):
     data_utils = DataUtils()
     data_utils.create_directories([output_directory])
 
-    logger.info(
-        f"Checking if appender function is reading the source object{source},{len(source.requests)},{type(source.requests)},{type(time)},{time},{time.date()}"
-    )
-    logger.info(f"Simulator time on scenario callback{source.app.simulator._time}")
-    # start_time = t.time()
+    logger.info("Entering write_back_to_appender function")
+
+    # logger.info(
+    #     f"Checking if appender function is reading the source object{source},{len(source.requests)},{type(source.requests)},{type(time)},{time},{time.date()}"
+    # )
+    # logger.info(f"Simulator time on scenario callback{source.app.simulator._time}")
+
     appender_data = process_master_file(source.requests)
     selected_json_data = pd.DataFrame(appender_data)
-    logger.info(
-        f"Type of simulator_polygon_groundtrack{type(selected_json_data['simulator_polygon_groundtrack'])}"
-    )
+
+    # logger.info(
+    #     f"Type of simulator_polygon_groundtrack{type(selected_json_data['simulator_polygon_groundtrack'])}"
+    # )
+
     selected_json_data["simulator_polygon_groundtrack"] = selected_json_data[
         "simulator_polygon_groundtrack"
     ].apply(lambda x: wkt.loads(x) if isinstance(x, str) else x)
     gdf = gpd.GeoDataFrame(selected_json_data, geometry="simulator_polygon_groundtrack")
-    gdf.to_file(f"outputs/master.geojson", driver="GeoJSON")
-    logger.info(f"{source.app.app_name} sending message.")
+
+    # Reading master.geojson and populating the simulator columns
+    output_filename = "outputs/master.geojson"
+    if os.path.exists(output_filename):
+        # computation time 
+        start_time = t.time()
+        logger.info(f"Entering function to update simulator columns in master file")
+        # Read the existing master file
+        master_gdf = gpd.read_file(output_filename)
+        master_gdf = master_gdf.set_index("simulator_id")
+        gdf_temp = gdf.set_index("simulator_id")
+        # Select only columns to update from gdf
+        cols_to_update = [
+            "simulator_simulation_status",
+            "simulator_completion_date",
+            "simulator_satellite",
+            "collected_within_last_3_days",
+            "planner_final_eta",
+            "simulator_polygon_groundtrack",
+            "planner_geometry"
+        ]
+        # Filter gdf columns to just those
+        gdf_subset = gdf_temp[cols_to_update]
+        # Update master_gdf with gdf_subset values where indices match
+        master_gdf.update(gdf_subset)
+        # Reset index if needed
+        master_gdf = master_gdf.reset_index()
+        # gdf_temp = gdf.reset_index()        # Save updated master back to file
+        master_gdf.to_file(output_filename, driver="GeoJSON")
+        logger.info(f"Updated master file with new simulator data")
+        end_time = t.time()
+        computation_time = end_time - start_time
+        logger.info(
+            f"Time taken to update master file with new simulator data: {computation_time:.2f} seconds"
+        )
+
+    # gdf.to_file(f"outputs/master.geojson", driver="GeoJSON")
+    # logger.info(f"{source.app.app_name} sending message.")
     date_sim_time = source.app.simulator._time
     date_sim = str(date_sim_time.date()).replace("-", "")
     # Saving Daily local files for LIS ingestion

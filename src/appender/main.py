@@ -116,12 +116,59 @@ class Environment(Observer):
                 "simulator_expiration_date",
                 "simulator_simulation_status",
                 "simulator_completion_date",
+                # "collected_within_last_3_days",
                 "simulator_satellite",
                 "simulator_polygon_groundtrack",
                 "geometry",
             ]
         ]
         return gdf
+
+    def add_last_observation_collected_time(self, gdf):
+        """
+        Adds a column for the last observation collected time to the GeoDataFrame.
+
+        Inputs:
+            gdf (GeoDataFrame): The GeoDataFrame to which the column will be added.
+
+        Returns:
+            GeoDataFrame: The GeoDataFrame with the additional column added.
+        """
+        # Create a geodataframe with geometry column and the last observation collected time with unique values of gdf
+        gdf["simulator_completion_date"] = pd.to_datetime(gdf["simulator_completion_date"])        
+        gdf_unique = (
+            gdf.sort_values("simulator_completion_date")
+            .drop_duplicates(subset=["geometry"], keep="last")
+            .reset_index(drop=True)
+        )
+        # Compute recent completion flag
+        current_date = pd.Timestamp(self.app.simulator._time.date())
+
+        logger.info("📅 simulator_completion_date dtype: %s", gdf_unique["simulator_completion_date"].dtype)
+        logger.info("🕒 current_date type: %s", type(current_date))
+        logger.info("🕒 current_date value: %s", current_date)
+
+        gdf_unique["collected_within_last_3_days"] = (
+                (current_date - gdf_unique["simulator_completion_date"]) <= pd.Timedelta(days=3)
+        ).fillna(False)
+        
+        # Merge the collected flag back to original gdf by geometry
+        gdf = gdf.merge(
+            gdf_unique[["geometry", "collected_within_last_3_days"]],
+            on="geometry",
+            how="left"
+        )
+
+        # Fill any unmatched geometries with False
+        gdf["collected_within_last_3_days"] = gdf["collected_within_last_3_days"].fillna(False)
+
+        gdf.to_file(
+            "outputs/master_last_collected_testing.geojson",
+            driver="GeoJSON",
+        )
+
+        return gdf
+
 
     def process_component(self, component_gdf):
         """
@@ -218,6 +265,7 @@ class Environment(Observer):
         # min_value = component_gdf["simulator_id"].min()
         # max_value = component_gdf["simulator_id"].max()
         self.master_gdf = pd.concat(self.master_components, ignore_index=True)
+        self.master_gdf = self.add_last_observation_collected_time(self.master_gdf)
         self.remove_duplicates()
         date = self.app.simulator._time
         date_new_format = str(date.date()).replace("-", "")

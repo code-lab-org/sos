@@ -1251,7 +1251,7 @@ class Environment(Observer):
             check_interval_sec = int(os.environ.get("DOWNLOAD_CHECK_INTERVAL", 10))
 
         if max_attempts is None:
-            max_attempts = int(os.environ.get("DOWNLOAD_MAX_ATTEMPTS", 1))
+            max_attempts = int(os.environ.get("DOWNLOAD_MAX_ATTEMPTS", 0))
 
         logger.info(
             f"Using check_interval_sec={check_interval_sec}, max_attempts={max_attempts} for downloads"

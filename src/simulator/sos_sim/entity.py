@@ -99,9 +99,11 @@ class Collect_Observations(Entity):
         if t1 > t2:
 
             if self.possible_observations is not None:
-                # logger.info(
-                # #     f"Number of possible observations {len(self.possible_observations)}"
-                # )
+
+                logger.info(
+                    f"Number of possible observations {len(self.possible_observations)}"
+                )
+
                 self.observation_collected = filter_and_sort_observations(
                     self.possible_observations,
                     self._time,
@@ -110,6 +112,7 @@ class Collect_Observations(Entity):
                 )
 
             if self.observation_collected is not None:
+                logger.info("Observation possible")
 
                 if np.random.rand() <= 0.75:  # Simulate a 75% chance of collecting an observation
                     # Get the satellite that collected the observation
@@ -122,7 +125,8 @@ class Collect_Observations(Entity):
                             satellite, self.observation_collected["epoch"]
                         )
                     )
-                    # logger.info(f"Observation {self.observation_collected}")
+
+                    logger.info(f"Observation collected {self.observation_collected}")
                     # logger.info(f"Observation type {type(self.observation_collected)}")
 
                     self.next_requests = self.requests.copy()
@@ -201,7 +205,7 @@ class Collect_Observations(Entity):
             self.new_request_flag = False
 
     def message_received_from_appender(self, ch, method, properties, body):
-        # logger.info(f"Message succesfully received at {self.app.simulator._time}")
+        logger.info(f"Message succesfully received at {self.app.simulator._time}")
         self.on_appender()
 
 
@@ -243,7 +247,7 @@ class SatelliteVisualization(Entity):
                 .geometry
             )
 
-            logger.info(f" Satellite : {self.sat_name},  Time : {self._time}, point_obj_ecef: {self.point_obj_ecef}")
+            # logger.info(f" Satellite : {self.sat_name},  Time : {self._time}, point_obj_ecef: {self.point_obj_ecef}")
             self.lon = self.point_obj.x
             self.lat = self.point_obj.y
             self.alt = self.point_obj.z
