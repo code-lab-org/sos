@@ -114,7 +114,7 @@ class Collect_Observations(Entity):
             if self.observation_collected is not None:
                 logger.info("Observation possible")
 
-                if np.random.rand() <= 0.75:  # Simulate a 75% chance of collecting an observation
+                if np.random.rand() <= 1:  # Simulate a 75% chance of collecting an observation
                     # Get the satellite that collected the observation
                     satellite = self.constellation[
                         self.observation_collected["satellite"]
