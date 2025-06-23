@@ -907,6 +907,7 @@ class Environment(Observer):
             crs="EPSG:4326",
         )
         final_eta_gdf["time"] = pd.Timestamp(final_last_date)
+        
         output_file = os.path.join(
             self.current_simulation_date,
             f"Reward_{pd.Timestamp(final_last_date).strftime('%Y%m%d')}.geojson",
@@ -941,7 +942,7 @@ class Environment(Observer):
         model += lpSum(x[i] for i in final_eta_gdf.index) <= N, "Max_Selections"
         model.solve()
         if value(model.objective) is not None:
-            print("Optimal solution found.")
+            logger.info("Optimal solution found.")
             selected_blocks = []
 
             for i in final_eta_gdf.index:
@@ -961,11 +962,11 @@ class Environment(Observer):
             selected_blocks_gdf.to_file(output_geojson, driver="GeoJSON")
             logger.info(f"Optimization output saved as {output_geojson}")
 
-            print(
+            logger.info(
                 f"Selected cells saved to '{output_geojson}' with time: {unique_time}"
             )
         else:
-            print("No optimal solution found.")
+            logger.info("No optimal solution found.")
         return output_geojson, selected_blocks_gdf
 
     def downsample_array(self, array, downsample_factor):
