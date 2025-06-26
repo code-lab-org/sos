@@ -89,6 +89,9 @@ class SatelliteStatus(BaseModel):
     ecef: list[float] = Field(
         ..., description="ECEF position of satellite"
     )
+    target: list[float] = Field(
+        ..., description="Target ECEF position of satellite on ground"
+    )
     swath: float = Field(
         ..., description="Swath width of satellite"
     )
