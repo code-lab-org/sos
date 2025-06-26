@@ -1206,7 +1206,7 @@ class Environment(Observer):
 
         # Try assimilation first (wait up to max_attempts)
         assimilation_dirs = ["inputs/LIS/assimilation/"]
-        open_loop_dirs = ["inputs/LIS/open_loop/"]
+        open_loop_dirs = ["inputs/LIS/open_loop_PMWonly/"]
 
         file_key = None
         for attempt in range(max_attempts):
