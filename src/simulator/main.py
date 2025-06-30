@@ -3,6 +3,7 @@
 
 import logging
 from datetime import datetime, timedelta, timezone
+
 from nost_tools.application_utils import ShutDownObserver
 from nost_tools.configuration import ConnectionConfig
 from nost_tools.managed_application import ManagedApplication
@@ -51,6 +52,7 @@ def log_observation(observation):
         observation["satellite"],
     )
 
+
 time_step_callback = timedelta(days=1)  # time step for callback
 # time_scale_factor = 60  # 5 seconds wallclock for 5 minutes scenario
 # view_time_step = timedelta(seconds=2)  # time step for ground track
@@ -74,7 +76,6 @@ simulator.add_entity(entity)
 #     )
 
 
-
 # Add Observers
 entity.add_observer(
     ScenarioTimeIntervalCallback(write_back_to_appender, time_step_callback)
@@ -87,11 +88,11 @@ entity.add_observer(
 # simulator.execute(start, duration, time_step, None, time_scale_factor)
 app.add_message_callback("appender", "master", entity.message_received_from_appender)
 
-entity_2 = SatelliteVisualization(
-    constellation=Snowglobe_constellation(start_time), application=app
-)
+# entity_2 = SatelliteVisualization(
+#     constellation=Snowglobe_constellation(start_time), application=app
+# )
 
-simulator.add_entity(entity_2)
+# simulator.add_entity(entity_2)
 
 # while True:
 #     pass
