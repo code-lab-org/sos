@@ -276,24 +276,24 @@ class Environment(Observer):
         combined_dataset = combined_dataset.rio.write_crs("EPSG:4326")
         logger.debug("Clipping combined dataset to Missouri Basin")
         
-        clipped_dataset = combined_dataset.rio.clip(
-            mo_basin.geometry, all_touched=True, drop=True
-        )
+        # clipped_dataset = combined_dataset.rio.clip(
+        #     mo_basin.geometry, all_touched=True, drop=True
+        # )
 
         # Remove grid_mapping attributes
-        for var in clipped_dataset.data_vars:
-            if "grid_mapping" in clipped_dataset[var].attrs:
-                del clipped_dataset[var].attrs["grid_mapping"]
+        for var in combined_dataset.data_vars:
+            if "grid_mapping" in combined_dataset[var].attrs:
+                del combined_dataset[var].attrs["grid_mapping"]
 
         # Save to NetCDF
         logger.debug(f"Saving combined dataset for resolution to {output_file}")
-        clipped_dataset.to_netcdf(output_file)
+        combined_dataset.to_netcdf(output_file)
         end_time = time.time()
         logger.info(
             f"Combining the two resolution datasets successfully completed in {end_time - start_time:.2f} seconds."
         )
 
-        return output_file, clipped_dataset
+        return output_file, combined_dataset
 
 
     def calculate_eta(self, swe_change, threshold, k_value):
@@ -613,12 +613,15 @@ class Environment(Observer):
         logger.info(f"taskable data {eta_res_values_taskable}")
 
         resolution_nontaskable_50km = eta_res_values.rio.reproject_match(target_resolution_file,Resampling=Resampling.bilinear) 
-        resolution_taskable_50km = eta_res_values_taskable.rio.reproject_match(target_resolution_file,Resampling=Resampling.bilinear)  
+        resolution_taskable_50km = eta_res_values_taskable.rio.reproject_match(target_resolution_file,Resampling=Resampling.bilinear)
 
         logger.info("Reprojecting resolution datasets successfully completed.")
 
-        # resolution_taskable_50km = resolution_taskable_50km.rio.write_crs("EPSG:4326", inplace=False)
-        # resolution_taskable_50km = resolution_taskable_50km.rio.clip(mo_basin.geometry) 
+        resolution_taskable_50km = resolution_taskable_50km.rio.write_crs("EPSG:4326", inplace=False)
+        resolution_taskable_50km = resolution_taskable_50km.rio.clip(mo_basin.geometry,all_touched=True, drop=True) 
+        
+        resolution_nontaskable_50km = resolution_nontaskable_50km.rio.write_crs("EPSG:4326", inplace=False)
+        resolution_nontaskable_50km = resolution_nontaskable_50km.rio.clip(mo_basin.geometry,all_touched=True, drop=True) 
 
         # # Remove grid_mapping attributes
         # for var in resolution_taskable_50km.data_vars:
@@ -1528,7 +1531,7 @@ class Environment(Observer):
                 # Generate the resolution dataset
                 resolution_dataset_nontaskable_eta, resolution_dataset_taskable_eta, resolution_output_file = (
                     self.generate_resolution(
-                        ds=combined_dataset_resolution,target_resolution_file = eta5_file, mo_basin = mo_basin
+                        ds=combined_dataset_resolution,target_resolution_file = eta5_file, mo_basin=mo_basin
                     )
                 )
 
