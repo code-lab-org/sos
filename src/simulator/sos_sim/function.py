@@ -128,9 +128,9 @@ def compute_opportunity(
 
             end_time = t.time()
             computation_time = end_time - start
-            logger.info(
-                f"Observation opportunity computation time: {computation_time:.2f} seconds"
-            )
+            # logger.info(
+            #     f"Observation opportunity computation time: {computation_time:.2f} seconds"
+            # )
 
             return observation_results
 
@@ -204,16 +204,20 @@ def filter_and_sort_observations(df, sim_time,incomplete_ids,time_step_constr):
     # logger.info(
     #     f"Filtered observations, type of filtered is {type(filtered)}, length of filtered is {len(filtered)}"
     # )
-
     # Step 2: Sort by planner_final_eta descending and collected recently
+    # logger.info(
+    #     f"Sorting observations by collected_within_last_3_days and planner_final_eta"
+    # )
 
-    logger.info(
-        f"Sorting observations by collected_within_last_3_days and planner_final_eta"
-    )
-
+    start_time = t.time()
     sorted_filtered = filtered.sort_values(by=["collected_within_last_3_days", "planner_final_eta"], ascending=[True, False])
     # logger.info(
     #     f"Sorted observations, type of sorted is {sorted_filtered}, length of sorted is {len(sorted_filtered)}"
+    # )
+    end_time = t.time()
+    computation_time = end_time - start_time
+    # logger.info(
+    #     f"Filtering and sorting observations time: {computation_time:.2f} seconds"
     # )
     return sorted_filtered.iloc[0] if not sorted_filtered.empty else None
 
@@ -282,8 +286,8 @@ def read_master_file():
     # logger.debug(f"Reading master file time: {computation_time:.2f} seconds")
     return request_points
 
-
 # this function is triggered by scenario time interval callback, it writes the daily output to a geojson file
+
 def write_back_to_appender(source, time):
     """
     Write the processed data back to the appender and upload it to S3.
@@ -297,12 +301,7 @@ def write_back_to_appender(source, time):
     data_utils = DataUtils()
     data_utils.create_directories([output_directory])
 
-    logger.info("Entering write_back_to_appender function")
-
-    # logger.info(
-    #     f"Checking if appender function is reading the source object{source},{len(source.requests)},{type(source.requests)},{type(time)},{time},{time.date()}"
-    # )
-    # logger.info(f"Simulator time on scenario callback{source.app.simulator._time}")
+    logger.info("Entering write_back_to_appender function")   
 
     appender_data = process_master_file(source.requests)
     selected_json_data = pd.DataFrame(appender_data)
@@ -315,41 +314,39 @@ def write_back_to_appender(source, time):
         "simulator_polygon_groundtrack"
     ].apply(lambda x: wkt.loads(x) if isinstance(x, str) else x)
     gdf = gpd.GeoDataFrame(selected_json_data, geometry="simulator_polygon_groundtrack")
-
-    # Reading master.geojson and populating the simulator columns
-    output_filename = "outputs/master.geojson"
-    if os.path.exists(output_filename):
-        # computation time 
-        start_time = t.time()
-        logger.info(f"Entering function to update simulator columns in master file")
-        # Read the existing master file
-        master_gdf = gpd.read_file(output_filename)
-        master_gdf = master_gdf.set_index("simulator_id")
-        gdf_temp = gdf.set_index("simulator_id")
-        # Select only columns to update from gdf
-        cols_to_update = [
-            "simulator_simulation_status",
-            "simulator_completion_date",
-            "simulator_satellite",
-            "collected_within_last_3_days",
-            "planner_final_eta",
-            "simulator_polygon_groundtrack",
-            "planner_geometry"
-        ]
-        # Filter gdf columns to just those
-        gdf_subset = gdf_temp[cols_to_update]
-        # Update master_gdf with gdf_subset values where indices match
-        master_gdf.update(gdf_subset)
-        # Reset index if needed
-        master_gdf = master_gdf.reset_index()
-        # gdf_temp = gdf.reset_index()        # Save updated master back to file
-        master_gdf.to_file(output_filename, driver="GeoJSON")
-        logger.info(f"Updated master file with new simulator data")
-        end_time = t.time()
-        computation_time = end_time - start_time
-        logger.info(
-            f"Time taken to update master file with new simulator data: {computation_time:.2f} seconds"
-        )
+   
+    # if os.path.exists(output_filename):
+    #     # computation time 
+    #     start_time = t.time()
+    #     logger.info(f"Entering function to update simulator columns in master file")
+    #     # Read the existing master file
+    #     master_gdf = gpd.read_file(output_filename)
+    #     master_gdf = master_gdf.set_index("simulator_id")
+    #     gdf_temp = gdf.set_index("simulator_id")
+    #     # Select only columns to update from gdf
+    #     cols_to_update = [
+    #         "simulator_simulation_status",
+    #         "simulator_completion_date",
+    #         "simulator_satellite",
+    #         "collected_within_last_3_days",
+    #         "planner_final_eta",
+    #         "simulator_polygon_groundtrack",
+    #         "planner_geometry"
+    #     ]
+    #     # Filter gdf columns to just those
+    #     gdf_subset = gdf_temp[cols_to_update]
+    #     # Update master_gdf with gdf_subset values where indices match
+    #     master_gdf.update(gdf_subset)
+    #     # Reset index if needed
+    #     master_gdf = master_gdf.reset_index()
+    #     # gdf_temp = gdf.reset_index()        # Save updated master back to file
+    #     master_gdf.to_file(output_filename, driver="GeoJSON")
+    #     logger.info(f"Updated master file with new simulator data")
+    #     end_time = t.time()
+    #     computation_time = end_time - start_time
+    #     logger.info(
+    #         f"Time taken to update master file with new simulator data: {computation_time:.2f} seconds"
+    #     )
 
     # gdf.to_file(f"outputs/master.geojson", driver="GeoJSON")
     # logger.info(f"{source.app.app_name} sending message.")
@@ -374,6 +371,38 @@ def write_back_to_appender(source, time):
         Filename=output_file,
         Config=TransferConfig(use_threads=False),
     )
+
+    # Saving to master file
+    # Reading master.geojson and populating the simulator columns
+    master_path = "outputs/master.geojson"
+
+    if os.path.exists(master_path):
+    # Load existing master file
+        master = gpd.read_file(master_path)
+
+        # Merge on simulator_id
+        updated = master.merge(
+            daily_gdf_filtered, on="simulator_id", how="left", suffixes=("", "_new")
+        )
+
+        # List of columns to update
+        cols_to_update = [
+            "simulator_simulation_status",
+            "simulator_completion_date",
+            "simulator_satellite",
+            # "collected_within_last_3_days",
+            # "planner_final_eta",
+            "simulator_polygon_groundtrack"
+            # "planner_geometry"
+        ]
+
+        # Replace old values with new ones
+        for col in cols_to_update:
+            updated[col] = updated[f"{col}_new"].combine_first(updated[col])
+            updated.drop(columns=f"{col}_new", inplace=True)
+
+        # Save updated master
+        updated.to_file(master_path, driver="GeoJSON")
     # end_time = t.time()
     # Calculate the total time taken
     # computation_time = end_time - start_time

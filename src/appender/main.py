@@ -266,6 +266,7 @@ class Environment(Observer):
         # max_value = component_gdf["simulator_id"].max()
         self.master_gdf = pd.concat(self.master_components, ignore_index=True)
         self.master_gdf = self.add_last_observation_collected_time(self.master_gdf)
+        self.master_gdf_with_duplicates = self.master_gdf.copy()
         self.remove_duplicates()
         date = self.app.simulator._time
         date_new_format = str(date.date()).replace("-", "")
@@ -286,7 +287,7 @@ class Environment(Observer):
             Filename=output_file,
             Config=TransferConfig(use_threads=False),
         )
-        self.master_gdf.to_file("outputs/master.geojson", driver="GeoJSON")
+        self.master_gdf_with_duplicates.to_file("outputs/master.geojson", driver="GeoJSON")
         logger.info("Master geosjon file created")
         selected_json_data = self.master_gdf.to_json()
         self.app.send_message(
