@@ -1,4 +1,4 @@
-nost-tools==2.3.0
+nost-tools==2.4.0
 tatc==3.4.8
 dash==3.0.0
 dash-daq==0.6.0
