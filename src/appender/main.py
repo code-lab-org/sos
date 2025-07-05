@@ -28,7 +28,6 @@ class Environment(Observer):
         app (:obj:`ManagedApplication`): An application containing a test-run namespace, a name and description for the app, client credentials, and simulation timing instructions
         grounds (:obj:`DataFrame`): DataFrame of ground station information including groundId (*int*), latitude-longitude location (:obj:`GeographicPosition`), min_elevation (*float*) angle constraints, and operational status (*bool*)
     """
-
     def __init__(self, app):
         self.app = app
         self.counter = 0
@@ -43,7 +42,6 @@ class Environment(Observer):
     def add_prefix_to_columns(self, gdf, prefix):
         """
         Adds a prefix to each column name in the GeoDataFrame, except for the 'geometry' column.
-
         Inputs:
             gdf (GeoDataFrame): The GeoDataFrame whose columns will be prefixed.
             prefix (str): The prefix to add to each column name.
@@ -127,7 +125,6 @@ class Environment(Observer):
     def add_last_observation_collected_time(self, gdf):
         """
         Adds a column for the last observation collected time to the GeoDataFrame.
-
         Inputs:
             gdf (GeoDataFrame): The GeoDataFrame to which the column will be added.
 
@@ -153,15 +150,15 @@ class Environment(Observer):
         ).fillna(False)
         
         # Merge the collected flag back to original gdf by geometry
+        
         gdf = gdf.merge(
             gdf_unique[["geometry", "collected_within_last_3_days"]],
             on="geometry",
             how="left"
         )
-
         # Fill any unmatched geometries with False
         gdf["collected_within_last_3_days"] = gdf["collected_within_last_3_days"].fillna(False)
-
+        logger.info(f"Gdf with last 3 days column populated,{gdf}")
         gdf.to_file(
             "outputs/master_last_collected_testing.geojson",
             driver="GeoJSON",
@@ -185,11 +182,9 @@ class Environment(Observer):
         component_gdf = self.add_columns(component_gdf)
         component_gdf["simulator_id"] = range(
             self.counter, self.counter + len(component_gdf)
-        )
-        
+        )        
         component_gdf = self.reorder_columns(component_gdf)
         component_gdf = component_gdf.to_crs(epsg=4326)
-
         logger.info("Processing component GeoJSON successfully completed.")
         return component_gdf
 
@@ -231,7 +226,6 @@ class Environment(Observer):
         k = gpd.GeoDataFrame.from_features(
             json.loads(data.vector_layer)["features"], crs="EPSG:4326"
         )
-
         logger.info(f"Message body successfully converted to GeoDataFrame. {type(k)}")
         return k
 
@@ -305,7 +299,7 @@ class Environment(Observer):
 
     def on_simulator(self, ch, method, properties, body):
         """
-        Responds to messages from simulator application(generates daily file)
+        Responds to messages from simulator application(Updates updated columns in master gdf)
 
         Inputs:
             ch (Channel): The channel on which the message was received.
@@ -314,25 +308,40 @@ class Environment(Observer):
             body (bytes): The body of the message.
 
         """
-        logger.info("entering appender _on_simulator")
+        # Read message from simulator and populate the updated columns in self.master_components
+        logger.info("Message Received from Simulator")
         component_gdf = self.message_to_geojson(body)
         logger.info(f"Data type pd dataframe all columns {component_gdf.dtypes}")
-        # component_gdf['simulator_completion_time'] = component_gdf['simulator_completion_time'].apply(
-        #  lambda x: x.astimezone(pytz.UTC).strftime("%Y-%m-%d %H:%M:%S %Z") if isinstance(x, datetime) else str(x)
-        # )
+        logger.info(f"Data type of self master component {type(self.master_components)}")
 
-        date = self.app.simulator._time
-        date = date.date()
-        # date = str(date.date()).replace("-", "")
-        logger.info(f"Date is {date}, type is {type(date)}")
-        logger.info(f"sample data from component gdf {component_gdf.head()}")
-        # Filter the component gdf to get the data where "simulator_completion_date" is equal to the current date
-        component_gdf["simulator_completion_date"] = pd.to_datetime(
-            component_gdf["simulator_completion_date"], errors="coerce"
-        )
-        logger.info(f"Date is {date}, type is {type(date)}")
-        logger.info(f"Data type pd dataframe all columns {component_gdf.dtypes}")
-        logger.info(f"Daily Simulator file saved at {self.app.simulator._time}")
+        # Merging the values to self.master_components
+        # self.master_components = self.master_components.merge(
+        #     component_gdf[[]],
+        #     on="simulator_id",
+        #     how="left"
+        # )
+        
+
+
+        # logger.info("entering appender _on_simulator")
+        # component_gdf = self.message_to_geojson(body)
+        # logger.info(f"Data type pd dataframe all columns {component_gdf.dtypes}")
+        # # component_gdf['simulator_completion_time'] = component_gdf['simulator_completion_time'].apply(
+        # #  lambda x: x.astimezone(pytz.UTC).strftime("%Y-%m-%d %H:%M:%S %Z") if isinstance(x, datetime) else str(x)
+        # # )
+
+        # date = self.app.simulator._time
+        # date = date.date()
+        # # date = str(date.date()).replace("-", "")
+        # logger.info(f"Date is {date}, type is {type(date)}")
+        # logger.info(f"sample data from component gdf {component_gdf.head()}")
+        # # Filter the component gdf to get the data where "simulator_completion_date" is equal to the current date
+        # component_gdf["simulator_completion_date"] = pd.to_datetime(
+        #     component_gdf["simulator_completion_date"], errors="coerce"
+        # )
+        # logger.info(f"Date is {date}, type is {type(date)}")
+        # logger.info(f"Data type pd dataframe all columns {component_gdf.dtypes}")
+        # logger.info(f"Daily Simulator file saved at {self.app.simulator._time}")
 
     def on_change(self, source, property_name, old_value, new_value):
         """
@@ -381,7 +390,7 @@ def main():
     )
 
     app.add_message_callback("planner", "selected_cells", environment.on_planner)
-    # app.add_message_callback("simulator", "selected_cells", environment.on_simulator)
+    app.add_message_callback("simulator", "simulator_daily", environment.on_simulator)
 
     while True:
         pass

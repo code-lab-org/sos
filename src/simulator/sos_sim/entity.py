@@ -100,9 +100,9 @@ class Collect_Observations(Entity):
 
             if self.possible_observations is not None:
 
-                logger.info(
-                    f"Number of possible observations {len(self.possible_observations)}"
-                )
+                # logger.info(
+                #     f"Number of possible observations {len(self.possible_observations)}"
+                # )
 
                 self.observation_collected = filter_and_sort_observations(
                     self.possible_observations,
@@ -112,7 +112,7 @@ class Collect_Observations(Entity):
                 )
 
             if self.observation_collected is not None:
-                logger.info("Observation possible")
+                # logger.info("Observation possible")
 
                 if np.random.rand() <= 1.0:  # Simulate a 75% chance of collecting an observation
                     # Get the satellite that collected the observation
@@ -125,8 +125,9 @@ class Collect_Observations(Entity):
                             satellite, self.observation_collected["epoch"]
                         )
                     )
+                    # logger.info(f"Observation Collected at {self.observation_collected['epoch']}")
 
-                    logger.info(f"Observation collected {self.observation_collected}")
+                    # logger.info(f"Observation collected {self.observation_collected}")
                     # logger.info(f"Observation type {type(self.observation_collected)}")
 
                     self.next_requests = self.requests.copy()
@@ -199,9 +200,9 @@ class Collect_Observations(Entity):
                 timedelta(days=1),
                 self.requests,
             )
-            # logger.info(
-            #     f"Number of possible observations {len(self.possible_observations)}"
-            # )
+            logger.info(
+                f"Number of possible observations {len(self.possible_observations)}"
+            )
             self.new_request_flag = False
 
     def message_received_from_appender(self, ch, method, properties, body):
