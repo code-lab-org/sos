@@ -165,6 +165,7 @@ cython_debug/
 .netrc
 data/
 data_*/
+logs/
 #data_download.sh
 input_data/
 snow_raster_layer.png

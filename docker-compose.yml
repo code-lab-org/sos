@@ -19,7 +19,7 @@ services:
     env_file: .env
     environment:
       - DOWNLOAD_CHECK_INTERVAL=3600
-      - DOWNLOAD_MAX_ATTEMPTS=3
+      - DOWNLOAD_MAX_ATTEMPTS=2
     volumes:
       - ./sos.yaml:/opt/sos.yaml
       - ~/.aws/credentials:/root/.aws/credentials:ro
