@@ -1128,7 +1128,7 @@ class Environment(Observer):
     def find_most_recent_file(self, bucket_name, directories, file_name_pattern):
         """
         Search for the most recent matching file across provided S3 directories,
-        prioritizing assimilation subdirectories starting with 'out_'.
+        prioritizing assimilation subdirectories in descending order (most recent first).
 
         Args:
             s3: Boto3 S3 client
@@ -1141,7 +1141,7 @@ class Environment(Observer):
         """
         paginator = self.s3.get_paginator("list_objects_v2")
 
-        # Priority 1: assimilation (out_ subdirs)
+        # Priority 1: assimilation (search all subdirs in descending order)
         for directory in directories:
             logger.debug(f"Searching in directory: {directory}")
             if "assimilation" in directory:
@@ -1169,24 +1169,29 @@ class Environment(Observer):
                 logger.info(f"Assimilation subdirs found: {subdirs}")
 
                 if subdirs:
-                    most_recent_subdir = max(subdirs)
-                    logger.info(
-                        f"Most recent assimilation subdir: {most_recent_subdir}"
-                    )
+                    # Sort subdirectories in descending order (most recent first)
+                    sorted_subdirs = sorted(subdirs, reverse=True)
+                    logger.info(f"Sorted assimilation subdirs: {sorted_subdirs}")
 
-                    pages = paginator.paginate(
-                        Bucket=bucket_name, Prefix=most_recent_subdir
-                    )
-                    for page in pages:
-                        for obj in page.get("Contents", []):
-                            logger.debug(f"Found object in assimilation: {obj['Key']}")
-                            if obj["Key"].endswith(file_name_pattern):
-                                logger.info(
-                                    f"Found matching file in assimilation: {obj['Key']}"
+                    # Search through each subdirectory in order
+                    for subdir in sorted_subdirs:
+                        logger.info(f"Searching in assimilation subdir: {subdir}")
+
+                        pages = paginator.paginate(Bucket=bucket_name, Prefix=subdir)
+                        for page in pages:
+                            for obj in page.get("Contents", []):
+                                logger.debug(
+                                    f"Found object in assimilation: {obj['Key']}"
                                 )
-                                return obj["Key"]
+                                if obj["Key"].endswith(file_name_pattern):
+                                    logger.info(
+                                        f"Found matching file in assimilation subdir {subdir}: {obj['Key']}"
+                                    )
+                                    return obj["Key"]
 
-        logger.warning("No matching file found in assimilation.")
+                        logger.info(f"No matching file found in {subdir}")
+
+        logger.warning("No matching file found in any assimilation subdirectory.")
 
         # Priority 2: open_loop
         for directory in directories:
@@ -1232,12 +1237,12 @@ class Environment(Observer):
 
         if max_attempts is None:
             max_attempts = int(os.environ.get("DOWNLOAD_MAX_ATTEMPTS", 1))
-            
+
         # Early check for existing local file
         if local_filename and os.path.exists(local_filename):
             logger.info(f"File already exists locally: {local_filename}")
             return xr.open_dataset(local_filename, engine="h5netcdf")
-    
+
         logger.info(
             f"Using check_interval_sec={check_interval_sec}, max_attempts={max_attempts} for downloads"
         )
