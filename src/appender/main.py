@@ -311,8 +311,26 @@ class Environment(Observer):
         # Read message from simulator and populate the updated columns in self.master_components
         logger.info("Message Received from Simulator")
         component_gdf = self.message_to_geojson(body)
-        logger.info(f"Data type pd dataframe all columns {component_gdf.dtypes}")
-        logger.info(f"Data type of self master component {type(self.master_components)}")
+        # logger.info(f"Data type pd dataframe all columns {component_gdf.dtypes}")
+        # logger.info(f"Data type of self master component {type(self.master_components)}")
+        logger.info(f"dataframe from simulator type {component_gdf}")
+
+        # Merging values to dataframe
+        # Assuming df is your GeoDataFrame
+        lookup = component_gdf.set_index("simulator_id").to_dict("index")
+        # lookup = component_gdf.set_index("simulator_id")[
+        #     ["simulator_simulation_status",             
+        #      "simulator_completion_date",
+        #      "simulator_satellite"
+        #      ]].to_dict("index")
+
+        for item in self.master_components:
+            sim_id = item.get("simulator_id")
+            if sim_id in lookup:
+                item.update(lookup[sim_id])
+
+        logger.info("Completed updating component gdf")
+
 
         # Merging the values to self.master_components
         # self.master_components = self.master_components.merge(

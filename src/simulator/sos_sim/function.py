@@ -460,6 +460,8 @@ def write_back_to_appender(source, time):
 
     )
 
+    logger.info("Simulator sent message to appender")
+
 
     # Saving to master file
     # Reading master.geojson and populating the simulator columns

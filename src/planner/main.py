@@ -292,7 +292,7 @@ class Environment(Observer):
         logger.info(
             f"Combining the two resolution datasets successfully completed in {end_time - start_time:.2f} seconds."
         )
-
+        
         return output_file, combined_dataset
 
 
