@@ -75,7 +75,6 @@ simulator.add_entity(entity)
 #         PropertyChangeCallback(Collect_Observations.PROPERTY_OBSERVATION, log_observation)
 #     )
 
-
 # Add Observers
 entity.add_observer(
     ScenarioTimeIntervalCallback(write_back_to_appender, time_step_callback)

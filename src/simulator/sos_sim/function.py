@@ -368,11 +368,9 @@ def write_back_to_appender(source, time):
     appender_data = process_master_file(source.requests)
     selected_json_data = pd.DataFrame(appender_data)
     logger.info(f"length of data in master file {len(appender_data)}")
-
     # logger.info(
     #     f"Type of simulator_polygon_groundtrack{type(selected_json_data['simulator_polygon_groundtrack'])}"
     # )
-
     selected_json_data["simulator_polygon_groundtrack"] = selected_json_data[
         "simulator_polygon_groundtrack"
     ].apply(lambda x: wkt.loads(x) if isinstance(x, str) else x)

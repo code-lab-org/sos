@@ -83,9 +83,9 @@ class Collect_Observations(Entity):
     def tick(self, time_step: timedelta):
 
         super().tick(time_step)
-        # logger.info(
-        #     f"entering tick time {self._time}, {len(self.requests)}, next time {self._next_time}"
-        # )
+        logger.info(
+            f"entering tick time {self._time}, {len(self.requests)}, next time {self._next_time}"
+        )
         # Set all the tick operations here
         self.observation_collected = None
         # logger.info(
