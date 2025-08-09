@@ -1856,8 +1856,6 @@ class DailyFreeze(Observer):
         """
         self.app = app
         self.freeze_duration = freeze_duration
-        self.last_day_checked = None
-        self.current_time_scale = None
 
     def detect_level_change(self, new_value, old_value, level):
         """
@@ -1896,36 +1894,24 @@ class DailyFreeze(Observer):
             and source.get_mode() == Mode.EXECUTING
             and new_value is not None
         ):
-            current_sim_time = new_value
-            current_day = current_sim_time.date()
-
-            # Check if we've crossed into a new day or need to change time scale
-            # if self.last_day_checked != current_day:
-            change = self.detect_level_change(new_value, old_value, "day")
-            if change:
-                print(current_day)
-                logger.info("Crossed into a new day, freezing scenario time.")
+            # Check if we've crossed into a new day
+            if self.detect_level_change(new_value, old_value, "day"):
                 # Request the time scale update from the manager
                 self.app.request_freeze(
                     freeze_duration=self.freeze_duration,
-                    sim_freeze_time=current_sim_time,
+                    sim_freeze_time=new_value,
                 )
-                # Update tracking variables
-                self.last_day_checked = current_day
 
 
 def main():
     # Load config
     config = ConnectionConfig(yaml_file="sos.yaml")
 
-    # Define the simulation parameters
-    NAME = "planner"
-
     # create the managed application
-    app = ManagedApplication(NAME)
+    app = ManagedApplication(app_name="planner")
 
     # Add the daily time scale updater observer
-    app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(minutes=1)))
+    app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(hours=1)))
 
     # add the environment observer to monitor simulation for switch to EXECUTING mode
     app.simulator.add_observer(Environment(app))

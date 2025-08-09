@@ -8,27 +8,20 @@ from nost_tools.application_utils import ShutDownObserver
 from nost_tools.configuration import ConnectionConfig
 from nost_tools.managed_application import ManagedApplication
 from nost_tools.observer import ScenarioTimeIntervalCallback
-from sos_sim.entity import Collect_Observations, SatelliteVisualization
+from sos_sim.entity import Collect_Observations
 from sos_sim.function import Snowglobe_constellation, write_back_to_appender
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # from sos_sim.observers import ScenarioTimeIntervalCallback
 start_time = datetime(2025, 1, 1, tzinfo=timezone.utc)
 
-# configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-"""""
-NOST integration
-""" ""
 #  Load config
 config = ConnectionConfig(yaml_file="sos.yaml")
 
-# Define the simulation parameters
-NAME = "simulator"
-
 # create the managed application
-app = ManagedApplication(NAME)
+app = ManagedApplication(app_name="simulator")
 simulator = app.simulator
 
 # add a shutdown observer to shut down after a single test case
