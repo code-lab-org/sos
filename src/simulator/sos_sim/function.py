@@ -1,18 +1,15 @@
 # This Script stores all the functions that are used in the simulator code
 # The functions are stored in a separate file to make the main code more readable
 import logging
-import numpy as np
 import os
-from skyfield.api import load, wgs84, EarthSatellite
-from skyfield.framelib import itrs
 import sys
-import time as t
 from datetime import datetime, timedelta, timezone
 from typing import List
+
 import geopandas as gpd
+import numpy as np
 import pandas as pd
 from boto3.s3.transfer import TransferConfig
-from joblib import Parallel, delayed
 from shapely import Geometry, wkt
 from tatc.analysis import collect_ground_track, collect_multi_observations
 from tatc.schemas import (
@@ -136,49 +133,55 @@ def compute_opportunity(
         if observation_results is not None and not observation_results.empty:
             # logger.info(f"Observation opportunity exist{time + duration}")
             id_to_eta = {
-            request["point"].id: request["planner_final_eta"]
-            for request in filtered_requests
-            }            
-            observation_results["planner_final_eta"] = observation_results["point_id"].map(id_to_eta)
+                request["point"].id: request["planner_final_eta"]
+                for request in filtered_requests
+            }
+            observation_results["planner_final_eta"] = observation_results[
+                "point_id"
+            ].map(id_to_eta)
             # observations = pd.concat(observation_results, ignore_index=True).sort_values(by="epoch", ascending=True)
             return observation_results
         return None
     else:
         return None
-    
+
 
 # Filter and format the observation results
 
-def filter_and_sort_observations(df, sim_time,incomplete_ids,time_step_constr):
-    
-    logger.info(
+
+def filter_and_sort_observations(df, sim_time, incomplete_ids, time_step_constr):
+
+    logger.debug(
         f"Filtering and sorting observations, type of df is {type(df)}, length of df is {len(df)}"
     )
     # Filter for observations with incomplete simulation status
     df = df[df["point_id"].isin(incomplete_ids)]
     # Ensure sim_time is timezone-aware and same tz as df
-    if df['epoch'].dt.tz is not None and sim_time.tzinfo is None:
-        sim_time = sim_time.replace(tzinfo=df['epoch'].dt.tz)
+    if df["epoch"].dt.tz is not None and sim_time.tzinfo is None:
+        sim_time = sim_time.replace(tzinfo=df["epoch"].dt.tz)
 
     # Step 1: Filter for observations within 1 minute of simulation time
     time_step_later = sim_time + time_step_constr
-    logger.info(
-        f"Filtering observations, sim_time: {sim_time}, time_step_later: {time_step_later}, type of sim_time is {type(sim_time)}, type of time_step_later is {type(time_step_later)}")
+    logger.debug(
+        f"Filtering observations, sim_time: {sim_time}, time_step_later: {time_step_later}, type of sim_time is {type(sim_time)}, type of time_step_later is {type(time_step_later)}"
+    )
     mask = (df["epoch"] >= sim_time) & (df["epoch"] <= time_step_later)
     filtered = df[mask]
-    
-    logger.info(
-        f"Filtered observations, type of filtered is {type(filtered)}, length of filtered is {len(filtered)}")
-    
+
+    logger.debug(
+        f"Filtered observations, type of filtered is {type(filtered)}, length of filtered is {len(filtered)}"
+    )
+
     # Step 2: Sort by planner_final_eta descending
     sorted_filtered = filtered.sort_values(by="planner_final_eta", ascending=False)
-    logger.info(
+    logger.debug(
         f"Sorted observations, type of sorted is {sorted_filtered}, length of sorted is {len(sorted_filtered)}"
     )
     return sorted_filtered.iloc[0] if not sorted_filtered.empty else None
 
 
 # Computing Groundtrack and formatting into a dataframe
+
 
 def compute_ground_track_and_format(
     sat_object: Satellite, observation_time: datetime
@@ -227,7 +230,7 @@ def read_master_file():
                 "simulator_satellite": r["simulator_satellite"],
                 "planner_final_eta": r["planner_final_eta"],
                 "simulator_polygon_groundtrack": r["simulator_polygon_groundtrack"],
-                "planner_geometry": r["geometry"]                
+                "planner_geometry": r["geometry"],
             },
             axis=1,
         ).tolist()
@@ -307,7 +310,7 @@ def process_master_file(existing_request):
     Returns:
         List[dict]: The updated list of requests.
     """
-    logger.info(f"Processing master file")
+    logger.info(f"Processing master file.")
     # start_time = t.time()
     master = read_master_file()
     master_processed = [
@@ -374,9 +377,11 @@ def convert_to_vector_layer_format(visual_requests):
     # )
     return vector_data_gdf.to_json()
 
+
 ##################################################################################################################################
 ##################################################################################################################################
 # The following functions are used in the Satellite_position class in the entity.py file
+
 
 def get_elevation_angle(t, sat, loc):
     """
@@ -396,6 +401,7 @@ def get_elevation_angle(t, sat, loc):
     # NOTE: Topos uses term altitude for what we are referring to as elevation
     alt, az, distance = topocentric.altaz()
     return alt.degrees
+
 
 def compute_sensor_radius(altitude, min_elevation):
     """
