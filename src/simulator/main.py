@@ -29,7 +29,7 @@ app.simulator.add_observer(ShutDownObserver(app))
 
 # start up the application on PREFIX, publish time status every 10 seconds of wallclock time
 app.start_up(
-    config.rc.simulation_configuration.execution_parameters.general.prefix, config
+    config.rc.simulation_configuration.execution_parameters.general.prefix, config, True
 )
 
 
