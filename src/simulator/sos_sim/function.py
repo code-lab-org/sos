@@ -39,7 +39,6 @@ def Snowglobe_constellation(start: datetime) -> List[Satellite]:
     """
     roll_angle = (30 + 33.5) / 2
     roll_range = 33.5 - 30
-    start = datetime(2019, 3, 1, tzinfo=timezone.utc)
     constellation = WalkerConstellation(
         name="SnowGlobe Ku",
         orbit=SunSynchronousOrbit(
