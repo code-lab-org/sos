@@ -333,6 +333,7 @@ def main():
         True,
     )
 
+    # Add a message callback to handle messages from the planner
     app.add_message_callback("planner", "selected_cells", environment.on_planner)
     # app.add_message_callback("simulator", "selected_cells", environment.on_simulator)
 

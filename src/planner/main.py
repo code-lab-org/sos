@@ -1396,6 +1396,11 @@ class Environment(Observer):
             new_value = source.get_time()
             old_value = new_value - timedelta(days=1)
 
+            # # Request the freeze from the manager
+            # self.app.request_freeze(
+            #     sim_freeze_time=new_value,
+            # )
+
             self.current_simulation_date = os.path.join(
                 self.output_directory, str(new_value.date())
             )
@@ -1837,6 +1842,7 @@ class Environment(Observer):
                 VectorLayer(vector_layer=selected_json_data).model_dump_json(),
             )
             logger.info("(SELECTED) Publishing message successfully completed.")
+            # self.app.request_resume()
 
 
 class DailyFreeze(Observer):
@@ -1893,14 +1899,13 @@ class DailyFreeze(Observer):
             property_name == Simulator.PROPERTY_TIME
             and source.get_mode() == Mode.EXECUTING
             and new_value is not None
+            and self.detect_level_change(new_value, old_value, "day")
         ):
-            # Check if we've crossed into a new day
-            if self.detect_level_change(new_value, old_value, "day"):
-                # Request the time scale update from the manager
-                self.app.request_freeze(
-                    freeze_duration=self.freeze_duration,
-                    sim_freeze_time=new_value,
-                )
+            # Request the freeze from the manager
+            self.app.request_freeze(
+                freeze_duration=self.freeze_duration,
+                sim_freeze_time=new_value,
+            )
 
 
 def main():
