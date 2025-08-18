@@ -1376,6 +1376,27 @@ class Environment(Observer):
             Polygon(mo_basin.iloc[0].geometry.exterior), crs="EPSG:4326"
         )
 
+    def detect_level_change(self, new_value, old_value, level):
+        """
+        Detect a change in the level of the time value (day, week, or month).
+
+        Args:
+            new_value (datetime): New time value
+            old_value (datetime): Old time value
+            level (str): Level of time value to detect changes ('day', 'week', or 'month')
+
+        Returns:
+            bool: True if the level has changed, False otherwise
+        """
+        if level == "day":
+            return new_value.date() != old_value.date()
+        elif level == "week":
+            return new_value.isocalendar()[1] != old_value.isocalendar()[1]
+        elif level == "month":
+            return new_value.month != old_value.month
+        else:
+            raise ValueError("Invalid level. Choose from 'day', 'week', or 'month'.")
+
     def on_change(self, source, property_name, old_value, new_value):
         """
         Handle changes to properties
@@ -1393,6 +1414,12 @@ class Environment(Observer):
             and new_value == Mode.EXECUTING
         ):
             logger.info("Resuming after a pause......")
+            # if (
+            #     property_name == Simulator.PROPERTY_TIME
+            #     and source.get_mode() == Mode.EXECUTING
+            #     and self.detect_level_change(new_value, old_value, "day")
+            # ):
+
             new_value = source.get_time()
             old_value = new_value - timedelta(days=1)
 
@@ -1915,11 +1942,11 @@ def main():
     # create the managed application
     app = ManagedApplication(app_name="planner")
 
-    # Add the daily time scale updater observer
-    app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(hours=1)))
-
     # add the environment observer to monitor simulation for switch to EXECUTING mode
     app.simulator.add_observer(Environment(app))
+
+    # Add the daily time scale updater observer
+    app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(hours=1)))
 
     # add a shutdown observer to shut down after a single test case
     app.simulator.add_observer(ShutDownObserver(app))
