@@ -849,14 +849,10 @@ class Environment(Observer):
         )
 
         # orbit from https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle
-        # note: tle MUST have an epoch close to start of mission period (use special data request if necessary)
         gcom_w = Satellite(
             name="GCOM-W",
             orbit=TwoLineElements(
-                tle=[
-                    "1 38337U 12025A   25001.47767252  .00002770  00000+0  62493-3 0  9994",
-                    "2 38337  98.2252 304.6936 0001249  63.3270  72.0663 14.57087617671602",
-                ]
+                tle= self.fetch_tle_lines_from_s3()
             ),
             instruments=[amsr2],
         )
@@ -884,6 +880,15 @@ class Environment(Observer):
             f"Computing ground tracks (P2) successfully completed in {end_time - start_time:.2f} seconds."
         )
         gcom_tracks["time"] = pd.to_datetime(gcom_tracks["time"]).dt.tz_localize(None)
+        
+        track_date = gcom_tracks["time"].min().date()  
+
+        filename = f"gcom_ground_tracks_{track_date}.geojson"
+        filepath = os.path.join(self.output_directory, filename)
+
+        gcom_tracks.to_file(filepath, driver="GeoJSON")
+        logger.info(f"GCOM tracks saved to: {filepath}")
+        
         gcom_eta = gcom_ds["combined_eta"].isel(time=1).rio.write_crs("EPSG:4326")
         snowglobe_eta = (
             snowglobe_ds["combined_eta"].isel(time=1).rio.write_crs("EPSG:4326")
@@ -1322,6 +1327,43 @@ class Environment(Observer):
 
         dataset = gpd.read_file(filename)
         return dataset
+    
+    def fetch_tle_lines_from_s3(
+        self,
+        bucket="snow-observing-systems",
+        key="inputs/satellite/sat000038337.txt",
+        local_filename="sat000038337.txt"
+    ):
+       
+        local_path = os.path.join(self.input_directory, local_filename)
+
+        # Download only if the file doesn't already exist
+        if not os.path.exists(local_path):
+            self.s3.download_file(bucket, key, local_path)
+            logger.info("Downloafing TLE file.")
+
+        # Read from local file
+        with open(local_path, "r") as f:
+            lines = [line.strip() for line in f if line.strip()]
+
+        # Parse valid TLE line pairs
+        tle_lines = []
+        i = 0
+        while i < len(lines) - 2:
+            if lines[i].startswith("1 ") and lines[i+1].startswith("2 "):
+                tle_lines.append(lines[i])
+                tle_lines.append(lines[i+1])
+                i += 2
+            elif lines[i].startswith("GCOM") and lines[i+1].startswith("1 ") and lines[i+2].startswith("2 "):
+                tle_lines.append(lines[i+1])
+                tle_lines.append(lines[i+2])
+                i += 3
+            else:
+                i += 1
+
+        return tle_lines
+   
+    
 
     def upload_file(self, key, filename, bucket="snow-observing-systems"):
         """
