@@ -18,6 +18,7 @@ from nost_tools.application_utils import ShutDownObserver
 from nost_tools.configuration import ConnectionConfig
 from nost_tools.managed_application import ManagedApplication
 from nost_tools.observer import Observer
+from nost_tools.simulator import Mode, Simulator
 from PIL import Image
 from pulp import LpMaximize, LpProblem, LpVariable, lpSum, value
 from rasterio.enums import Resampling
@@ -850,9 +851,7 @@ class Environment(Observer):
         # orbit from https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle
         gcom_w = Satellite(
             name="GCOM-W",
-            orbit=TwoLineElements(
-                tle= self.fetch_tle_lines_from_s3()
-            ),
+            orbit=TwoLineElements(tle=self.fetch_tle_lines_from_s3()),
             instruments=[amsr2],
         )
         logger.info("Computing ground tracks (P2).")
@@ -879,15 +878,15 @@ class Environment(Observer):
             f"Computing ground tracks (P2) successfully completed in {end_time - start_time:.2f} seconds."
         )
         gcom_tracks["time"] = pd.to_datetime(gcom_tracks["time"]).dt.tz_localize(None)
-        
-        track_date = gcom_tracks["time"].min().date()  
+
+        track_date = gcom_tracks["time"].min().date()
 
         filename = f"gcom_ground_tracks_{track_date}.geojson"
         filepath = os.path.join(self.output_directory, filename)
 
         gcom_tracks.to_file(filepath, driver="GeoJSON")
         logger.info(f"GCOM tracks saved to: {filepath}")
-        
+
         gcom_eta = gcom_ds["combined_eta"].isel(time=1).rio.write_crs("EPSG:4326")
         snowglobe_eta = (
             snowglobe_ds["combined_eta"].isel(time=1).rio.write_crs("EPSG:4326")
@@ -1326,14 +1325,14 @@ class Environment(Observer):
 
         dataset = gpd.read_file(filename)
         return dataset
-    
+
     def fetch_tle_lines_from_s3(
         self,
         bucket="snow-observing-systems",
         key="inputs/satellite/sat000038337.txt",
-        local_filename="sat000038337.txt"
+        local_filename="sat000038337.txt",
     ):
-       
+
         local_path = os.path.join(self.input_directory, local_filename)
 
         # Download only if the file doesn't already exist
@@ -1349,20 +1348,22 @@ class Environment(Observer):
         tle_lines = []
         i = 0
         while i < len(lines) - 2:
-            if lines[i].startswith("1 ") and lines[i+1].startswith("2 "):
+            if lines[i].startswith("1 ") and lines[i + 1].startswith("2 "):
                 tle_lines.append(lines[i])
-                tle_lines.append(lines[i+1])
+                tle_lines.append(lines[i + 1])
                 i += 2
-            elif lines[i].startswith("GCOM") and lines[i+1].startswith("1 ") and lines[i+2].startswith("2 "):
-                tle_lines.append(lines[i+1])
-                tle_lines.append(lines[i+2])
+            elif (
+                lines[i].startswith("GCOM")
+                and lines[i + 1].startswith("1 ")
+                and lines[i + 2].startswith("2 ")
+            ):
+                tle_lines.append(lines[i + 1])
+                tle_lines.append(lines[i + 2])
                 i += 3
             else:
                 i += 1
 
         return tle_lines
-   
-    
 
     def upload_file(self, key, filename, bucket="snow-observing-systems"):
         """
@@ -1378,27 +1379,6 @@ class Environment(Observer):
         config = TransferConfig(use_threads=True if self.parallel_compute else False)
         self.s3.upload_file(Filename=filename, Bucket=bucket, Key=key, Config=config)
         logger.info(f"Uploading file to S3 successfully completed.")
-
-    def detect_level_change(self, new_value, old_value, level):
-        """
-        Detect a change in the level of the time value (day, week, or month).
-
-        Args:
-            new_value (datetime): New time value
-            old_value (datetime): Old time value
-            level (str): Level of time value to detect changes ('day', 'week', or 'month')
-
-        Returns:
-            bool: True if the level has changed, False otherwise
-        """
-        if level == "day":
-            return new_value.date() != old_value.date()
-        elif level == "week":
-            return new_value.isocalendar()[1] != old_value.isocalendar()[1]
-        elif level == "month":
-            return new_value.month != old_value.month
-        else:
-            raise ValueError("Invalid level. Choose from 'day', 'week', or 'month'.")
 
     def multipolygon_to_polygon(self, geometry):
         """
@@ -1448,519 +1428,540 @@ class Environment(Observer):
             old_value (object): The old value
             new_value (object): The new value
         """
-        if property_name == "time":
+        if (
+            property_name == Simulator.PROPERTY_MODE
+            and source.get_mode() == Mode.EXECUTING
+            and old_value == Mode.RESUMING
+            and new_value == Mode.EXECUTING
+        ):
+            logger.info("Resuming after a pause......")
+            new_value = source.get_time()
+            old_value = new_value - timedelta(days=1)
 
-            # Determine if day has changed
-            change = self.detect_level_change(new_value, old_value, "day")
+            # # Request the freeze from the manager
+            # self.app.request_freeze(
+            #     sim_freeze_time=new_value,
+            # )
 
-            # Publish message if day, week, or month has changed
-            if change:
+            self.current_simulation_date = os.path.join(
+                self.output_directory, str(new_value.date())
+            )
+            self.data_utils.create_directories([self.current_simulation_date])
+            old_value_reformat = str(old_value.date()).replace("-", "")
+            new_value_reformat = str(new_value.date()).replace("-", "")
 
-                self.current_simulation_date = os.path.join(
-                    self.output_directory, str(new_value.date())
+            # Establish connection to S3
+            s3 = AWSUtils().client
+            self.s3 = s3
+
+            mo_basin = self.download_geojson(
+                # s3=s3,
+                # bucket="snow-observing-systems",
+                key="inputs/vector/WBDHU2_4326.geojson",
+                # filename="WBDHU2_4326.geojson",
+                filename="inputs/vector/WBDHU2_4326.geojson",
+            )
+            mo_basin = self.process_geojson(mo_basin)
+            self.polygons = mo_basin.geometry
+
+            # Combined dataset#
+            # Get first dataset
+            # dataset1 = self.download_file(
+            #     s3=s3,
+            #     bucket="snow-observing-systems",
+            #     key=f"LIS_HIST_{old_value_reformat}0000.d01.nc", #f"inputs/LIS/open_loop/LIS_HIST_{old_value_reformat}0000.d01.nc"
+            #     filename=os.path.join(
+            #         self.input_directory,
+            #         f"LIS_HIST_{old_value_reformat}0000.d01.nc",
+            #     ),
+            # )
+            # # Get second dataset
+            # dataset2 = self.download_file(
+            #     s3=s3,
+            #     bucket="snow-observing-systems",
+            #     key=f"LIS_HIST_{new_value_reformat}0000.d01.nc", #f"inputs/LIS/open_loop/LIS_HIST_{new_value_reformat}0000.d01.nc"
+            #     filename=os.path.join(
+            #         self.input_directory,
+            #         f"LIS_HIST_{new_value_reformat}0000.d01.nc",
+            #     ),
+            # )
+
+            # New Combined dataset - download in parallel to reduce total wait time
+            logger.info("Starting parallel download of datasets")
+            datasets = Parallel(
+                n_jobs=2 if self.parallel_compute else 1, backend="threading"
+            )(
+                delayed(self.download_file)(
+                    bucket_name="snow-observing-systems",
+                    file_name_pattern=pattern,
+                    local_filename=filename,
                 )
-                self.data_utils.create_directories([self.current_simulation_date])
-                old_value_reformat = str(old_value.date()).replace("-", "")
-                new_value_reformat = str(new_value.date()).replace("-", "")
-
-                # Establish connection to S3
-                s3 = AWSUtils().client
-                self.s3 = s3
-
-                mo_basin = self.download_geojson(
-                    # s3=s3,
-                    # bucket="snow-observing-systems",
-                    key="inputs/vector/WBDHU2_4326.geojson",
-                    # filename="WBDHU2_4326.geojson",
-                    filename="inputs/vector/WBDHU2_4326.geojson",
-                )
-                mo_basin = self.process_geojson(mo_basin)
-                self.polygons = mo_basin.geometry
-
-                # Combined dataset#
-                # Get first dataset
-                # dataset1 = self.download_file(
-                #     s3=s3,
-                #     bucket="snow-observing-systems",
-                #     key=f"LIS_HIST_{old_value_reformat}0000.d01.nc", #f"inputs/LIS/open_loop/LIS_HIST_{old_value_reformat}0000.d01.nc"
-                #     filename=os.path.join(
-                #         self.input_directory,
-                #         f"LIS_HIST_{old_value_reformat}0000.d01.nc",
-                #     ),
-                # )
-                # # Get second dataset
-                # dataset2 = self.download_file(
-                #     s3=s3,
-                #     bucket="snow-observing-systems",
-                #     key=f"LIS_HIST_{new_value_reformat}0000.d01.nc", #f"inputs/LIS/open_loop/LIS_HIST_{new_value_reformat}0000.d01.nc"
-                #     filename=os.path.join(
-                #         self.input_directory,
-                #         f"LIS_HIST_{new_value_reformat}0000.d01.nc",
-                #     ),
-                # )
-
-                # New Combined dataset - download in parallel to reduce total wait time
-                logger.info("Starting parallel download of datasets")
-                datasets = Parallel(
-                    n_jobs=2 if self.parallel_compute else 1, backend="threading"
-                )(
-                    delayed(self.download_file)(
-                        bucket_name="snow-observing-systems",
-                        file_name_pattern=pattern,
-                        local_filename=filename,
-                    )
-                    for pattern, filename in [
-                        (
+                for pattern, filename in [
+                    (
+                        f"LIS_HIST_{old_value_reformat}0000.d01.nc",
+                        os.path.join(
+                            self.input_directory,
                             f"LIS_HIST_{old_value_reformat}0000.d01.nc",
-                            os.path.join(
-                                self.input_directory,
-                                f"LIS_HIST_{old_value_reformat}0000.d01.nc",
-                            ),
                         ),
-                        (
+                    ),
+                    (
+                        f"LIS_HIST_{new_value_reformat}0000.d01.nc",
+                        os.path.join(
+                            self.input_directory,
                             f"LIS_HIST_{new_value_reformat}0000.d01.nc",
-                            os.path.join(
-                                self.input_directory,
-                                f"LIS_HIST_{new_value_reformat}0000.d01.nc",
-                            ),
                         ),
-                    ]
-                )
+                    ),
+                ]
+            )
 
-                dataset1, dataset2 = datasets
-                logger.info("Parallel download of datasets completed")
-                # Generate the combined dataset
-                combined_output_file, combined_dataset = self.generate_combined_dataset(
-                    dataset1, dataset2, mo_basin
-                )
-                # Upload dataset to S3
-                self.upload_file(
-                    key=combined_output_file, filename=combined_output_file
-                )
-                # MODIFIED BY DIVYA
-                # Resolution layer processing
-                combined_output_file_resolution, combined_dataset_resolution = (
-                    self.generate_combined_dataset_resolution(
-                        dataset1, dataset2, mo_basin
-                    )
-                )
-                # Upload dataset to S3
-                self.upload_file(
-                    key=combined_output_file_resolution,
-                    filename=combined_output_file_resolution,
-                )
+            dataset1, dataset2 = datasets
+            logger.info("Parallel download of datasets completed")
+            # Generate the combined dataset
+            combined_output_file, combined_dataset = self.generate_combined_dataset(
+                dataset1, dataset2, mo_basin
+            )
+            # Upload dataset to S3
+            self.upload_file(key=combined_output_file, filename=combined_output_file)
+            # MODIFIED BY DIVYA
+            # Resolution layer processing
+            combined_output_file_resolution, combined_dataset_resolution = (
+                self.generate_combined_dataset_resolution(dataset1, dataset2, mo_basin)
+            )
+            # Upload dataset to S3
+            self.upload_file(
+                key=combined_output_file_resolution,
+                filename=combined_output_file_resolution,
+            )
 
-                # Select the SWE_tavg variable for a specific time step (e.g., first time step)
-                swe_data = combined_dataset["SWE_tavg"].isel(time=1)  # SEND AS MESSAGE
-                swe_layer_encoded, top_left, top_right, bottom_left, bottom_right = (
-                    self.encode(
-                        dataset=combined_dataset,
-                        variable="SWE_tavg",
-                        output_path=f"swe_data_{new_value_reformat}.png",
-                        time_step=1,  # 0,
-                        scale="time",
-                        geojson_path="WBD_10_HU2_4326.geojson",
-                        rotate=True,
-                    )
-                )
-                if self.visualize_all_layers:
-                    self.app.send_message(
-                        self.app.app_name,
-                        "layer",
-                        SWEChangeLayer(
-                            swe_change_layer=swe_layer_encoded,
-                            top_left=top_left,
-                            top_right=top_right,
-                            bottom_left=bottom_left,
-                            bottom_right=bottom_right,
-                        ).model_dump_json(),
-                    )
-                    logger.info("Publishing message successfully completed.")
-                    time.sleep(15)
-
-                # ETA5 dataset#
-                # Generate the SWE difference
-                swe_output_file, eta5_file = self.generate_swe_difference(
-                    ds=combined_dataset
-                )
-                # Upload dataset to S3
-                self.upload_file(key=swe_output_file, filename=swe_output_file)
-                # Select the eta5 variable for a specific time step (e.g., first time step)
-                eta5_data = eta5_file["eta5"].isel(time=1)
-                eta5_layer_encoded, _, _, _, _ = self.encode(
-                    dataset=eta5_file,
-                    variable="eta5",
-                    output_path=f"eta5_data_{new_value_reformat}.png",
-                    time_step=1,
+            # Select the SWE_tavg variable for a specific time step (e.g., first time step)
+            swe_data = combined_dataset["SWE_tavg"].isel(time=1)  # SEND AS MESSAGE
+            swe_layer_encoded, top_left, top_right, bottom_left, bottom_right = (
+                self.encode(
+                    dataset=combined_dataset,
+                    variable="SWE_tavg",
+                    output_path=f"swe_data_{new_value_reformat}.png",
+                    time_step=1,  # 0,
                     scale="time",
                     geojson_path="WBD_10_HU2_4326.geojson",
                     rotate=True,
                 )
-                if self.visualize_swe_change:
-                    self.app.send_message(
-                        self.app.app_name,
-                        "layer",
-                        SWEChangeLayer(
-                            swe_change_layer=eta5_layer_encoded,
-                            top_left=top_left,
-                            top_right=top_right,
-                            bottom_left=bottom_left,
-                            bottom_right=bottom_right,
-                        ).model_dump_json(),
-                    )
-                    logger.info("Publishing message successfully completed.")
-
-                # ETA0 dataset
-                # Generate the surface temperature dataset
-                surfacetemp_output_file, eta0_file = self.generate_surface_temp(
-                    ds=combined_dataset
-                )
-                # Upload dataset to S3
-                self.upload_file(
-                    key=surfacetemp_output_file, filename=surfacetemp_output_file
-                )
-
-                # MODIFIED BY DIVYA - Resolution - adding here as I need eta0_file for resolution
-                # Generate the resolution dataset
-                (
-                    resolution_dataset_nontaskable_eta,
-                    resolution_dataset_taskable_eta,
-                    resolution_output_file,
-                ) = self.generate_resolution(
-                    ds=combined_dataset_resolution,
-                    target_resolution_file=eta5_file,
-                    mo_basin=mo_basin,
-                )
-
-                # Upload dataset to S3
-                self.upload_file(
-                    key=resolution_output_file, filename=resolution_output_file
-                )
-
-                # Generate the snow cover dataset
-                eta_sc_values, eta_sc_file = self.generate_snowcover(
-                    ds=combined_dataset
-                )
-
-                # Upload dataset to S3
-                self.upload_file(key=eta_sc_file, filename=eta_sc_file)
-
-                # COMMENT BY DIVYA - will add layer- encoding if required later
-                # Use snow_cover_eta_file , resolution_dataset_nontaskable_eta, resolution_dataset_taskable_eta for further steps
-
-                # Select the eta0 variable for a specific time step (e.g., first time step)
-                eta0_data = eta0_file["eta0"].isel(time=1)
-                eta0_layer_encoded, _, _, _, _ = self.encode(
-                    dataset=eta0_file,
-                    variable="eta0",
-                    output_path=f"eta0_data_{new_value_reformat}.png",
-                    time_step=1,
-                    scale="time",
-                    geojson_path="WBD_10_HU2_4326.geojson",
-                    rotate=True,
-                )
-                if self.visualize_all_layers:
-                    self.app.send_message(
-                        self.app.app_name,
-                        "layer",
-                        SWEChangeLayer(
-                            swe_change_layer=eta0_layer_encoded,
-                            top_left=top_left,
-                            top_right=top_right,
-                            bottom_left=bottom_left,
-                            bottom_right=bottom_right,
-                        ).model_dump_json(),
-                    )
-                    logger.info("Publishing message successfully completed.")
-                    time.sleep(15)
-
-                # ETA2 GCOM dataset
-                # Generate the sensor GCOM dataset
-                sensor_gcom_output_file, eta2_file_GCOM = self.generate_sensor_gcom(
-                    ds=combined_dataset
-                )
-                # Upload dataset to S3
-                self.upload_file(
-                    key=sensor_gcom_output_file, filename=sensor_gcom_output_file
-                )
-                # Select the eta2 variable for a specific time step (e.g., first time step)
-                eta2_data_GCOM = eta2_file_GCOM["eta2"].isel(time=1)
-                eta2_gcom_layer_encoded, _, _, _, _ = self.encode(
-                    dataset=eta2_file_GCOM,
-                    variable="eta2",
-                    output_path=f"eta2_gcom_data_{new_value_reformat}.png",
-                    time_step=1,
-                    scale="time",
-                    geojson_path="WBD_10_HU2_4326.geojson",
-                    rotate=True,
-                )
-                if self.visualize_all_layers:
-                    self.app.send_message(
-                        self.app.app_name,
-                        "layer",
-                        SWEChangeLayer(
-                            swe_change_layer=eta2_gcom_layer_encoded,
-                            top_left=top_left,
-                            top_right=top_right,
-                            bottom_left=bottom_left,
-                            bottom_right=bottom_right,
-                        ).model_dump_json(),
-                    )
-                    logger.info("Publishing message successfully completed.")
-                    time.sleep(15)
-
-                # ETA2 Capella dataset
-                # Generate the sensor capella dataset
-                sensor_capella_output_file, eta2_file_Capella = (
-                    self.generate_sensor_capella(ds=combined_dataset)
-                )
-                # Upload dataset to S3
-                self.upload_file(
-                    key=sensor_capella_output_file, filename=sensor_capella_output_file
-                )
-                # Select the eta2 variable for a specific time step (e.g., first time step)
-                eta2_data_Capella = eta2_file_Capella["eta2"].isel(time=1)
-                eta2_capella_layer_encoded, _, _, _, _ = self.encode(
-                    dataset=eta2_file_Capella,
-                    variable="eta2",
-                    output_path=f"eta2_capella_data_{new_value_reformat}.png",
-                    time_step=1,
-                    scale="time",
-                    geojson_path="WBD_10_HU2_4326.geojson",
-                    rotate=True,
-                )
-                if self.visualize_all_layers:
-                    self.app.send_message(
-                        self.app.app_name,
-                        "layer",
-                        SWEChangeLayer(
-                            swe_change_layer=eta2_capella_layer_encoded,
-                            top_left=top_left,
-                            top_right=top_right,
-                            bottom_left=bottom_left,
-                            bottom_right=bottom_right,
-                        ).model_dump_json(),
-                    )
-                    logger.info("Publishing message successfully completed.")
-                    time.sleep(15)
-
-                # GCOM Final ETA
-                # Define the weights for each dataset
-                # weights = {"eta5": 0.5, "eta0": 0.3, "eta2": 0.2}
-                weights = {
-                    "eta5": 0.5,
-                    "eta0": 0.3,
-                    "eta2": 0.2,
-                    "eta_sc": 0.3,
-                    "eta_res": 0.2,
-                }
-                # Process GCOM datasets
-                gcom_combine_multiply_output_file, gcom_dataset = (
-                    self.combine_and_multiply_datasets(
-                        ds=combined_dataset,
-                        eta5_file=eta5_file,
-                        eta0_file=eta0_file,
-                        eta2_file=eta2_file_GCOM,
-                        eta_sc_file=eta_sc_values,
-                        eta_res_file=resolution_dataset_nontaskable_eta,
-                        weights=weights,
-                        output_file="Combined_Efficiency_Weighted_Product_GCOM",
-                    )
-                )
-
-                # MODIFIED BY DIVYA - Combine and multiply files - commenting out for now
-
-                # # Define the weights for each dataset
-                # weights = {"eta5": 0.4, "eta0": 0.2, "eta2": 0.2, "snow_cover_eta": 0.1, "resolution_eta": 0.1}
-                # # Process GCOM datasets
-                # gcom_combine_multiply_output_file, gcom_dataset = (
-                #     self.combine_and_multiply_datasets(
-                #         ds=combined_dataset,
-                #         eta5_file=eta5_file,
-                #         eta0_file=eta0_file,
-                #         eta2_file=eta2_file_GCOM,
-                #         resolution_eta_file=resolution_dataset_nontaskable,
-                #         snow_cover_eta_file=snow_cover_eta_file,
-                #         weights=weights,
-                #         output_file="Combined_Efficiency_Weighted_Product_GCOM",
-                #     )
-                # )
-
-                # Upload dataset to S3
-                self.upload_file(
-                    key=gcom_combine_multiply_output_file,
-                    filename=gcom_combine_multiply_output_file,
-                )
-                # Select the combined_eta variable for a specific time step (e.g., first time step)
-                gcom_eta = gcom_dataset["combined_eta"].isel(time=1)
-
-                gcom_eta_layer_encoded, _, _, _, _ = self.encode(
-                    dataset=gcom_dataset,
-                    variable="combined_eta",
-                    output_path=f"gcom_eta_combined_data_{new_value_reformat}.png",
-                    time_step=1,
-                    scale="time",
-                    geojson_path="WBD_10_HU2_4326.geojson",
-                    rotate=True,
-                )
-                if self.visualize_all_layers:
-                    self.app.send_message(
-                        self.app.app_name,
-                        "layer",
-                        SWEChangeLayer(
-                            swe_change_layer=gcom_eta_layer_encoded,
-                            top_left=top_left,
-                            top_right=top_right,
-                            bottom_left=bottom_left,
-                            bottom_right=bottom_right,
-                        ).model_dump_json(),
-                    )
-                    logger.info("Publishing message successfully completed.")
-                    time.sleep(15)
-
-                # Capella Final ETA
-                # Process Capella datasets
-                capella_combine_multiply_output_file, capella_dataset = (
-                    self.combine_and_multiply_datasets(
-                        ds=combined_dataset,
-                        eta5_file=eta5_file,
-                        eta0_file=eta0_file,
-                        eta2_file=eta2_file_Capella,
-                        eta_sc_file=eta_sc_values,
-                        eta_res_file=resolution_dataset_taskable_eta,
-                        weights=weights,
-                        output_file="Combined_Efficiency_Weighted_Product_Capella",
-                    )
-                )
-                # Upload dataset to S3
-                self.upload_file(
-                    key=capella_combine_multiply_output_file,
-                    filename=capella_combine_multiply_output_file,
-                )
-                capella_eta_layer_encoded, _, _, _, _ = self.encode(
-                    dataset=capella_dataset,
-                    variable="combined_eta",
-                    output_path=f"capella_eta_combined_data_{new_value_reformat}.png",
-                    time_step=1,
-                    scale="time",
-                    geojson_path="WBD_10_HU2_4326.geojson",
-                    rotate=True,
-                )
-                if self.visualize_all_layers:
-                    self.app.send_message(
-                        self.app.app_name,
-                        "layer",
-                        SWEChangeLayer(
-                            swe_change_layer=capella_eta_layer_encoded,
-                            top_left=top_left,
-                            top_right=top_right,
-                            bottom_left=bottom_left,
-                            bottom_right=bottom_right,
-                        ).model_dump_json(),
-                    )
-                    logger.info("Publishing message successfully completed.")
-                    time.sleep(15)
-
-                # Reward
-                final_eta_output_file, final_eta_gdf = self.process(
-                    gcom_ds=gcom_dataset,
-                    snowglobe_ds=capella_dataset,
-                    mo_basin=mo_basin,
-                    start=old_value,
-                    end=new_value,
-                )
-                # Upload dataset to S3
-                self.upload_file(
-                    key=final_eta_output_file, filename=final_eta_output_file
-                )
-                # Clip Final Eta GDF and ground tracks to the Missouri Basin
-                final_eta_gdf_clipped = gpd.clip(final_eta_gdf, mo_basin)
-                # Convert the clipped GeoDataFrame to GeoJSON and send as message
-                all_json_data = final_eta_gdf_clipped.drop(
-                    "time", axis=1, errors="ignore"
-                ).to_json()
+            )
+            if self.visualize_all_layers:
                 self.app.send_message(
                     self.app.app_name,
-                    "all",
-                    VectorLayer(vector_layer=all_json_data).model_dump_json(),
+                    "layer",
+                    SWEChangeLayer(
+                        swe_change_layer=swe_layer_encoded,
+                        top_left=top_left,
+                        top_right=top_right,
+                        bottom_left=bottom_left,
+                        bottom_right=bottom_right,
+                    ).model_dump_json(),
                 )
-                logger.info("(ALL) Publishing message successfully completed.")
+                logger.info("Publishing message successfully completed.")
+                time.sleep(15)
+
+            # ETA5 dataset#
+            # Generate the SWE difference
+            swe_output_file, eta5_file = self.generate_swe_difference(
+                ds=combined_dataset
+            )
+            # Upload dataset to S3
+            self.upload_file(key=swe_output_file, filename=swe_output_file)
+            # Select the eta5 variable for a specific time step (e.g., first time step)
+            eta5_data = eta5_file["eta5"].isel(time=1)
+            eta5_layer_encoded, _, _, _, _ = self.encode(
+                dataset=eta5_file,
+                variable="eta5",
+                output_path=f"eta5_data_{new_value_reformat}.png",
+                time_step=1,
+                scale="time",
+                geojson_path="WBD_10_HU2_4326.geojson",
+                rotate=True,
+            )
+            if self.visualize_swe_change:
                 self.app.send_message(
                     self.app.app_name,
-                    "available",
-                    VectorLayer(vector_layer=all_json_data).model_dump_json(),
+                    "layer",
+                    SWEChangeLayer(
+                        swe_change_layer=eta5_layer_encoded,
+                        top_left=top_left,
+                        top_right=top_right,
+                        bottom_left=bottom_left,
+                        bottom_right=bottom_right,
+                    ).model_dump_json(),
                 )
+                logger.info("Publishing message successfully completed.")
 
-                # Find Optimal Solution#
-                output_geojson, selected_cells_gdf = self.find_optimal_solution(
-                    final_eta_gdf=final_eta_gdf
-                )
-                # Upload dataset to S3
-                self.upload_file(key=output_geojson, filename=output_geojson)
-                selected_cells_gdf["time"] = selected_cells_gdf["time"].astype(str)
-                selected_json_data = selected_cells_gdf.to_json()
+            # ETA0 dataset
+            # Generate the surface temperature dataset
+            surfacetemp_output_file, eta0_file = self.generate_surface_temp(
+                ds=combined_dataset
+            )
+            # Upload dataset to S3
+            self.upload_file(
+                key=surfacetemp_output_file, filename=surfacetemp_output_file
+            )
+
+            # MODIFIED BY DIVYA - Resolution - adding here as I need eta0_file for resolution
+            # Generate the resolution dataset
+            (
+                resolution_dataset_nontaskable_eta,
+                resolution_dataset_taskable_eta,
+                resolution_output_file,
+            ) = self.generate_resolution(
+                ds=combined_dataset_resolution,
+                target_resolution_file=eta5_file,
+                mo_basin=mo_basin,
+            )
+
+            # Upload dataset to S3
+            self.upload_file(
+                key=resolution_output_file, filename=resolution_output_file
+            )
+
+            # Generate the snow cover dataset
+            eta_sc_values, eta_sc_file = self.generate_snowcover(ds=combined_dataset)
+
+            # Upload dataset to S3
+            self.upload_file(key=eta_sc_file, filename=eta_sc_file)
+
+            # COMMENT BY DIVYA - will add layer- encoding if required later
+            # Use snow_cover_eta_file , resolution_dataset_nontaskable_eta, resolution_dataset_taskable_eta for further steps
+
+            # Select the eta0 variable for a specific time step (e.g., first time step)
+            eta0_data = eta0_file["eta0"].isel(time=1)
+            eta0_layer_encoded, _, _, _, _ = self.encode(
+                dataset=eta0_file,
+                variable="eta0",
+                output_path=f"eta0_data_{new_value_reformat}.png",
+                time_step=1,
+                scale="time",
+                geojson_path="WBD_10_HU2_4326.geojson",
+                rotate=True,
+            )
+            if self.visualize_all_layers:
                 self.app.send_message(
                     self.app.app_name,
-                    "selected_cells",
-                    VectorLayer(vector_layer=selected_json_data).model_dump_json(),
+                    "layer",
+                    SWEChangeLayer(
+                        swe_change_layer=eta0_layer_encoded,
+                        top_left=top_left,
+                        top_right=top_right,
+                        bottom_left=bottom_left,
+                        bottom_right=bottom_right,
+                    ).model_dump_json(),
                 )
-                logger.info("(SELECTED) Publishing message successfully completed.")
+                logger.info("Publishing message successfully completed.")
+                time.sleep(15)
 
-    def on_change_alternative(self, source, property_name, old_value, new_value):
+            # ETA2 GCOM dataset
+            # Generate the sensor GCOM dataset
+            sensor_gcom_output_file, eta2_file_GCOM = self.generate_sensor_gcom(
+                ds=combined_dataset
+            )
+            # Upload dataset to S3
+            self.upload_file(
+                key=sensor_gcom_output_file, filename=sensor_gcom_output_file
+            )
+            # Select the eta2 variable for a specific time step (e.g., first time step)
+            eta2_data_GCOM = eta2_file_GCOM["eta2"].isel(time=1)
+            eta2_gcom_layer_encoded, _, _, _, _ = self.encode(
+                dataset=eta2_file_GCOM,
+                variable="eta2",
+                output_path=f"eta2_gcom_data_{new_value_reformat}.png",
+                time_step=1,
+                scale="time",
+                geojson_path="WBD_10_HU2_4326.geojson",
+                rotate=True,
+            )
+            if self.visualize_all_layers:
+                self.app.send_message(
+                    self.app.app_name,
+                    "layer",
+                    SWEChangeLayer(
+                        swe_change_layer=eta2_gcom_layer_encoded,
+                        top_left=top_left,
+                        top_right=top_right,
+                        bottom_left=bottom_left,
+                        bottom_right=bottom_right,
+                    ).model_dump_json(),
+                )
+                logger.info("Publishing message successfully completed.")
+                time.sleep(15)
+
+            # ETA2 Capella dataset
+            # Generate the sensor capella dataset
+            sensor_capella_output_file, eta2_file_Capella = (
+                self.generate_sensor_capella(ds=combined_dataset)
+            )
+            # Upload dataset to S3
+            self.upload_file(
+                key=sensor_capella_output_file, filename=sensor_capella_output_file
+            )
+            # Select the eta2 variable for a specific time step (e.g., first time step)
+            eta2_data_Capella = eta2_file_Capella["eta2"].isel(time=1)
+            eta2_capella_layer_encoded, _, _, _, _ = self.encode(
+                dataset=eta2_file_Capella,
+                variable="eta2",
+                output_path=f"eta2_capella_data_{new_value_reformat}.png",
+                time_step=1,
+                scale="time",
+                geojson_path="WBD_10_HU2_4326.geojson",
+                rotate=True,
+            )
+            if self.visualize_all_layers:
+                self.app.send_message(
+                    self.app.app_name,
+                    "layer",
+                    SWEChangeLayer(
+                        swe_change_layer=eta2_capella_layer_encoded,
+                        top_left=top_left,
+                        top_right=top_right,
+                        bottom_left=bottom_left,
+                        bottom_right=bottom_right,
+                    ).model_dump_json(),
+                )
+                logger.info("Publishing message successfully completed.")
+                time.sleep(15)
+
+            # GCOM Final ETA
+            # Define the weights for each dataset
+            # weights = {"eta5": 0.5, "eta0": 0.3, "eta2": 0.2}
+            weights = {
+                "eta5": 0.5,
+                "eta0": 0.3,
+                "eta2": 0.2,
+                "eta_sc": 0.3,
+                "eta_res": 0.2,
+            }
+            # Process GCOM datasets
+            gcom_combine_multiply_output_file, gcom_dataset = (
+                self.combine_and_multiply_datasets(
+                    ds=combined_dataset,
+                    eta5_file=eta5_file,
+                    eta0_file=eta0_file,
+                    eta2_file=eta2_file_GCOM,
+                    eta_sc_file=eta_sc_values,
+                    eta_res_file=resolution_dataset_nontaskable_eta,
+                    weights=weights,
+                    output_file="Combined_Efficiency_Weighted_Product_GCOM",
+                )
+            )
+
+            # MODIFIED BY DIVYA - Combine and multiply files - commenting out for now
+
+            # # Define the weights for each dataset
+            # weights = {"eta5": 0.4, "eta0": 0.2, "eta2": 0.2, "snow_cover_eta": 0.1, "resolution_eta": 0.1}
+            # # Process GCOM datasets
+            # gcom_combine_multiply_output_file, gcom_dataset = (
+            #     self.combine_and_multiply_datasets(
+            #         ds=combined_dataset,
+            #         eta5_file=eta5_file,
+            #         eta0_file=eta0_file,
+            #         eta2_file=eta2_file_GCOM,
+            #         resolution_eta_file=resolution_dataset_nontaskable,
+            #         snow_cover_eta_file=snow_cover_eta_file,
+            #         weights=weights,
+            #         output_file="Combined_Efficiency_Weighted_Product_GCOM",
+            #     )
+            # )
+
+            # Upload dataset to S3
+            self.upload_file(
+                key=gcom_combine_multiply_output_file,
+                filename=gcom_combine_multiply_output_file,
+            )
+            # Select the combined_eta variable for a specific time step (e.g., first time step)
+            gcom_eta = gcom_dataset["combined_eta"].isel(time=1)
+
+            gcom_eta_layer_encoded, _, _, _, _ = self.encode(
+                dataset=gcom_dataset,
+                variable="combined_eta",
+                output_path=f"gcom_eta_combined_data_{new_value_reformat}.png",
+                time_step=1,
+                scale="time",
+                geojson_path="WBD_10_HU2_4326.geojson",
+                rotate=True,
+            )
+            if self.visualize_all_layers:
+                self.app.send_message(
+                    self.app.app_name,
+                    "layer",
+                    SWEChangeLayer(
+                        swe_change_layer=gcom_eta_layer_encoded,
+                        top_left=top_left,
+                        top_right=top_right,
+                        bottom_left=bottom_left,
+                        bottom_right=bottom_right,
+                    ).model_dump_json(),
+                )
+                logger.info("Publishing message successfully completed.")
+                time.sleep(15)
+
+            # Capella Final ETA
+            # Process Capella datasets
+            capella_combine_multiply_output_file, capella_dataset = (
+                self.combine_and_multiply_datasets(
+                    ds=combined_dataset,
+                    eta5_file=eta5_file,
+                    eta0_file=eta0_file,
+                    eta2_file=eta2_file_Capella,
+                    eta_sc_file=eta_sc_values,
+                    eta_res_file=resolution_dataset_taskable_eta,
+                    weights=weights,
+                    output_file="Combined_Efficiency_Weighted_Product_Capella",
+                )
+            )
+            # Upload dataset to S3
+            self.upload_file(
+                key=capella_combine_multiply_output_file,
+                filename=capella_combine_multiply_output_file,
+            )
+            capella_eta_layer_encoded, _, _, _, _ = self.encode(
+                dataset=capella_dataset,
+                variable="combined_eta",
+                output_path=f"capella_eta_combined_data_{new_value_reformat}.png",
+                time_step=1,
+                scale="time",
+                geojson_path="WBD_10_HU2_4326.geojson",
+                rotate=True,
+            )
+            if self.visualize_all_layers:
+                self.app.send_message(
+                    self.app.app_name,
+                    "layer",
+                    SWEChangeLayer(
+                        swe_change_layer=capella_eta_layer_encoded,
+                        top_left=top_left,
+                        top_right=top_right,
+                        bottom_left=bottom_left,
+                        bottom_right=bottom_right,
+                    ).model_dump_json(),
+                )
+                logger.info("Publishing message successfully completed.")
+                time.sleep(15)
+
+            # Reward
+            final_eta_output_file, final_eta_gdf = self.process(
+                gcom_ds=gcom_dataset,
+                snowglobe_ds=capella_dataset,
+                mo_basin=mo_basin,
+                start=old_value,
+                end=new_value,
+            )
+            # Upload dataset to S3
+            self.upload_file(key=final_eta_output_file, filename=final_eta_output_file)
+            # Clip Final Eta GDF and ground tracks to the Missouri Basin
+            final_eta_gdf_clipped = gpd.clip(final_eta_gdf, mo_basin)
+            # Convert the clipped GeoDataFrame to GeoJSON and send as message
+            all_json_data = final_eta_gdf_clipped.drop(
+                "time", axis=1, errors="ignore"
+            ).to_json()
+            self.app.send_message(
+                self.app.app_name,
+                "all",
+                VectorLayer(vector_layer=all_json_data).model_dump_json(),
+            )
+            logger.info("(ALL) Publishing message successfully completed.")
+            self.app.send_message(
+                self.app.app_name,
+                "available",
+                VectorLayer(vector_layer=all_json_data).model_dump_json(),
+            )
+
+            # Find Optimal Solution#
+            output_geojson, selected_cells_gdf = self.find_optimal_solution(
+                final_eta_gdf=final_eta_gdf
+            )
+            # Upload dataset to S3
+            self.upload_file(key=output_geojson, filename=output_geojson)
+            selected_cells_gdf["time"] = selected_cells_gdf["time"].astype(str)
+            selected_json_data = selected_cells_gdf.to_json()
+            self.app.send_message(
+                self.app.app_name,
+                "selected_cells",
+                VectorLayer(vector_layer=selected_json_data).model_dump_json(),
+            )
+            logger.info("(SELECTED) Publishing message successfully completed.")
+            # self.app.request_resume()
+
+
+class DailyFreeze(Observer):
+    """
+    Observer that automatically freezes the simulation at the start of each day.
+    """
+
+    def __init__(
+        self, app: ManagedApplication, freeze_duration: timedelta = timedelta(hours=2)
+    ):
         """
-        Handle changes to properties
+        Initialize the daily time scale updater.
 
         Args:
-            source (object): The source object
-            property_name (str): The property name
-            old_value (object): The old value
-            new_value (object): The new value
+            manager (Manager): The manager instance to send update requests
+            freeze_duration (timedelta): Duration to freeze the simulation at the start of each day (default 2 wall clock hours)
         """
-        if property_name == "time":
-            # Determine if day has changed
-            change = self.detect_level_change(new_value, old_value, "day")
-            # Publish message if day, week, or month has changed
-            if change:
-                old_value_reformat = str(old_value.date()).replace("-", "")
-                new_value_reformat = str(new_value.date()).replace("-", "")
-                # All Tracks
-                all_cells_geojson_path = f"Reward_{new_value_reformat}.geojson"
-                all_cells_gdf = gpd.read_file(all_cells_geojson_path)
-                all_cells_gdf["time"] = all_cells_gdf["time"].astype(str)
-                all_json_data = all_cells_gdf.to_json()
-                self.app.send_message(
-                    self.app.app_name,
-                    "all",
-                    VectorLayer(vector_layer=all_json_data).model_dump_json(),
-                )
-                logger.info("(ALL) Publishing message successfully completed.")
-                # Selected Cells
-                selected_cells_geojson_path = (
-                    f"Selected_Cells_Optimization_{new_value_reformat}.geojson"
-                )
-                selected_cells_gdf = gpd.read_file(selected_cells_geojson_path)
-                selected_cells_gdf["time"] = selected_cells_gdf["time"].astype(str)
-                selected_json_data = selected_cells_gdf.to_json()
-                self.app.send_message(
-                    self.app.app_name,
-                    "selected_cells",
-                    VectorLayer(vector_layer=selected_json_data).model_dump_json(),
-                )
-                logger.info("(SELECTED) Publishing message successfully completed.")
+        self.app = app
+        self.freeze_duration = freeze_duration
+
+    def detect_level_change(self, new_value, old_value, level):
+        """
+        Detect a change in the level of the time value (day, week, or month).
+
+        Args:
+            new_value (datetime): New time value
+            old_value (datetime): Old time value
+            level (str): Level of time value to detect changes ('day', 'week', or 'month')
+
+        Returns:
+            bool: True if the level has changed, False otherwise
+        """
+        if level == "day":
+            return new_value.date() != old_value.date()
+        elif level == "week":
+            return new_value.isocalendar()[1] != old_value.isocalendar()[1]
+        elif level == "month":
+            return new_value.month != old_value.month
+        else:
+            raise ValueError("Invalid level. Choose from 'day', 'week', or 'month'.")
+
+    def on_change(self, source, property_name, old_value, new_value):
+        """
+        Callback when simulation properties change.
+
+        Args:
+            source: The object that changed
+            property_name (str): Name of the property that changed
+            old_value: Previous value
+            new_value: New value
+        """
+        # Only respond to time changes when simulation is executing
+        if (
+            property_name == Simulator.PROPERTY_TIME
+            and source.get_mode() == Mode.EXECUTING
+            and new_value is not None
+            and self.detect_level_change(new_value, old_value, "day")
+        ):
+            # Request the freeze from the manager
+            self.app.request_freeze(
+                freeze_duration=self.freeze_duration,
+                sim_freeze_time=new_value,
+            )
 
 
 def main():
     # Load config
     config = ConnectionConfig(yaml_file="sos.yaml")
 
-    # Define the simulation parameters
-    NAME = "planner"
-
     # create the managed application
-    app = ManagedApplication(NAME)
+    app = ManagedApplication(app_name="planner")
 
     # add the environment observer to monitor simulation for switch to EXECUTING mode
     app.simulator.add_observer(Environment(app))
+
+    # Add the daily time scale updater observer
+    app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(hours=1)))
 
     # add a shutdown observer to shut down after a single test case
     app.simulator.add_observer(ShutDownObserver(app))

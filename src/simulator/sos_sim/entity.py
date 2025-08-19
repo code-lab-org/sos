@@ -1,37 +1,28 @@
 import logging
 from datetime import datetime, timedelta
 from typing import List
+
 import numpy as np
-from constellation_config_files.schemas import VectorLayer
-from pyproj import Transformer
-from skyfield.api import load, wgs84, EarthSatellite
-from skyfield.framelib import itrs
+import pandas as pd
+from constellation_config_files.schemas import SatelliteStatus, VectorLayer
 
 # from geojson_pydantic import Polygon, MultiPolygon
 # from joblib import Parallel, delayed
-from nost_tools import Entity, Application
-import numpy as np
-import geopandas as gpd
-import pandas as pd
-import shapely
-from shapely.geometry import Point
-from skyfield.api import wgs84
-from tatc.analysis import collect_orbit_track,collect_ground_track
-from tatc.schemas import Satellite as TATC_Satellite, Point as TATC_Point
-from .function import (
-    compute_opportunity,
-    # update_requests,
-    Snowglobe_constellation,
+from nost_tools import Application, Entity
+from pyproj import Transformer
+from skyfield.api import load
+from skyfield.framelib import itrs
+from tatc.analysis import collect_ground_track, collect_orbit_track
+from tatc.schemas import Satellite as TATC_Satellite
+
+from .function import (  # update_requests,
     compute_ground_track_and_format,
     compute_opportunity,
-    convert_to_vector_layer_format,
-    process_master_file,
+    compute_sensor_radius,
     convert_to_vector_layer_format,
     filter_and_sort_observations,
-    compute_sensor_radius,
+    process_master_file,
 )
-
-from constellation_config_files.schemas import SatelliteStatus
 
 logger = logging.getLogger(__name__)
 np.random.seed(0)
@@ -111,7 +102,9 @@ class Collect_Observations(Entity):
 
             if self.observation_collected is not None:
 
-                if np.random.rand() <= 1.0:  # Simulate a 75% chance of collecting an observation
+                if (
+                    np.random.rand() <= 1.0
+                ):  # Simulate a 75% chance of collecting an observation
                     # Get the satellite that collected the observation
                     satellite = self.constellation[
                         self.observation_collected["satellite"]
@@ -181,7 +174,7 @@ class Collect_Observations(Entity):
             self.requests = self.next_requests
 
         if self.new_request_flag:
-            logger.info("requests received")
+            logger.info("Requests received.")
             self.requests = process_master_file(self.requests)
             self.incomplete_requests = [
                 r["point"].id
@@ -243,7 +236,9 @@ class SatelliteVisualization(Entity):
                 .geometry
             )
 
-            logger.info(f" Satellite : {self.sat_name},  Time : {self._time}, point_obj_ecef: {self.point_obj_ecef}")
+            logger.info(
+                f" Satellite : {self.sat_name},  Time : {self._time}, point_obj_ecef: {self.point_obj_ecef}"
+            )
             self.lon = self.point_obj.x
             self.lat = self.point_obj.y
             self.alt = self.point_obj.z
@@ -261,10 +256,14 @@ class SatelliteVisualization(Entity):
                 self.point_obj_ecef.y,
                 self.point_obj_ecef.z,
             ]
-            geom = collect_ground_track(sat, [self._time], crs="spice").iloc[0].geometry.centroid
+            geom = (
+                collect_ground_track(sat, [self._time], crs="spice")
+                .iloc[0]
+                .geometry.centroid
+            )
             lon_target, lat_target = geom.x, geom.y
             geo_to_ecef = Transformer.from_crs("epsg:4326", "epsg:4978", always_xy=True)
-            x,y,z = geo_to_ecef.transform(lon_target, lat_target, 0)
+            x, y, z = geo_to_ecef.transform(lon_target, lat_target, 0)
             self.ecef_target = [x, y, z]
             # self.ecef = [
             #     -532818.7563538807,
