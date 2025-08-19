@@ -851,9 +851,7 @@ class Environment(Observer):
         # orbit from https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle
         gcom_w = Satellite(
             name="GCOM-W",
-            orbit=TwoLineElements(
-                tle= self.fetch_tle_lines_from_s3()
-            ),
+            orbit=TwoLineElements(tle=self.fetch_tle_lines_from_s3()),
             instruments=[amsr2],
         )
         logger.info("Computing ground tracks (P2).")
@@ -880,15 +878,15 @@ class Environment(Observer):
             f"Computing ground tracks (P2) successfully completed in {end_time - start_time:.2f} seconds."
         )
         gcom_tracks["time"] = pd.to_datetime(gcom_tracks["time"]).dt.tz_localize(None)
-        
-        track_date = gcom_tracks["time"].min().date()  
+
+        track_date = gcom_tracks["time"].min().date()
 
         filename = f"gcom_ground_tracks_{track_date}.geojson"
         filepath = os.path.join(self.output_directory, filename)
 
         gcom_tracks.to_file(filepath, driver="GeoJSON")
         logger.info(f"GCOM tracks saved to: {filepath}")
-        
+
         gcom_eta = gcom_ds["combined_eta"].isel(time=1).rio.write_crs("EPSG:4326")
         snowglobe_eta = (
             snowglobe_ds["combined_eta"].isel(time=1).rio.write_crs("EPSG:4326")
@@ -1327,14 +1325,14 @@ class Environment(Observer):
 
         dataset = gpd.read_file(filename)
         return dataset
-    
+
     def fetch_tle_lines_from_s3(
         self,
         bucket="snow-observing-systems",
         key="inputs/satellite/sat000038337.txt",
-        local_filename="sat000038337.txt"
+        local_filename="sat000038337.txt",
     ):
-       
+
         local_path = os.path.join(self.input_directory, local_filename)
 
         # Download only if the file doesn't already exist
@@ -1350,20 +1348,22 @@ class Environment(Observer):
         tle_lines = []
         i = 0
         while i < len(lines) - 2:
-            if lines[i].startswith("1 ") and lines[i+1].startswith("2 "):
+            if lines[i].startswith("1 ") and lines[i + 1].startswith("2 "):
                 tle_lines.append(lines[i])
-                tle_lines.append(lines[i+1])
+                tle_lines.append(lines[i + 1])
                 i += 2
-            elif lines[i].startswith("GCOM") and lines[i+1].startswith("1 ") and lines[i+2].startswith("2 "):
-                tle_lines.append(lines[i+1])
-                tle_lines.append(lines[i+2])
+            elif (
+                lines[i].startswith("GCOM")
+                and lines[i + 1].startswith("1 ")
+                and lines[i + 2].startswith("2 ")
+            ):
+                tle_lines.append(lines[i + 1])
+                tle_lines.append(lines[i + 2])
                 i += 3
             else:
                 i += 1
 
         return tle_lines
-   
-    
 
     def upload_file(self, key, filename, bucket="snow-observing-systems"):
         """
@@ -1961,7 +1961,7 @@ def main():
     app.simulator.add_observer(Environment(app))
 
     # Add the daily time scale updater observer
-    app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(hours=1)))
+    app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(minutes=1)))
 
     # add a shutdown observer to shut down after a single test case
     app.simulator.add_observer(ShutDownObserver(app))
