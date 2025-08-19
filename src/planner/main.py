@@ -1961,7 +1961,7 @@ def main():
     app.simulator.add_observer(Environment(app))
 
     # Add the daily time scale updater observer
-    app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(minutes=1)))
+    app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(hours=1)))
 
     # add a shutdown observer to shut down after a single test case
     app.simulator.add_observer(ShutDownObserver(app))
