@@ -22,16 +22,6 @@ def main():
     # create the managed application
     app = ManagedApplication(app_name="simulator")
 
-    # add a shutdown observer to shut down after a single test case
-    app.simulator.add_observer(ShutDownObserver(app))
-
-    # start up the application on PREFIX, publish time status every 10 seconds of wallclock time
-    app.start_up(
-        config.rc.simulation_configuration.execution_parameters.general.prefix,
-        config,
-        True,
-    )
-
     # Add Collect_Observations entity
     entity = Collect_Observations(
         constellation=Snowglobe_constellation(
@@ -45,9 +35,17 @@ def main():
 
     # Add a ScenarioTimeIntervalCallback to write back to the appender every day
     entity.add_observer(
-        ScenarioTimeIntervalCallback(
-            write_back_to_appender, (timedelta(days=1) - timedelta(minutes=10))
-        )
+        ScenarioTimeIntervalCallback(write_back_to_appender, timedelta(days=1))
+    )
+
+    # add a shutdown observer to shut down after a single test case
+    app.simulator.add_observer(ShutDownObserver(app))
+
+    # start up the application on PREFIX, publish time status every 10 seconds of wallclock time
+    app.start_up(
+        config.rc.simulation_configuration.execution_parameters.general.prefix,
+        config,
+        True,
     )
 
     # Add a message callback to handle messages from the appender
