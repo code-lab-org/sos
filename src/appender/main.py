@@ -23,7 +23,6 @@ logger = logging.getLogger()
 class Environment(Observer):
     """
     *The Environment object class inherits properties from the Observer object class in the NOS-T tools library*
-
     Attributes:
         app (:obj:`ManagedApplication`): An application containing a test-run namespace, a name and description for the app, client credentials, and simulation timing instructions
         grounds (:obj:`DataFrame`): DataFrame of ground station information including groundId (*int*), latitude-longitude location (:obj:`GeographicPosition`), min_elevation (*float*) angle constraints, and operational status (*bool*)
@@ -31,7 +30,7 @@ class Environment(Observer):
     def __init__(self, app):
         self.app = app
         self.counter = 0
-        self.master_components = []
+        self.master_components = gpd.GeoDataFrame()
         self.master_gdf = gpd.GeoDataFrame()
         self.visualize_selected = False  # True
         self.current_simulation_date = None
@@ -57,39 +56,23 @@ class Environment(Observer):
     def add_columns(self, gdf):
         """
         Adds columns to the GeoDataFrame that will be filled by the simulator.
-
         Inputs:
             gdf (GeoDataFrame): The GeoDataFrame to which the columns will be added.
-
         Returns:
             GeoDataFrame: The GeoDataFrame with the additional columns added.
         """
-        gdf["simulator_simulation_status"] = np.nan  # None
+        gdf["simulator_simulation_status"] = None  # None
         gdf["simulator_completion_date"] = pd.NaT
         # logger.info(f"Type planner time {type(gdf['planner_time'])}")
         gdf["simulator_expiration_date"] = pd.to_datetime(gdf["planner_time"]) + timedelta(days=2)
         # logger.info(f"Type planner time after conversion{type(gdf['planner_time'])}")
-        gdf["simulator_expiration_status"] = np.nan  # None
-        gdf["simulator_satellite"] = np.nan  # None
-        gdf["simulator_polygon_groundtrack"] = np.nan  # None
+        gdf["simulator_expiration_status"] = None  # None
+        gdf["simulator_satellite"] = None
+        gdf["simulator_polygon_groundtrack"] = None
         gdf["planner_latitude"] = gdf["planner_centroid"].y
         gdf["planner_longitude"] = gdf["planner_centroid"].x
         gdf["planner_centroid"] = gdf["planner_centroid"].to_wkt()    
-        logger.info(f"Computing simulator expiration status")        
-        # current_sim_time = self.app.simulator._time  # Must be datetime
-        # current_sim_time = pd.to_datetime(current_sim_time)
-        # gdf["simulator_expiration_date"] = pd.to_datetime(gdf["simulator_expiration_date"], errors="coerce")
-
-        # logger.info(f"datatype of all columns {gdf.dtypes}")
-        # logger.info(f"current simulation time {current_sim_time} and datatype {type(current_sim_time)}")
-
-        # Now safely compare
-        # gdf["simulator_expiration_status"] = np.where(
-        #     gdf["simulator_expiration_date"] < current_sim_time,
-        #     "expired",
-        #     "valid"
-        # )
-
+        logger.info(f"Computing simulator expiration status")
         gdf["simulator_expiration_date"] = gdf["simulator_expiration_date"].astype(str)
 
         return gdf
@@ -132,21 +115,29 @@ class Environment(Observer):
             GeoDataFrame: The GeoDataFrame with the additional column added.
         """
         # Create a geodataframe with geometry column and the last observation collected time with unique values of gdf
-        gdf["simulator_completion_date"] = pd.to_datetime(gdf["simulator_completion_date"])        
+        gdf["simulator_completion_date"] = pd.to_datetime(gdf["simulator_completion_date"])      
+        gdf_filtered = gdf[gdf["simulator_simulation_status"].notna()]  
         gdf_unique = (
-            gdf.sort_values("simulator_completion_date")
+            gdf_filtered.sort_values("simulator_completion_date")
             .drop_duplicates(subset=["geometry"], keep="last")
             .reset_index(drop=True)
         )
+        gdf_unique.to_file(
+            "last_collected_testing.geojson",
+            driver="GeoJSON",
+        )
         # Compute recent completion flag
-        current_date = pd.Timestamp(self.app.simulator._time.date())
+        current_date = pd.Timestamp(self.app.simulator._time.date()).tz_localize("UTC")
 
-        logger.info("📅 simulator_completion_date dtype: %s", gdf_unique["simulator_completion_date"].dtype)
-        logger.info("🕒 current_date type: %s", type(current_date))
-        logger.info("🕒 current_date value: %s", current_date)
+        # logger.info("📅 simulator_completion_date dtype: %s", gdf_unique["simulator_completion_date"].dtype)
+        # logger.info("🕒 current_date type: %s", type(current_date))
+        # logger.info("🕒 current_date value: %s", current_date)
+
+        if gdf_unique["simulator_completion_date"].dt.tz is None:
+            gdf_unique["simulator_completion_date"] = gdf_unique["simulator_completion_date"].dt.tz_localize("UTC")
 
         gdf_unique["collected_within_last_3_days"] = (
-                (current_date - gdf_unique["simulator_completion_date"]) <= pd.Timedelta(days=3)
+                (current_date - gdf_unique["simulator_completion_date"]) <= pd.Timedelta(days=5)
         ).fillna(False)
         
         # Merge the collected flag back to original gdf by geometry
@@ -158,7 +149,7 @@ class Environment(Observer):
         )
         # Fill any unmatched geometries with False
         gdf["collected_within_last_3_days"] = gdf["collected_within_last_3_days"].fillna(False)
-        logger.info(f"Gdf with last 3 days column populated,{gdf}")
+        # logger.info(f"Gdf with last 3 days column populated,{gdf}")
         gdf.to_file(
             "outputs/master_last_collected_testing.geojson",
             driver="GeoJSON",
@@ -223,16 +214,26 @@ class Environment(Observer):
         logger.info("Decoding body completed")
         data = VectorLayer.model_validate_json(body)
         logger.info("Validating body completed")
-        k = gpd.GeoDataFrame.from_features(
-            json.loads(data.vector_layer)["features"], crs="EPSG:4326"
-        )
-        logger.info(f"Message body successfully converted to GeoDataFrame. {type(k)}")
+        # k = gpd.GeoDataFrame.from_features(
+        #     json.loads(data.vector_layer)["features"], crs="EPSG:4326"
+        # )
+        # logger.info(f"Message body successfully converted to GeoDataFrame. {type(k)}")
+
+        features = json.loads(data.vector_layer).get("features", [])
+        if not features:
+            logger.warning("No features found in vector_layer — returning empty GeoDataFrame.")
+            k = gpd.GeoDataFrame(columns=["geometry"], crs="EPSG:4326")
+        else:
+            k = gpd.GeoDataFrame.from_features(features, crs="EPSG:4326")
+        # logger.info(f"Message body successfully converted to GeoDataFrame. {type(k)} with {len(k)} rows")
+        logger.info("Message body successfully converted to GeoDataFrame.")
+
         return k
 
         # return gpd.GeoDataFrame.from_features(
         #     json.loads(data.vector_layer)["features"], crs="EPSG:4326" )
 
-        # logger.info("Message body successfully converted to GeoDataFrame.")
+        
 
     def on_planner(self, ch, method, properties, body):
         """
@@ -254,15 +255,22 @@ class Environment(Observer):
 
         # Process the component GeoDataFrame
         component_gdf = self.process_component(component_gdf)
-        self.master_components.append(component_gdf)
+        # self.master_components.append(component_gdf)
+        self.master_components = pd.concat([self.master_components, component_gdf], ignore_index=True)
+        # logger.info(f"Master components type {self.master_components.dtypes}")
+        # self.concatenated_master_components = pd.concat(
+        #     self.master_components, ignore_index=True
+        # )
         self.counter += len(component_gdf)
         # min_value = component_gdf["simulator_id"].min()
         # max_value = component_gdf["simulator_id"].max()
-        self.master_gdf = pd.concat(self.master_components, ignore_index=True)
+        
+        # self.master_gdf = pd.concat(self.master_components, ignore_index=True)
+        self.master_gdf = self.master_components.copy()
         self.master_gdf = self.add_last_observation_collected_time(self.master_gdf)
         self.master_gdf_with_duplicates = self.master_gdf.copy()
         self.remove_duplicates()
-        date = self.app.simulator._time
+        date = self.app.simulator.get_time()  # Use a public getter instead of accessing _time directly
         date_new_format = str(date.date()).replace("-", "")
         self.current_simulation_date = os.path.join(
             self.output_directory, str(date.date())
@@ -283,6 +291,17 @@ class Environment(Observer):
         )
         self.master_gdf_with_duplicates.to_file("outputs/master.geojson", driver="GeoJSON")
         logger.info("Master geosjon file created")
+        
+        # Converting to str for json conversion
+        datetime_cols = [
+        "planner_time",
+        "simulator_expiration_date",
+        "simulator_completion_date"
+        ]
+
+        for col in datetime_cols:
+            self.master_gdf[col] = self.master_gdf[col].astype(str)
+            
         selected_json_data = self.master_gdf.to_json()
         self.app.send_message(
             self.app.app_name,
@@ -308,58 +327,30 @@ class Environment(Observer):
             body (bytes): The body of the message.
 
         """
-        # Read message from simulator and populate the updated columns in self.master_components
         logger.info("Message Received from Simulator")
         component_gdf = self.message_to_geojson(body)
-        # logger.info(f"Data type pd dataframe all columns {component_gdf.dtypes}")
-        # logger.info(f"Data type of self master component {type(self.master_components)}")
-        logger.info(f"dataframe from simulator type {component_gdf}")
+        # logger.info(f"dataframe from simulator type {component_gdf.dtypes}")
 
-        # Merging values to dataframe
-        # Assuming df is your GeoDataFrame
-        lookup = component_gdf.set_index("simulator_id").to_dict("index")
-        # lookup = component_gdf.set_index("simulator_id")[
-        #     ["simulator_simulation_status",             
-        #      "simulator_completion_date",
-        #      "simulator_satellite"
-        #      ]].to_dict("index")
+        if component_gdf.empty:
+            logger.warning("Received empty message from simulator. Skipping update.")
+            return
 
-        for item in self.master_components:
-            sim_id = item.get("simulator_id")
-            if sim_id in lookup:
-                item.update(lookup[sim_id])
+        # Select safe columns
+        safe_cols = ["simulator_id", "simulator_simulation_status", "simulator_completion_date", "simulator_satellite"]
+        safe_cols = [col for col in safe_cols if col in component_gdf.columns]
+        component_gdf_clean = component_gdf[safe_cols].dropna(subset=["simulator_id"])
+        component_gdf_clean['simulator_completion_date'] = pd.to_datetime(
+            component_gdf_clean['simulator_completion_date'], errors='coerce'
+        )
 
-        logger.info("Completed updating component gdf")
-
-
-        # Merging the values to self.master_components
-        # self.master_components = self.master_components.merge(
-        #     component_gdf[[]],
-        #     on="simulator_id",
-        #     how="left"
-        # )
+        # Updating values in self.master_components based on simulator_id
+        self.master_components.set_index("simulator_id", inplace=True)
+        component_gdf_clean.set_index("simulator_id", inplace=True)
+        self.master_components.update(component_gdf_clean)
+        self.master_components.reset_index(inplace=True)
+        component_gdf_clean.reset_index(inplace=True)
         
-
-
-        # logger.info("entering appender _on_simulator")
-        # component_gdf = self.message_to_geojson(body)
-        # logger.info(f"Data type pd dataframe all columns {component_gdf.dtypes}")
-        # # component_gdf['simulator_completion_time'] = component_gdf['simulator_completion_time'].apply(
-        # #  lambda x: x.astimezone(pytz.UTC).strftime("%Y-%m-%d %H:%M:%S %Z") if isinstance(x, datetime) else str(x)
-        # # )
-
-        # date = self.app.simulator._time
-        # date = date.date()
-        # # date = str(date.date()).replace("-", "")
-        # logger.info(f"Date is {date}, type is {type(date)}")
-        # logger.info(f"sample data from component gdf {component_gdf.head()}")
-        # # Filter the component gdf to get the data where "simulator_completion_date" is equal to the current date
-        # component_gdf["simulator_completion_date"] = pd.to_datetime(
-        #     component_gdf["simulator_completion_date"], errors="coerce"
-        # )
-        # logger.info(f"Date is {date}, type is {type(date)}")
-        # logger.info(f"Data type pd dataframe all columns {component_gdf.dtypes}")
-        # logger.info(f"Daily Simulator file saved at {self.app.simulator._time}")
+        
 
     def on_change(self, source, property_name, old_value, new_value):
         """
@@ -406,7 +397,6 @@ def main():
         config,
         True,
     )
-
     app.add_message_callback("planner", "selected_cells", environment.on_planner)
     app.add_message_callback("simulator", "simulator_daily", environment.on_simulator)
 
