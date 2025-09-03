@@ -56,9 +56,9 @@ class Environment(Observer):
         grounds (:obj:`DataFrame`): DataFrame of ground station information including groundId (*int*), latitude-longitude location (:obj:`GeographicPosition`), min_elevation (*float*) angle constraints, and operational status (*bool*)
     """
 
-    def __init__(self, app, planner_freeze):
+    def __init__(self, app):  # , planner_freeze):
         self.app = app
-        self.planner_freeze = planner_freeze
+        # self.planner_freeze = planner_freeze
         self.visualize_swe_change = True
         self.visualize_all_layers = False
         self.current_simulation_date = None
@@ -1453,19 +1453,19 @@ class Environment(Observer):
         # if property_name == Simulator.PROPERTY_TIME and self.detect_level_change(
         #     new_value, old_value, "day"
         # ):
-        # if (
-        #     property_name == Simulator.PROPERTY_MODE
-        #     and source.get_mode() == Mode.EXECUTING
-        #     and old_value == Mode.RESUMING
-        #     and new_value == Mode.EXECUTING
-        # ):
         if (
             property_name == Simulator.PROPERTY_MODE
-            and source.get_mode() == Mode.PAUSED
-            and old_value == Mode.PAUSING
-            and new_value == Mode.PAUSED
-            and self.planner_freeze.frozen == True
+            and source.get_mode() == Mode.EXECUTING
+            and old_value == Mode.RESUMING
+            and new_value == Mode.EXECUTING
         ):
+            # if (
+            #     property_name == Simulator.PROPERTY_MODE
+            #     and source.get_mode() == Mode.PAUSED
+            #     and old_value == Mode.PAUSING
+            #     and new_value == Mode.PAUSED
+            #     and self.planner_freeze.frozen == True
+            # ):
             logger.info(f"Execution is paused..... {old_value} -> {new_value}")
             logger.info("Resuming after a pause......")
             new_value = source.get_time()
@@ -1919,10 +1919,10 @@ class Environment(Observer):
                 VectorLayer(vector_layer=selected_json_data).model_dump_json(),
             )
             logger.info("(SELECTED) Publishing message successfully completed.")
-            self.planner_freeze.frozen = False
-            logger.info(
-                f"Planner is {'frozen' if self.planner_freeze.frozen else 'unfrozen'}"
-            )
+            # self.planner_freeze.frozen = False
+            # logger.info(
+            #     f"Planner is {'frozen' if self.planner_freeze.frozen else 'unfrozen'}"
+            # )
 
 
 class DailyFreeze(Observer):
@@ -2032,14 +2032,14 @@ def main():
     app = ManagedApplication(app_name="planner")
 
     # Add the daily time scale updater observer
-    app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(hours=1)))
+    app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(minutes=1)))
 
-    # Add PlannerFreeze observer
-    planner_freeze = PlannerFreeze(app, freeze_duration=timedelta(minutes=10))
-    app.simulator.add_observer(planner_freeze)
+    # # Add PlannerFreeze observer
+    # planner_freeze = PlannerFreeze(app, freeze_duration=timedelta(minutes=10))
+    # app.simulator.add_observer(planner_freeze)
 
     # add the environment observer to monitor simulation for switch to EXECUTING mode
-    app.simulator.add_observer(Environment(app, planner_freeze))
+    app.simulator.add_observer(Environment(app))  # , planner_freeze))
 
     # add a shutdown observer to shut down after a single test case
     app.simulator.add_observer(ShutDownObserver(app))
