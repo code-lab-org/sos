@@ -56,8 +56,9 @@ class Environment(Observer):
         grounds (:obj:`DataFrame`): DataFrame of ground station information including groundId (*int*), latitude-longitude location (:obj:`GeographicPosition`), min_elevation (*float*) angle constraints, and operational status (*bool*)
     """
 
-    def __init__(self, app):
+    def __init__(self, app, planner_freeze):
         self.app = app
+        self.planner_freeze = planner_freeze
         self.visualize_swe_change = True
         self.visualize_all_layers = False
         self.current_simulation_date = None
@@ -1418,6 +1419,27 @@ class Environment(Observer):
             Polygon(mo_basin.iloc[0].geometry.exterior), crs="EPSG:4326"
         )
 
+    def detect_level_change(self, new_value, old_value, level):
+        """
+        Detect a change in the level of the time value (day, week, or month).
+
+        Args:
+            new_value (datetime): New time value
+            old_value (datetime): Old time value
+            level (str): Level of time value to detect changes ('day', 'week', or 'month')
+
+        Returns:
+            bool: True if the level has changed, False otherwise
+        """
+        if level == "day":
+            return new_value.date() != old_value.date()
+        elif level == "week":
+            return new_value.isocalendar()[1] != old_value.isocalendar()[1]
+        elif level == "month":
+            return new_value.month != old_value.month
+        else:
+            raise ValueError("Invalid level. Choose from 'day', 'week', or 'month'.")
+
     def on_change(self, source, property_name, old_value, new_value):
         """
         Handle changes to properties
@@ -1428,20 +1450,26 @@ class Environment(Observer):
             old_value (object): The old value
             new_value (object): The new value
         """
+        # if property_name == Simulator.PROPERTY_TIME and self.detect_level_change(
+        #     new_value, old_value, "day"
+        # ):
+        # if (
+        #     property_name == Simulator.PROPERTY_MODE
+        #     and source.get_mode() == Mode.EXECUTING
+        #     and old_value == Mode.RESUMING
+        #     and new_value == Mode.EXECUTING
+        # ):
         if (
             property_name == Simulator.PROPERTY_MODE
-            and source.get_mode() == Mode.EXECUTING
-            and old_value == Mode.RESUMING
-            and new_value == Mode.EXECUTING
+            and source.get_mode() == Mode.PAUSED
+            and old_value == Mode.PAUSING
+            and new_value == Mode.PAUSED
+            and self.planner_freeze.frozen == True
         ):
+            logger.info(f"Execution is paused..... {old_value} -> {new_value}")
             logger.info("Resuming after a pause......")
             new_value = source.get_time()
             old_value = new_value - timedelta(days=1)
-
-            # # Request the freeze from the manager
-            # self.app.request_freeze(
-            #     sim_freeze_time=new_value,
-            # )
 
             self.current_simulation_date = os.path.join(
                 self.output_directory, str(new_value.date())
@@ -1854,6 +1882,13 @@ class Environment(Observer):
             self.upload_file(key=final_eta_output_file, filename=final_eta_output_file)
             # Clip Final Eta GDF and ground tracks to the Missouri Basin
             final_eta_gdf_clipped = gpd.clip(final_eta_gdf, mo_basin)
+
+            logger.info(f"Simulator mode: {self.app.simulator.get_mode()}")
+            logger.info(f"Source mode: {source.get_mode()}")
+            # while self.app.simulator.get_mode() != Mode.EXECUTING:
+            #     time.sleep(0.001)
+            #     logger.info("Waiting for executing mode.....")
+
             # Convert the clipped GeoDataFrame to GeoJSON and send as message
             all_json_data = final_eta_gdf_clipped.drop(
                 "time", axis=1, errors="ignore"
@@ -1884,7 +1919,10 @@ class Environment(Observer):
                 VectorLayer(vector_layer=selected_json_data).model_dump_json(),
             )
             logger.info("(SELECTED) Publishing message successfully completed.")
-            # self.app.request_resume()
+            self.planner_freeze.frozen = False
+            logger.info(
+                f"Planner is {'frozen' if self.planner_freeze.frozen else 'unfrozen'}"
+            )
 
 
 class DailyFreeze(Observer):
@@ -1950,6 +1988,42 @@ class DailyFreeze(Observer):
             )
 
 
+class PlannerFreeze(Observer):
+    """
+    Observer that adds an extra 10-minute freeze right after the DailyFreeze resumes.
+    After the second resume, Environment is allowed to run.
+    """
+
+    def __init__(
+        self,
+        app: ManagedApplication,
+        freeze_duration: timedelta = timedelta(minutes=10),
+    ):
+        self.app = app
+        self.freeze_duration = freeze_duration
+        self.frozen = False
+        self.last_frozen_day = None  # Track the last day PlannerFreeze was triggered
+
+    def on_change(self, source, property_name, old_value, new_value):
+        if (
+            property_name == Simulator.PROPERTY_MODE
+            and source.get_mode() == Mode.EXECUTING
+            and old_value == Mode.RESUMING
+            and new_value == Mode.EXECUTING
+        ):
+            current_day = source.get_time().date()
+            if self.last_frozen_day == current_day:
+                # Already triggered for this day, do nothing
+                return
+            logger.info("Requesting PlannerFreeze.")
+            self.app.request_freeze(
+                freeze_duration=self.freeze_duration,
+                sim_freeze_time=source.get_time(),
+            )
+            self.frozen = True
+            self.last_frozen_day = current_day  # Mark as triggered for this day
+
+
 def main():
     # Load config
     config = ConnectionConfig(yaml_file="sos.yaml")
@@ -1957,11 +2031,15 @@ def main():
     # create the managed application
     app = ManagedApplication(app_name="planner")
 
-    # add the environment observer to monitor simulation for switch to EXECUTING mode
-    app.simulator.add_observer(Environment(app))
-
     # Add the daily time scale updater observer
     app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(hours=1)))
+
+    # Add PlannerFreeze observer
+    planner_freeze = PlannerFreeze(app, freeze_duration=timedelta(minutes=10))
+    app.simulator.add_observer(planner_freeze)
+
+    # add the environment observer to monitor simulation for switch to EXECUTING mode
+    app.simulator.add_observer(Environment(app, planner_freeze))
 
     # add a shutdown observer to shut down after a single test case
     app.simulator.add_observer(ShutDownObserver(app))
