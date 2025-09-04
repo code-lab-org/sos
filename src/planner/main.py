@@ -56,9 +56,9 @@ class Environment(Observer):
         grounds (:obj:`DataFrame`): DataFrame of ground station information including groundId (*int*), latitude-longitude location (:obj:`GeographicPosition`), min_elevation (*float*) angle constraints, and operational status (*bool*)
     """
 
-    def __init__(self, app):  # , planner_freeze):
+    def __init__(self, app, planner_freeze):
         self.app = app
-        # self.planner_freeze = planner_freeze
+        self.planner_freeze = planner_freeze
         self.visualize_swe_change = True
         self.visualize_all_layers = False
         self.current_simulation_date = None
@@ -1885,9 +1885,9 @@ class Environment(Observer):
 
             logger.info(f"Simulator mode: {self.app.simulator.get_mode()}")
             logger.info(f"Source mode: {source.get_mode()}")
-            # while self.app.simulator.get_mode() != Mode.EXECUTING:
+            # while self.app.simulator.get_mode() != Mode.RESUMING:
             #     time.sleep(0.001)
-            #     logger.info("Waiting for executing mode.....")
+            #     logger.info("Waiting for resuming mode.....")
 
             # Convert the clipped GeoDataFrame to GeoJSON and send as message
             all_json_data = final_eta_gdf_clipped.drop(
@@ -2032,7 +2032,7 @@ def main():
     app = ManagedApplication(app_name="planner")
 
     # Add the daily time scale updater observer
-    app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(minutes=1)))
+    app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(hours=1)))
 
     # # Add PlannerFreeze observer
     # planner_freeze = PlannerFreeze(app, freeze_duration=timedelta(minutes=10))
