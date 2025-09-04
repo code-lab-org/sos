@@ -56,9 +56,9 @@ class Environment(Observer):
         grounds (:obj:`DataFrame`): DataFrame of ground station information including groundId (*int*), latitude-longitude location (:obj:`GeographicPosition`), min_elevation (*float*) angle constraints, and operational status (*bool*)
     """
 
-    def __init__(self, app): #, planner_freeze):
+    def __init__(self, app):  # , planner_freeze):
         self.app = app
-        self.planner_freeze = planner_freeze
+        # self.planner_freeze = planner_freeze
         self.visualize_swe_change = True
         self.visualize_all_layers = False
         self.current_simulation_date = None
