@@ -2032,7 +2032,7 @@ def main():
     app = ManagedApplication(app_name="planner")
 
     # Add the daily time scale updater observer
-    app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(hours=1)))
+    app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(minutes=1)))
 
     # # Add PlannerFreeze observer
     # planner_freeze = PlannerFreeze(app, freeze_duration=timedelta(minutes=10))
