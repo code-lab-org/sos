@@ -284,10 +284,6 @@ class Environment(Observer):
         combined_dataset = combined_dataset.rio.write_crs("EPSG:4326")
         logger.debug("Clipping combined dataset to Missouri Basin")
 
-        # clipped_dataset = combined_dataset.rio.clip(
-        #     mo_basin.geometry, all_touched=True, drop=True
-        # )
-
         # Remove grid_mapping attributes
         for var in combined_dataset.data_vars:
             if "grid_mapping" in combined_dataset[var].attrs:
@@ -595,13 +591,6 @@ class Environment(Observer):
             self.current_simulation_date, "resolution_taskable.nc"
         )
 
-        # if os.path.exists(resolution_file_taskable):
-        #     logger.info(
-        #         f"File {resolution_file_taskable} already exists. Reading the existing file."
-        #     )
-        #     eta_res_values_taskable = xr.open_dataset(resolution_file_taskable)
-        # else:
-
         eta_res_values_taskable = xr.ones_like(eta_res_values).astype("float32")
 
         # Reprojecting to the standard resolution of the other layers
@@ -639,11 +628,6 @@ class Environment(Observer):
             mo_basin.geometry, all_touched=True, drop=True
         )
 
-        # # Remove grid_mapping attributes
-        # for var in resolution_taskable_50km.data_vars:
-        #     if "grid_mapping" in resolution_taskable_50km[var].attrs:
-        #         del resolution_taskable_50km[var].attrs["grid_mapping"]
-
         # Saving as netcdf
         resolution_nontaskable_50km.to_netcdf(resolution_file_nontaskable)
         resolution_taskable_50km.to_netcdf(resolution_file_taskable)
@@ -653,44 +637,6 @@ class Environment(Observer):
             resolution_taskable_50km,
             resolution_file_nontaskable,
         )
-
-    # def generate_sensor_capella(self, ds):
-    #     """
-    #     Generate the Capella efficiency dataset.
-
-    #     Args:
-    #         ds (xarray.Dataset): The dataset containing the SWE values
-
-    #     Returns:
-    #         output_file (str): The output file name
-    #         capella_dataset (xarray.Dataset): The new dataset
-    #     """
-    #     logger.info("Generating Capella efficiency dataset.")
-    #     swe = ds["SWE_tavg"]
-    #     eta2_capella_values = xr.DataArray(
-    #         np.ones_like(swe.values),
-    #         coords={
-    #             "time": swe["time"],
-    #             "y": swe["y"],
-    #             "x": swe["x"],
-    #         },
-    #         dims=["time", "y", "x"],
-    #         name="eta2",
-    #     )
-    #     eta2_capella_values = eta2_capella_values.where(~np.isnan(swe), np.nan)
-    #     capella_dataset = xr.Dataset({"eta2": eta2_capella_values}).transpose(
-    #         "time", "y", "x"
-    #     )
-    #     for var in capella_dataset.variables:
-    #         if "grid_mapping" in capella_dataset[var].attrs:
-    #             del capella_dataset[var].attrs["grid_mapping"]
-    #     last_date = str(swe["time"][-1].values)[:10].replace("-", "")
-    #     output_file = os.path.join(
-    #         self.current_simulation_date, f"Efficiency_Sensor_Capella_{last_date}.nc"
-    #     )
-    #     capella_dataset.to_netcdf(output_file)
-    #     logger.info("Generating Capella efficiency dataset successfully completed.")
-    #     return output_file, capella_dataset
 
     def combine_and_multiply_datasets(
         self,
@@ -1157,13 +1103,6 @@ class Environment(Observer):
                     Bucket=bucket_name, Prefix=directory, Delimiter="/"
                 )
 
-                # subdirs = [
-                #     prefix["Prefix"]
-                #     for page in pages
-                #     for prefix in page.get("CommonPrefixes", [])
-                #     if os.path.basename(prefix["Prefix"].rstrip("/")).startswith("out_")
-                # ]
-
                 # Not considering out_ prefix for subdirectories
                 subdirs = [
                     prefix["Prefix"]
@@ -1450,22 +1389,12 @@ class Environment(Observer):
             old_value (object): The old value
             new_value (object): The new value
         """
-        # if property_name == Simulator.PROPERTY_TIME and self.detect_level_change(
-        #     new_value, old_value, "day"
-        # ):
         if (
             property_name == Simulator.PROPERTY_MODE
             and source.get_mode() == Mode.EXECUTING
             and old_value == Mode.RESUMING
             and new_value == Mode.EXECUTING
         ):
-            # if (
-            #     property_name == Simulator.PROPERTY_MODE
-            #     and source.get_mode() == Mode.PAUSED
-            #     and old_value == Mode.PAUSING
-            #     and new_value == Mode.PAUSED
-            #     and self.planner_freeze.frozen == True
-            # ):
             logger.info(f"Execution is paused..... {old_value} -> {new_value}")
             logger.info("Resuming after a pause......")
             new_value = source.get_time()
@@ -1491,28 +1420,6 @@ class Environment(Observer):
             )
             mo_basin = self.process_geojson(mo_basin)
             self.polygons = mo_basin.geometry
-
-            # Combined dataset#
-            # Get first dataset
-            # dataset1 = self.download_file(
-            #     s3=s3,
-            #     bucket="snow-observing-systems",
-            #     key=f"LIS_HIST_{old_value_reformat}0000.d01.nc", #f"inputs/LIS/open_loop/LIS_HIST_{old_value_reformat}0000.d01.nc"
-            #     filename=os.path.join(
-            #         self.input_directory,
-            #         f"LIS_HIST_{old_value_reformat}0000.d01.nc",
-            #     ),
-            # )
-            # # Get second dataset
-            # dataset2 = self.download_file(
-            #     s3=s3,
-            #     bucket="snow-observing-systems",
-            #     key=f"LIS_HIST_{new_value_reformat}0000.d01.nc", #f"inputs/LIS/open_loop/LIS_HIST_{new_value_reformat}0000.d01.nc"
-            #     filename=os.path.join(
-            #         self.input_directory,
-            #         f"LIS_HIST_{new_value_reformat}0000.d01.nc",
-            #     ),
-            # )
 
             # New Combined dataset - download in parallel to reduce total wait time
             logger.info("Starting parallel download of datasets")
@@ -1777,24 +1684,6 @@ class Environment(Observer):
                 )
             )
 
-            # MODIFIED BY DIVYA - Combine and multiply files - commenting out for now
-
-            # # Define the weights for each dataset
-            # weights = {"eta5": 0.4, "eta0": 0.2, "eta2": 0.2, "snow_cover_eta": 0.1, "resolution_eta": 0.1}
-            # # Process GCOM datasets
-            # gcom_combine_multiply_output_file, gcom_dataset = (
-            #     self.combine_and_multiply_datasets(
-            #         ds=combined_dataset,
-            #         eta5_file=eta5_file,
-            #         eta0_file=eta0_file,
-            #         eta2_file=eta2_file_GCOM,
-            #         resolution_eta_file=resolution_dataset_nontaskable,
-            #         snow_cover_eta_file=snow_cover_eta_file,
-            #         weights=weights,
-            #         output_file="Combined_Efficiency_Weighted_Product_GCOM",
-            #     )
-            # )
-
             # Upload dataset to S3
             self.upload_file(
                 key=gcom_combine_multiply_output_file,
@@ -1988,42 +1877,6 @@ class DailyFreeze(Observer):
             )
 
 
-class PlannerFreeze(Observer):
-    """
-    Observer that adds an extra 10-minute freeze right after the DailyFreeze resumes.
-    After the second resume, Environment is allowed to run.
-    """
-
-    def __init__(
-        self,
-        app: ManagedApplication,
-        freeze_duration: timedelta = timedelta(minutes=10),
-    ):
-        self.app = app
-        self.freeze_duration = freeze_duration
-        self.frozen = False
-        self.last_frozen_day = None  # Track the last day PlannerFreeze was triggered
-
-    def on_change(self, source, property_name, old_value, new_value):
-        if (
-            property_name == Simulator.PROPERTY_MODE
-            and source.get_mode() == Mode.EXECUTING
-            and old_value == Mode.RESUMING
-            and new_value == Mode.EXECUTING
-        ):
-            current_day = source.get_time().date()
-            if self.last_frozen_day == current_day:
-                # Already triggered for this day, do nothing
-                return
-            logger.info("Requesting PlannerFreeze.")
-            self.app.request_freeze(
-                freeze_duration=self.freeze_duration,
-                sim_freeze_time=source.get_time(),
-            )
-            self.frozen = True
-            self.last_frozen_day = current_day  # Mark as triggered for this day
-
-
 def main():
     # Load config
     config = ConnectionConfig(yaml_file="sos.yaml")
@@ -2033,10 +1886,6 @@ def main():
 
     # Add the daily time scale updater observer
     app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(minutes=1)))
-
-    # # Add PlannerFreeze observer
-    # planner_freeze = PlannerFreeze(app, freeze_duration=timedelta(minutes=10))
-    # app.simulator.add_observer(planner_freeze)
 
     # add the environment observer to monitor simulation for switch to EXECUTING mode
     app.simulator.add_observer(Environment(app))  # , planner_freeze))
