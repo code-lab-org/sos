@@ -32,12 +32,23 @@ class Environment(Observer):
         grounds (:obj:`DataFrame`): DataFrame of ground station information including groundId (*int*), latitude-longitude location (:obj:`GeographicPosition`), min_elevation (*float*) angle constraints, and operational status (*bool*)
     """
 
-    def __init__(self, app):
+    def __init__(self, app, enable_uploads=None):
         self.app = app
         self.counter = 0
         self.master_components = []
         self.master_gdf = gpd.GeoDataFrame()
         self.visualize_selected = False  # True
+
+        # Flag to control S3 uploads - check environment variable if not explicitly set
+        if enable_uploads is None:
+            self.enable_uploads = os.environ.get("ENABLE_UPLOADS", "true").lower() in (
+                "true",
+                "1",
+                "yes",
+            )
+        else:
+            self.enable_uploads = enable_uploads
+
         self.current_simulation_date = None
         self.output_directory = os.path.join("outputs", self.app.app_name)
         self.data_utils = DataUtils()
@@ -237,12 +248,19 @@ class Environment(Observer):
             output_file,
             driver="GeoJSON",
         )
-        s3.upload_file(
-            Bucket="snow-observing-systems",
-            Key=output_file,
-            Filename=output_file,
-            Config=TransferConfig(use_threads=False),
-        )
+
+        # Upload to S3 only if uploads are enabled
+        if self.enable_uploads:
+            logger.info(f"Uploading file to S3: {output_file}")
+            s3.upload_file(
+                Bucket="snow-observing-systems",
+                Key=output_file,
+                Filename=output_file,
+                Config=TransferConfig(use_threads=False),
+            )
+        else:
+            logger.info(f"Upload skipped (uploads disabled): {output_file}")
+
         self.master_gdf.to_file("outputs/master.geojson", driver="GeoJSON")
         logger.info("Master geosjon file created")
         selected_json_data = self.master_gdf.to_json()
