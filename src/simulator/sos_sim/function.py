@@ -251,21 +251,26 @@ def _write_back_to_appender_impl(thread_data):
     """
     Internal implementation of write_back_to_appender that does the actual work.
     This runs in a background thread to avoid blocking the simulation.
-    
+
     Args:
         thread_data (dict): Dictionary containing captured data from the main thread
     """
     # Monotonic timer (avoid shadowing by aliasing time as _time)
     _start = _time.perf_counter()
-    
+
     # Extract data from thread_data
-    requests = thread_data['requests']
-    app_name = thread_data['app_name']
-    sim_time = thread_data['sim_time']
-    callback_time = thread_data['callback_time']
-    
-    logger.info(f"Background thread starting with {len(requests)} requests, app_name: {app_name}, sim_time: {sim_time}")
-    
+    requests = thread_data["requests"]
+    app_name = thread_data["app_name"]
+    sim_time = thread_data["sim_time"]
+    callback_time = thread_data["callback_time"]
+    enable_uploads = thread_data.get(
+        "enable_uploads", True
+    )  # Default to True for backward compatibility
+
+    logger.info(
+        f"Background thread starting with {len(requests)} requests, app_name: {app_name}, sim_time: {sim_time}"
+    )
+
     # Establish connection to S3
     s3 = AWSUtils().client
     output_directory = os.path.join("outputs", app_name)
@@ -280,7 +285,7 @@ def _write_back_to_appender_impl(thread_data):
         # Build DataFrame of updated master requests
         appender_data = process_master_file(requests)
         logger.info(f"Processed master file, got {len(appender_data)} entries")
-        
+
         selected_json_data = pd.DataFrame(appender_data)
         logger.info(f"Created DataFrame with shape: {selected_json_data.shape}")
 
@@ -298,7 +303,7 @@ def _write_back_to_appender_impl(thread_data):
             selected_json_data, geometry="simulator_polygon_groundtrack"
         )
         logger.info(f"Created GeoDataFrame with shape: {gdf.shape}")
-        
+
         # Write master file without index to reduce IO
         gdf.to_file("outputs/master.geojson", driver="GeoJSON", index=False)
         logger.info(f"Wrote master.geojson with {len(gdf)} records")
@@ -322,7 +327,9 @@ def _write_back_to_appender_impl(thread_data):
         daily_gdf_filtered = gdf[
             gdf["simulator_completion_date"].dt.date == sim_time.date()
         ]
-        logger.info(f"Filtered daily data: {len(daily_gdf_filtered)} records for date {sim_time.date()}")
+        logger.info(
+            f"Filtered daily data: {len(daily_gdf_filtered)} records for date {sim_time.date()}"
+        )
 
         current_simulation_date = os.path.join(
             output_directory, str(date_sim_time.date())
@@ -334,20 +341,25 @@ def _write_back_to_appender_impl(thread_data):
         daily_gdf_filtered.to_file(output_file, index=False)
         logger.info(f"Wrote daily file: {output_file}")
 
-        # Use threaded multipart upload for speed
-        upload_cfg = TransferConfig(
-            multipart_threshold=8 * 1024 * 1024,
-            multipart_chunksize=8 * 1024 * 1024,
-            max_concurrency=32,
-            use_threads=True,
-        )
-        s3.upload_file(
-            Bucket="snow-observing-systems",
-            Key=output_file,
-            Filename=output_file,
-            Config=upload_cfg,
-        )
-        logger.info(f"Uploaded to S3: {output_file}")
+        # Upload to S3 only if uploads are enabled
+        if enable_uploads:
+            logger.info(f"Uploading file to S3: {output_file}")
+            # Use threaded multipart upload for speed
+            upload_cfg = TransferConfig(
+                multipart_threshold=8 * 1024 * 1024,
+                multipart_chunksize=8 * 1024 * 1024,
+                max_concurrency=32,
+                use_threads=True,
+            )
+            s3.upload_file(
+                Bucket="snow-observing-systems",
+                Key=output_file,
+                Filename=output_file,
+                Config=upload_cfg,
+            )
+            logger.info(f"Uploaded to S3: {output_file}")
+        else:
+            logger.info(f"Upload skipped (uploads disabled): {output_file}")
 
         elapsed = _time.perf_counter() - _start
         logger.info(f"write_back_to_appender completed in {elapsed:.2f} seconds")
@@ -372,20 +384,26 @@ def write_back_to_appender(source, time):
     # Capture the current state of source.requests to avoid race conditions
     # Make a deep copy of the requests list to ensure thread safety
     import copy
+
     captured_requests = copy.deepcopy(source.requests)
     captured_app_name = source.app.app_name
     captured_sim_time = source.app.simulator._time
-    
-    logger.info(f"Capturing data for background thread: {len(captured_requests)} requests, sim_time: {captured_sim_time}")
-    
+
+    logger.info(
+        f"Capturing data for background thread: {len(captured_requests)} requests, sim_time: {captured_sim_time}"
+    )
+
     # Create a simple data container to pass to the thread
     thread_data = {
-        'requests': captured_requests,
-        'app_name': captured_app_name,
-        'sim_time': captured_sim_time,
-        'callback_time': time
+        "requests": captured_requests,
+        "app_name": captured_app_name,
+        "sim_time": captured_sim_time,
+        "callback_time": time,
+        "enable_uploads": getattr(
+            source, "enable_uploads", True
+        ),  # Default to True for backward compatibility
     }
-    
+
     # Create a daemon thread so it doesn't prevent program shutdown
     thread = threading.Thread(
         target=_write_back_to_appender_impl,

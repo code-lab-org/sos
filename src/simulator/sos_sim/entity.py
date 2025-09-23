@@ -42,12 +42,25 @@ class Collect_Observations(Entity):
         constellation: List[TATC_Satellite],
         requests: List[dict],
         application: Application,
+        enable_uploads=None,
     ):
         super().__init__()
         # save initial values
         self.init_constellation = constellation
         self.init_requests = requests
         self.app = application
+
+        # Flag to control S3 uploads - check environment variable if not explicitly set
+        import os
+
+        if enable_uploads is None:
+            self.enable_uploads = os.environ.get("ENABLE_UPLOADS", "true").lower() in (
+                "true",
+                "1",
+                "yes",
+            )
+        else:
+            self.enable_uploads = enable_uploads
         # declare state variables
         self.constellation = None
         self.requests = []
