@@ -57,11 +57,22 @@ class Environment(Observer):
         grounds (:obj:`DataFrame`): DataFrame of ground station information including groundId (*int*), latitude-longitude location (:obj:`GeographicPosition`), min_elevation (*float*) angle constraints, and operational status (*bool*)
     """
 
-    def __init__(self, app):  # , planner_freeze):
+    def __init__(self, app, enable_uploads=None):  # , planner_freeze):
         self.app = app
         # self.planner_freeze = planner_freeze
         self.visualize_swe_change = True
         self.visualize_all_layers = False
+
+        # Flag to control S3 uploads - check environment variable if not explicitly set
+        if enable_uploads is None:
+            self.enable_uploads = os.environ.get("ENABLE_UPLOADS", "true").lower() in (
+                "true",
+                "1",
+                "yes",
+            )
+        else:
+            self.enable_uploads = enable_uploads
+
         self.current_simulation_date = None
         self.output_directory = os.path.join("outputs", self.app.app_name)
         self.input_directory = os.path.join("inputs", self.app.app_name)
@@ -1308,7 +1319,7 @@ class Environment(Observer):
 
     def upload_file(self, key, filename, bucket="snow-observing-systems"):
         """
-        Upload a file to an S3 bucket
+        Upload a file to an S3 bucket (if uploads are enabled)
 
         Args:
             s3: S3 client
@@ -1316,6 +1327,10 @@ class Environment(Observer):
             key: S3 object key
             filename: Filename to upload
         """
+        if not self.enable_uploads:
+            logger.info(f"Upload skipped (uploads disabled): {filename}")
+            return
+
         logger.info(f"Uploading file to S3.")
         config = TransferConfig(use_threads=True if self.parallel_compute else False)
         self.s3.upload_file(Filename=filename, Bucket=bucket, Key=key, Config=config)
