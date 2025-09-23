@@ -29,6 +29,7 @@ def main():
         ),
         requests=[],
         application=app,
+        enable_uploads=None,  # Will check ENABLE_UPLOADS environment variable
     )
 
     app.simulator.add_entity(entity)

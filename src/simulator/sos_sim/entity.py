@@ -1,4 +1,5 @@
 import logging
+import threading
 from datetime import datetime, timedelta
 from typing import List
 
@@ -21,7 +22,6 @@ from .function import (  # update_requests,
     compute_sensor_radius,
     convert_to_vector_layer_format,
     filter_and_sort_observations,
-    process_master_file,
 )
 
 logger = logging.getLogger(__name__)
@@ -42,12 +42,25 @@ class Collect_Observations(Entity):
         constellation: List[TATC_Satellite],
         requests: List[dict],
         application: Application,
+        enable_uploads=None,
     ):
         super().__init__()
         # save initial values
         self.init_constellation = constellation
         self.init_requests = requests
         self.app = application
+
+        # Flag to control S3 uploads - check environment variable if not explicitly set
+        import os
+
+        if enable_uploads is None:
+            self.enable_uploads = os.environ.get("ENABLE_UPLOADS", "true").lower() in (
+                "true",
+                "1",
+                "yes",
+            )
+        else:
+            self.enable_uploads = enable_uploads
         # declare state variables
         self.constellation = None
         self.requests = []
@@ -57,6 +70,12 @@ class Collect_Observations(Entity):
         self.last_observation_time = None
         self.observation_collected = None
         self.new_request_flag = False
+        # Threading state variables
+        self.master_file_processing = False
+        self.processed_requests = None
+        self.incomplete_requests_processed = None
+        self.possible_observations_processed = None
+        self.master_file_lock = threading.Lock()
 
     def initialize(self, init_time: datetime):
         super().initialize(init_time)
@@ -166,6 +185,70 @@ class Collect_Observations(Entity):
                 # else:
                 #     self.observation_collected = None
 
+    def _process_master_file_impl(self, thread_data):
+        """
+        Internal implementation of master file processing that runs in a background thread.
+
+        Args:
+            thread_data (dict): Dictionary containing captured data from the main thread
+        """
+        import time as _time
+
+        _start = _time.perf_counter()
+        current_requests = thread_data["current_requests"]
+        current_time = thread_data["current_time"]
+        constellation_values = thread_data["constellation_values"]
+
+        logger.info(
+            f"Background thread starting master file processing with {len(current_requests)} requests"
+        )
+
+        try:
+            # Import here to avoid circular imports in thread
+            from .function import process_master_file
+
+            # Process the master file (this is the blocking operation)
+            processed_requests = process_master_file(current_requests)
+
+            # Also compute incomplete requests and opportunities in background
+            incomplete_requests = [
+                r["point"].id
+                for r in processed_requests
+                if r.get("simulator_simulation_status") is None
+                or pd.isna(r.get("simulator_simulation_status"))
+            ]
+
+            # Compute opportunities (this is also a heavy operation)
+            possible_observations = compute_opportunity(
+                constellation_values,
+                current_time,
+                timedelta(days=1),
+                processed_requests,
+            )
+
+            # Thread-safe update of the result
+            with self.master_file_lock:
+                self.processed_requests = processed_requests
+                self.incomplete_requests_processed = incomplete_requests
+                self.possible_observations_processed = possible_observations
+                self.master_file_processing = False
+
+            elapsed = _time.perf_counter() - _start
+            logger.info(
+                f"Master file processing (including opportunities) completed in background thread in {elapsed:.2f} seconds"
+            )
+
+        except Exception as e:
+            elapsed = _time.perf_counter() - _start
+            logger.error(
+                f"Master file processing failed in background thread after {elapsed:.2f} seconds: {e}",
+                exc_info=True,
+            )
+
+            # Ensure we reset the processing flag even on error
+            with self.master_file_lock:
+                self.master_file_processing = False
+
     def tock(self):
         # logger.info("entering tock time")
         super().tock()
@@ -173,25 +256,54 @@ class Collect_Observations(Entity):
         if self.observation_collected is not None:
             self.requests = self.next_requests
 
-        if self.new_request_flag:
-            logger.info("Requests received.")
-            self.requests = process_master_file(self.requests)
-            self.incomplete_requests = [
-                r["point"].id
-                for r in self.requests
-                if r.get("simulator_simulation_status") is None
-                or pd.isna(r.get("simulator_simulation_status"))
-            ]
-            self.possible_observations = compute_opportunity(
-                list(self.constellation.values()),
-                self._time,
-                timedelta(days=1),
-                self.requests,
+        # Check if background processing completed
+        if self.master_file_processing is False and self.processed_requests is not None:
+            with self.master_file_lock:
+                if self.processed_requests is not None:
+                    logger.info("Applying processed master file results")
+                    self.requests = self.processed_requests
+                    self.incomplete_requests = self.incomplete_requests_processed
+                    self.possible_observations = self.possible_observations_processed
+
+                    # Clear the processed results
+                    self.processed_requests = None
+                    self.incomplete_requests_processed = None
+                    self.possible_observations_processed = None
+                    self.new_request_flag = False
+
+        # Start background processing if new requests arrived and not already processing
+        if self.new_request_flag and not self.master_file_processing:
+            logger.info(
+                "Requests received. Starting background master file processing."
             )
-            # logger.info(
-            #     f"Number of possible observations {len(self.possible_observations)}"
-            # )
-            self.new_request_flag = False
+
+            # Capture current state for thread safety
+            import copy
+
+            thread_data = {
+                "current_requests": copy.deepcopy(self.requests),
+                "current_time": self._time,
+                "constellation_values": list(self.constellation.values()),
+            }
+
+            # Mark as processing
+            with self.master_file_lock:
+                self.master_file_processing = True
+
+            # Start background thread
+            thread = threading.Thread(
+                target=self._process_master_file_impl,
+                args=(thread_data,),
+                daemon=True,
+                name=f"master_file_processing-{self._time.strftime('%Y%m%d-%H%M%S')}",
+            )
+
+            logger.info(
+                f"Starting master file processing in background thread at {self._time}"
+            )
+            thread.start()
+
+            # Don't reset new_request_flag here - let it be reset when processing completes
 
     def message_received_from_appender(self, ch, method, properties, body):
         # logger.info(f"Message succesfully received at {self.app.simulator._time}")

@@ -3,6 +3,7 @@ import io
 import logging
 import os
 import sys
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 
@@ -56,11 +57,22 @@ class Environment(Observer):
         grounds (:obj:`DataFrame`): DataFrame of ground station information including groundId (*int*), latitude-longitude location (:obj:`GeographicPosition`), min_elevation (*float*) angle constraints, and operational status (*bool*)
     """
 
-    def __init__(self, app):  # , planner_freeze):
+    def __init__(self, app, enable_uploads=None):  # , planner_freeze):
         self.app = app
         # self.planner_freeze = planner_freeze
         self.visualize_swe_change = True
         self.visualize_all_layers = False
+
+        # Flag to control S3 uploads - check environment variable if not explicitly set
+        if enable_uploads is None:
+            self.enable_uploads = os.environ.get("ENABLE_UPLOADS", "true").lower() in (
+                "true",
+                "1",
+                "yes",
+            )
+        else:
+            self.enable_uploads = enable_uploads
+
         self.current_simulation_date = None
         self.output_directory = os.path.join("outputs", self.app.app_name)
         self.input_directory = os.path.join("inputs", self.app.app_name)
@@ -1307,7 +1319,7 @@ class Environment(Observer):
 
     def upload_file(self, key, filename, bucket="snow-observing-systems"):
         """
-        Upload a file to an S3 bucket
+        Upload a file to an S3 bucket (if uploads are enabled)
 
         Args:
             s3: S3 client
@@ -1315,6 +1327,10 @@ class Environment(Observer):
             key: S3 object key
             filename: Filename to upload
         """
+        if not self.enable_uploads:
+            logger.info(f"Upload skipped (uploads disabled): {filename}")
+            return
+
         logger.info(f"Uploading file to S3.")
         config = TransferConfig(use_threads=True if self.parallel_compute else False)
         self.s3.upload_file(Filename=filename, Bucket=bucket, Key=key, Config=config)
@@ -1379,23 +1395,32 @@ class Environment(Observer):
         else:
             raise ValueError("Invalid level. Choose from 'day', 'week', or 'month'.")
 
-    def on_change(self, source, property_name, old_value, new_value):
+    def _on_change_impl(self, thread_data):
         """
-        Handle changes to properties
+        Internal implementation of on_change that does the actual work.
+        This runs in a background thread to avoid blocking the simulation.
 
         Args:
-            source (object): The source object
-            property_name (str): The property name
-            old_value (object): The old value
-            new_value (object): The new value
+            thread_data (dict): Dictionary containing captured data from the main thread
         """
-        if (
-            property_name == Simulator.PROPERTY_MODE
-            and source.get_mode() == Mode.EXECUTING
-            and old_value == Mode.RESUMING
-            and new_value == Mode.EXECUTING
-        ):
-            logger.info(f"Execution is paused..... {old_value} -> {new_value}")
+        import time as _time
+
+        # Monotonic timer (avoid shadowing by aliasing time as _time)
+        _start = _time.perf_counter()
+
+        # Extract data from thread_data
+        old_value = thread_data["old_value"]
+        new_value = thread_data["new_value"]
+        source = thread_data["source"]
+        property_name = thread_data["property_name"]
+        app = thread_data["app"]
+
+        logger.info(
+            f"Background thread starting planner processing for {old_value} -> {new_value}"
+        )
+
+        try:
+            # All the heavy processing logic from the original on_change method
             logger.info("Resuming after a pause......")
             new_value = source.get_time()
             old_value = new_value - timedelta(days=1)
@@ -1412,10 +1437,7 @@ class Environment(Observer):
             self.s3 = s3
 
             mo_basin = self.download_geojson(
-                # s3=s3,
-                # bucket="snow-observing-systems",
                 key="inputs/vector/WBDHU2_4326.geojson",
-                # filename="WBDHU2_4326.geojson",
                 filename="inputs/vector/WBDHU2_4326.geojson",
             )
             mo_basin = self.process_geojson(mo_basin)
@@ -1482,8 +1504,8 @@ class Environment(Observer):
                 )
             )
             if self.visualize_all_layers:
-                self.app.send_message(
-                    self.app.app_name,
+                app.send_message(
+                    app.app_name,
                     "layer",
                     SWEChangeLayer(
                         swe_change_layer=swe_layer_encoded,
@@ -1494,7 +1516,7 @@ class Environment(Observer):
                     ).model_dump_json(),
                 )
                 logger.info("Publishing message successfully completed.")
-                time.sleep(15)
+                _time.sleep(15)
 
             # ETA5 dataset#
             # Generate the SWE difference
@@ -1515,8 +1537,8 @@ class Environment(Observer):
                 rotate=True,
             )
             if self.visualize_swe_change:
-                self.app.send_message(
-                    self.app.app_name,
+                app.send_message(
+                    app.app_name,
                     "layer",
                     SWEChangeLayer(
                         swe_change_layer=eta5_layer_encoded,
@@ -1576,8 +1598,8 @@ class Environment(Observer):
                 rotate=True,
             )
             if self.visualize_all_layers:
-                self.app.send_message(
-                    self.app.app_name,
+                app.send_message(
+                    app.app_name,
                     "layer",
                     SWEChangeLayer(
                         swe_change_layer=eta0_layer_encoded,
@@ -1588,7 +1610,7 @@ class Environment(Observer):
                     ).model_dump_json(),
                 )
                 logger.info("Publishing message successfully completed.")
-                time.sleep(15)
+                _time.sleep(15)
 
             # ETA2 GCOM dataset
             # Generate the sensor GCOM dataset
@@ -1611,8 +1633,8 @@ class Environment(Observer):
                 rotate=True,
             )
             if self.visualize_all_layers:
-                self.app.send_message(
-                    self.app.app_name,
+                app.send_message(
+                    app.app_name,
                     "layer",
                     SWEChangeLayer(
                         swe_change_layer=eta2_gcom_layer_encoded,
@@ -1623,7 +1645,7 @@ class Environment(Observer):
                     ).model_dump_json(),
                 )
                 logger.info("Publishing message successfully completed.")
-                time.sleep(15)
+                _time.sleep(15)
 
             # ETA2 Capella dataset
             # Generate the sensor capella dataset
@@ -1646,8 +1668,8 @@ class Environment(Observer):
                 rotate=True,
             )
             if self.visualize_all_layers:
-                self.app.send_message(
-                    self.app.app_name,
+                app.send_message(
+                    app.app_name,
                     "layer",
                     SWEChangeLayer(
                         swe_change_layer=eta2_capella_layer_encoded,
@@ -1658,7 +1680,7 @@ class Environment(Observer):
                     ).model_dump_json(),
                 )
                 logger.info("Publishing message successfully completed.")
-                time.sleep(15)
+                _time.sleep(15)
 
             # GCOM Final ETA
             # Define the weights for each dataset
@@ -1702,8 +1724,8 @@ class Environment(Observer):
                 rotate=True,
             )
             if self.visualize_all_layers:
-                self.app.send_message(
-                    self.app.app_name,
+                app.send_message(
+                    app.app_name,
                     "layer",
                     SWEChangeLayer(
                         swe_change_layer=gcom_eta_layer_encoded,
@@ -1714,7 +1736,7 @@ class Environment(Observer):
                     ).model_dump_json(),
                 )
                 logger.info("Publishing message successfully completed.")
-                time.sleep(15)
+                _time.sleep(15)
 
             # Capella Final ETA
             # Process Capella datasets
@@ -1745,8 +1767,8 @@ class Environment(Observer):
                 rotate=True,
             )
             if self.visualize_all_layers:
-                self.app.send_message(
-                    self.app.app_name,
+                app.send_message(
+                    app.app_name,
                     "layer",
                     SWEChangeLayer(
                         swe_change_layer=capella_eta_layer_encoded,
@@ -1757,7 +1779,7 @@ class Environment(Observer):
                     ).model_dump_json(),
                 )
                 logger.info("Publishing message successfully completed.")
-                time.sleep(15)
+                _time.sleep(15)
 
             # Reward
             final_eta_output_file, final_eta_gdf = self.process(
@@ -1772,24 +1794,21 @@ class Environment(Observer):
             # Clip Final Eta GDF and ground tracks to the Missouri Basin
             final_eta_gdf_clipped = gpd.clip(final_eta_gdf, mo_basin)
 
-            logger.info(f"Simulator mode: {self.app.simulator.get_mode()}")
+            logger.info(f"Simulator mode: {app.simulator.get_mode()}")
             logger.info(f"Source mode: {source.get_mode()}")
-            # while self.app.simulator.get_mode() != Mode.RESUMING:
-            #     time.sleep(0.001)
-            #     logger.info("Waiting for resuming mode.....")
 
             # Convert the clipped GeoDataFrame to GeoJSON and send as message
             all_json_data = final_eta_gdf_clipped.drop(
                 "time", axis=1, errors="ignore"
             ).to_json()
-            self.app.send_message(
-                self.app.app_name,
+            app.send_message(
+                app.app_name,
                 "all",
                 VectorLayer(vector_layer=all_json_data).model_dump_json(),
             )
             logger.info("(ALL) Publishing message successfully completed.")
-            self.app.send_message(
-                self.app.app_name,
+            app.send_message(
+                app.app_name,
                 "available",
                 VectorLayer(vector_layer=all_json_data).model_dump_json(),
             )
@@ -1802,16 +1821,75 @@ class Environment(Observer):
             self.upload_file(key=output_geojson, filename=output_geojson)
             selected_cells_gdf["time"] = selected_cells_gdf["time"].astype(str)
             selected_json_data = selected_cells_gdf.to_json()
-            self.app.send_message(
-                self.app.app_name,
+            app.send_message(
+                app.app_name,
                 "selected_cells",
                 VectorLayer(vector_layer=selected_json_data).model_dump_json(),
             )
             logger.info("(SELECTED) Publishing message successfully completed.")
-            # self.planner_freeze.frozen = False
-            # logger.info(
-            #     f"Planner is {'frozen' if self.planner_freeze.frozen else 'unfrozen'}"
-            # )
+
+            elapsed = _time.perf_counter() - _start
+            logger.info(
+                f"Planner on_change processing completed in {elapsed:.2f} seconds"
+            )
+
+        except Exception as e:
+            elapsed = _time.perf_counter() - _start
+            logger.error(
+                f"Planner on_change processing failed after {elapsed:.2f} seconds: {e}",
+                exc_info=True,
+            )
+
+    def on_change(self, source, property_name, old_value, new_value):
+        """
+        Handle changes to properties in a non-blocking manner.
+        Heavy processing is moved to a background thread to avoid blocking the simulation.
+
+        Args:
+            source (object): The source object
+            property_name (str): The property name
+            old_value (object): The old value
+            new_value (object): The new value
+        """
+        if (
+            property_name == Simulator.PROPERTY_MODE
+            and source.get_mode() == Mode.EXECUTING
+            and old_value == Mode.RESUMING
+            and new_value == Mode.EXECUTING
+        ):
+            logger.info(f"Execution is paused..... {old_value} -> {new_value}")
+
+            # Capture the current state to avoid race conditions
+            # Make copies of the necessary data to ensure thread safety
+            import copy
+
+            thread_data = {
+                "old_value": copy.deepcopy(old_value),
+                "new_value": copy.deepcopy(new_value),
+                "source": source,  # Source is typically thread-safe
+                "property_name": property_name,
+                "app": self.app,  # App reference for messaging
+            }
+
+            logger.info(
+                f"Capturing data for background planner thread: {old_value} -> {new_value}"
+            )
+
+            # Create a daemon thread so it doesn't prevent program shutdown
+            thread = threading.Thread(
+                target=self._on_change_impl,
+                args=(thread_data,),
+                daemon=True,
+                name=f"planner_on_change-{new_value.strftime('%Y%m%d-%H%M%S') if hasattr(new_value, 'strftime') else str(new_value)}",
+            )
+
+            logger.info(
+                f"Starting planner on_change processing in background thread for {old_value} -> {new_value}"
+            )
+            thread.start()
+
+            # Return immediately - don't wait for the thread to complete
+            # This allows the simulation to continue without blocking
 
 
 class DailyFreeze(Observer):
