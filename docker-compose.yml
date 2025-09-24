@@ -20,7 +20,7 @@ services:
     environment:
       - DOWNLOAD_CHECK_INTERVAL=10
       - DOWNLOAD_MAX_ATTEMPTS=1
-      - ENABLE_UPLOADS=false
+      - ENABLE_UPLOADS=true
     volumes:
       - ./sos.yaml:/opt/sos.yaml
       - ~/.aws/credentials:/root/.aws/credentials:ro
@@ -36,7 +36,7 @@ services:
     command: python3 src/appender/main.py
     env_file: .env
     environment:
-      - ENABLE_UPLOADS=false
+      - ENABLE_UPLOADS=true
     volumes:
       - ./sos.yaml:/opt/sos.yaml
       - ~/.aws/credentials:/root/.aws/credentials:ro
