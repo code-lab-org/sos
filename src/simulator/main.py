@@ -17,10 +17,10 @@ logger = logging.getLogger(__name__)
 
 def main():
     #  Load config
-    config = ConnectionConfig(yaml_file="sos.yaml")
+    config = ConnectionConfig(yaml_file="sos.yaml",app_name="simulator")
 
     # create the managed application
-    app = ManagedApplication(app_name="simulator")
+    app = ManagedApplication(app_name="simulator")    
 
     # Add Collect_Observations entity
     entity = Collect_Observations(
@@ -28,9 +28,11 @@ def main():
             config.rc.simulation_configuration.execution_parameters.manager.sim_start_time
         ),
         requests=[],
-        application=app,
+        application=app,        
+        const_capacity=config.rc.application_configuration["constellation_capacity"][0],
+        time_interval=config.rc.application_configuration["observation_interval"][0],
         enable_uploads=None,  # Will check ENABLE_UPLOADS environment variable
-    )
+    )    
 
     app.simulator.add_entity(entity)
 

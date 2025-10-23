@@ -7,7 +7,6 @@ import threading
 import time as _time
 from datetime import datetime, timedelta, timezone
 from typing import List
-
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -21,6 +20,7 @@ from tatc.schemas import (
     SunSynchronousOrbit,
     WalkerConstellation,
 )
+from joblib import Parallel, delayed
 from tatc.utils import swath_width_to_field_of_regard, swath_width_to_field_of_view
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,8 @@ def compute_opportunity(
     Returns:
         gpd.GeoSeries: The observation opportunity as a GeoSeries.
     """
-    # start_time = t.time()
+    # Computation time of this function
+    # start_time = _time.perf_counter()
     filtered_requests = requests
     time = time.replace(tzinfo=timezone.utc)
     end = (time + duration).replace(tzinfo=timezone.utc)
@@ -101,35 +102,35 @@ def compute_opportunity(
     if filtered_requests:
         # column_names = list(filtered_requests[0].keys())
 
-        # def collect_observations_for_request(request):
-        #     try:
-        #         return collect_multi_observations(request["point"], const, time, end)
-        #     except Exception as e:
-        #         print(f"Error processing request {request}: {e}")
-        #         return pd.DataFrame()
+        def collect_observations_for_request(request):
+            try:
+                return collect_multi_observations(request["point"], const, time, end)
+            except Exception as e:
+                print(f"Error processing request {request}: {e}")
+                return pd.DataFrame()
 
-        # observation_results_list = Parallel(n_jobs=-1 if parallel_compute else 1)(
-        #     delayed(collect_observations_for_request)(request)
-        #     for request in filtered_requests
-        # )
+        observation_results_list = Parallel(n_jobs=-1 if parallel_compute else 1)(
+            delayed(collect_observations_for_request)(request)
+            for request in filtered_requests
+        )
 
         # # Remove any empty results
-        # observation_results_list = [df for df in observation_results_list if not df.empty]
+        observation_results_list = [df for df in observation_results_list if not df.empty]
 
-        # if observation_results_list:
-        #     observation_results = pd.concat(
-        #         observation_results_list, ignore_index=True
-        #     ).sort_values(by="epoch", ascending=True)
-        # else:
-        #     observation_results = pd.DataFrame()
+        if observation_results_list:
+            observation_results = pd.concat(
+                observation_results_list, ignore_index=True
+            ).sort_values(by="epoch", ascending=True)
+        else:
+            observation_results = pd.DataFrame()
 
-        observation_results = pd.concat(
-            [
-                collect_multi_observations(request["point"], const, time, end)
-                for request in filtered_requests
-            ],
-            ignore_index=True,
-        ).sort_values(by="epoch", ascending=True)
+        # observation_results = pd.concat(
+        #     [
+        #         collect_multi_observations(request["point"], const, time, end)
+        #         for request in filtered_requests
+        #     ],
+        #     ignore_index=True,
+        # ).sort_values(by="epoch", ascending=True)
 
         if observation_results is not None and not observation_results.empty:
             # logger.info(f"Observation opportunity exist{time + duration}")
@@ -141,6 +142,9 @@ def compute_opportunity(
                 "point_id"
             ].map(id_to_eta)
             # observations = pd.concat(observation_results, ignore_index=True).sort_values(by="epoch", ascending=True)
+            # end_time = _time.perf_counter()
+            # computation_time = end_time - start_time
+            # logger.info(f"Observation opportunity computation time: {computation_time:.2f} seconds")
             return observation_results
         return None
     else:
@@ -152,9 +156,9 @@ def compute_opportunity(
 
 def filter_and_sort_observations(df, sim_time, incomplete_ids, time_step_constr):
 
-    logger.debug(
-        f"Filtering and sorting observations, type of df is {type(df)}, length of df is {len(df)}"
-    )
+    # logger.debug(
+    #     f"Filtering and sorting observations, type of df is {type(df)}, length of df is {len(df)}"
+    # )
     # Filter for observations with incomplete simulation status
     df = df[df["point_id"].isin(incomplete_ids)]
     # Ensure sim_time is timezone-aware and same tz as df
@@ -211,7 +215,8 @@ def read_master_file():
         List[dict]: A list of dictionaries representing the master file data.
     """
     logger.info("Reading master file")
-    # start_time = t.time()
+    # Computation time of this function
+    start_time = _time.perf_counter()
     output_filename = "outputs/master.geojson"
     if os.path.exists(output_filename):
         request_data = gpd.read_file(output_filename)
@@ -239,10 +244,12 @@ def read_master_file():
         print(f"Master file not found. Returning an empty list.")
         request_points = []
 
+    end_time = _time.perf_counter()
+
     # end_time = t.time()
     # Calculate the total time taken
-    # computation_time = end_time - start_time
-    # logger.debug(f"Reading master file time: {computation_time:.2f} seconds")
+    computation_time = end_time - start_time
+    logger.info(f"Reading master file time: {computation_time:.2f} seconds")
     return request_points
 
 
@@ -255,6 +262,7 @@ def _write_back_to_appender_impl(thread_data):
     Args:
         thread_data (dict): Dictionary containing captured data from the main thread
     """
+    logger.info("write_back_to_appender thread started.")
     # Monotonic timer (avoid shadowing by aliasing time as _time)
     _start = _time.perf_counter()
 
@@ -404,6 +412,8 @@ def write_back_to_appender(source, time):
         ),  # Default to True for backward compatibility
     }
 
+    logger.info(f"Thread data prepared, length of requests: {len(thread_data['requests'])}")
+
     # Create a daemon thread so it doesn't prevent program shutdown
     thread = threading.Thread(
         target=_write_back_to_appender_impl,
@@ -428,6 +438,9 @@ def process_master_file(existing_request):
         List[dict]: The updated list of requests.
     """
     logger.info(f"Processing master file.")
+    # Computing computation time of this function
+    start_time = _time.perf_counter()
+
     master = read_master_file()
     master_processed = [
         request
@@ -444,6 +457,10 @@ def process_master_file(existing_request):
                 for key, value in request.items():
                     unprocessed_request[key] = value
 
+    end_time = _time.perf_counter()
+    computation_time = end_time - start_time
+    logger.info(f"Processed master file in {computation_time:.2f} seconds.")
+
     # Return the combined list of processed and unprocessed requests
     return master_processed + master_unprocessed
 
@@ -457,6 +474,7 @@ def convert_to_vector_layer_format(visual_requests):
         str: The GeoJSON representation of the visual requests.
     """
     vector_data = pd.DataFrame(visual_requests)
+    logger.info(f"data types and columns: {vector_data.dtypes}, {vector_data.columns}")
     vector_data["geometry"] = vector_data["planner_geometry"].apply(
         lambda x: wkt.loads(x) if isinstance(x, str) else x
     )

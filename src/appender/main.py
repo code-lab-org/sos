@@ -3,7 +3,6 @@ import logging
 import os
 import sys
 from datetime import timedelta
-
 import geopandas as gpd
 import numpy as np
 import pandas as pd
@@ -14,7 +13,6 @@ from nost_tools.configuration import ConnectionConfig
 from nost_tools.managed_application import ManagedApplication
 from nost_tools.observer import Observer
 from nost_tools.simulator import Mode, Simulator
-
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 from src.sos_tools.aws_utils import AWSUtils
 from src.sos_tools.data_utils import DataUtils
@@ -32,12 +30,14 @@ class Environment(Observer):
         grounds (:obj:`DataFrame`): DataFrame of ground station information including groundId (*int*), latitude-longitude location (:obj:`GeographicPosition`), min_elevation (*float*) angle constraints, and operational status (*bool*)
     """
 
-    def __init__(self, app, enable_uploads=None):
+    def __init__(self, app, set_expiration = False, expiration_time=None, enable_uploads=None):
         self.app = app
         self.counter = 0
         self.master_components = []
         self.master_gdf = gpd.GeoDataFrame()
         self.visualize_selected = False  # True
+        self.set_expiration = set_expiration
+        self.expiration_time = expiration_time
 
         # Flag to control S3 uploads - check environment variable if not explicitly set
         if enable_uploads is None:
@@ -69,6 +69,7 @@ class Environment(Observer):
             prefix + col if col != "geometry" else col for col in gdf.columns
         ]
         return gdf
+    
 
     def add_columns(self, gdf):
         """
@@ -81,32 +82,26 @@ class Environment(Observer):
             GeoDataFrame: The GeoDataFrame with the additional columns added.
         """
         gdf["simulator_simulation_status"] = np.nan  # None
-        gdf["simulator_completion_date"] = pd.NaT
-        # logger.info(f"Type planner time {type(gdf['planner_time'])}")
+        gdf["simulator_completion_date"] = pd.NaT        
         gdf["simulator_expiration_date"] = pd.to_datetime(
-            gdf["planner_time"]
-        ) + timedelta(days=2)
-        # logger.info(f"Type planner time after conversion{type(gdf['planner_time'])}")
+            gdf["planner_time"], utc=True
+        ) + timedelta(days=self.expiration_time if self.set_expiration else 0)
+        
         gdf["simulator_expiration_status"] = np.nan  # None
         gdf["simulator_satellite"] = np.nan  # None
         gdf["simulator_polygon_groundtrack"] = np.nan  # None
         gdf["planner_latitude"] = gdf["planner_centroid"].y
         gdf["planner_longitude"] = gdf["planner_centroid"].x
         gdf["planner_centroid"] = gdf["planner_centroid"].to_wkt()
+
         logger.info(f"Computing simulator expiration status")
         # current_sim_time = self.app.simulator._time  # Must be datetime
-        # current_sim_time = pd.to_datetime(current_sim_time)
-        # gdf["simulator_expiration_date"] = pd.to_datetime(gdf["simulator_expiration_date"], errors="coerce")
-
-        # logger.info(f"datatype of all columns {gdf.dtypes}")
-        # logger.info(f"current simulation time {current_sim_time} and datatype {type(current_sim_time)}")
-
-        # Now safely compare
-        # gdf["simulator_expiration_status"] = np.where(
-        #     gdf["simulator_expiration_date"] < current_sim_time,
-        #     "expired",
-        #     "valid"
-        # )
+        
+        gdf["simulator_expiration_status"] = np.where(
+            gdf["simulator_expiration_date"].dt.date < self.app.simulator._time.date(),
+            "expired",
+            "active"
+        )
 
         gdf["simulator_expiration_date"] = gdf["simulator_expiration_date"].astype(str)
 
@@ -130,6 +125,7 @@ class Environment(Observer):
                 "planner_latitude",
                 "planner_longitude",
                 "simulator_expiration_date",
+                "simulator_expiration_status",
                 "simulator_simulation_status",
                 "simulator_completion_date",
                 "simulator_satellite",
@@ -201,7 +197,7 @@ class Environment(Observer):
             json.loads(data.vector_layer)["features"], crs="EPSG:4326"
         )
 
-        logger.info(f"Message body successfully converted to GeoDataFrame. {type(k)}")
+        # logger.info(f"Message body successfully converted to GeoDataFrame. {type(k)}")
         return k
 
         # return gpd.GeoDataFrame.from_features(
@@ -263,7 +259,20 @@ class Environment(Observer):
 
         self.master_gdf.to_file("outputs/master.geojson", driver="GeoJSON")
         logger.info("Master geosjon file created")
-        selected_json_data = self.master_gdf.to_json()
+
+        # Filter based on expiration status, not equal to 'expired'
+        # Filter if self.expiration is set else use master_gdf
+        if self.set_expiration:
+            filtered_gdf = self.master_gdf[
+                self.master_gdf["simulator_expiration_status"] != "expired"
+            ]
+        else:
+            filtered_gdf = self.master_gdf
+
+        logger.info(f"Length of filtered gdf: {len(filtered_gdf)}")
+
+        # selected_json_data = self.master_gdf.to_json()
+        selected_json_data = filtered_gdf.to_json()
         self.app.send_message(
             self.app.app_name,
             "master",  # ["master", "selected"],
@@ -330,7 +339,7 @@ class Environment(Observer):
 
 def main():
     # Load config
-    config = ConnectionConfig(yaml_file="sos.yaml")
+    config = ConnectionConfig(yaml_file="sos.yaml",app_name="appender")
 
     # create the managed application
     app = ManagedApplication(app_name="appender")
@@ -339,7 +348,10 @@ def main():
     environment = Environment(app)
 
     # add the environment observer to monitor simulation for switch to EXECUTING mode
-    app.simulator.add_observer(Environment(app))
+    app.simulator.add_observer(Environment(app,
+                                           set_expiration = config.rc.application_configuration['set_expiration_time'][0],
+                                           expiration_time = config.rc.application_configuration['expiration_time'][0]
+                                           ))
 
     # add a shutdown observer to shut down after a single test case
     app.simulator.add_observer(ShutDownObserver(app))
@@ -350,6 +362,8 @@ def main():
         config,
         True,
     )
+
+    logger.info(f"Configuration parameter expiration time: {config.rc.application_configuration['set_expiration_time'][0]}")
 
     # Add a message callback to handle messages from the planner
     app.add_message_callback("planner", "selected_cells", environment.on_planner)

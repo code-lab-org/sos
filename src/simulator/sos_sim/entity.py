@@ -1,8 +1,8 @@
 import logging
 import threading
+import time as _time
 from datetime import datetime, timedelta
 from typing import List
-
 import numpy as np
 import pandas as pd
 from constellation_config_files.schemas import SatelliteStatus, VectorLayer
@@ -42,13 +42,17 @@ class Collect_Observations(Entity):
         constellation: List[TATC_Satellite],
         requests: List[dict],
         application: Application,
-        enable_uploads=None,
+        const_capacity: float = 1.0,
+        time_interval: float = 0.0,
+        enable_uploads=None
     ):
         super().__init__()
         # save initial values
         self.init_constellation = constellation
         self.init_requests = requests
         self.app = application
+        self.constellation_capacity = const_capacity
+        self.time_between_observations = time_interval
 
         # Flag to control S3 uploads - check environment variable if not explicitly set
         import os
@@ -81,7 +85,7 @@ class Collect_Observations(Entity):
         super().initialize(init_time)
         # initialize state variables
         self.constellation = {sat.name: sat for sat in self.init_constellation}
-        self.requests = self.init_requests.copy()
+        self.requests = self.init_requests.copy() if self.init_requests else []
         self.next_requests = None
         self.last_observation_time = datetime.min
         self.observation_collected = None
@@ -90,7 +94,7 @@ class Collect_Observations(Entity):
     def on_appender(self):
         self.new_request_flag = True
 
-    def tick(self, time_step: timedelta):
+    def tick(self, time_step: timedelta):        
 
         super().tick(time_step)
         # logger.info(
@@ -102,8 +106,12 @@ class Collect_Observations(Entity):
         #     f"Type of date {type(self._time)} and self.last_observation_time {type(self.last_observation_time)}"
         # )
 
+        # Printing constellation capacity and time between observations
+        # logger.info(f"Constellation capacity: {self.constellation_capacity}")
+        # logger.info(f"Time between observations: {self.time_between_observations}")
+
         t1 = self._time.replace(tzinfo=None)
-        t2 = self.last_observation_time.replace(tzinfo=None) + timedelta(seconds=30)
+        t2 = self.last_observation_time.replace(tzinfo=None) + timedelta(seconds=self.time_between_observations)
         # logger.info(f"t1 {t1} and t2 {t2}")
 
         if t1 > t2:
@@ -122,7 +130,7 @@ class Collect_Observations(Entity):
             if self.observation_collected is not None:
 
                 if (
-                    np.random.rand() <= 1.0
+                    np.random.rand() <= self.constellation_capacity
                 ):  # Simulate a 75% chance of collecting an observation
                     # Get the satellite that collected the observation
                     satellite = self.constellation[
@@ -137,7 +145,7 @@ class Collect_Observations(Entity):
                     # logger.info(f"Observation {self.observation_collected}")
                     # logger.info(f"Observation type {type(self.observation_collected)}")
 
-                    self.next_requests = self.requests.copy()
+                    self.next_requests = self.requests.copy() if self.requests is not None else []
 
                     # update next_requests to reflect collected observation
                     for row in self.next_requests:
@@ -172,15 +180,18 @@ class Collect_Observations(Entity):
 
                     # Visualization
                     # write a function to convert the self.next request to json format to send to the cesium application
-                    vector_data_json = convert_to_vector_layer_format(
-                        self.next_requests
-                    )
-                    # Sending message to visualization
-                    self.app.send_message(
-                        self.app.app_name,
-                        "selected",
-                        VectorLayer(vector_layer=vector_data_json).model_dump_json(),
-                    )
+                    # Execute if self. next_requests is not None
+
+                    if self.next_requests:
+                        vector_data_json = convert_to_vector_layer_format(
+                            self.next_requests
+                        )
+                        # Sending message to visualization
+                        self.app.send_message(
+                            self.app.app_name,
+                            "selected",
+                            VectorLayer(vector_layer=vector_data_json).model_dump_json(),
+                        )
                     # logger.info("(SELECTED) Publishing message successfully completed.")
                 # else:
                 #     self.observation_collected = None
@@ -219,12 +230,17 @@ class Collect_Observations(Entity):
             ]
 
             # Compute opportunities (this is also a heavy operation)
+            # Computation time of this function
+            start_time = _time.perf_counter()
             possible_observations = compute_opportunity(
                 constellation_values,
                 current_time,
                 timedelta(days=1),
                 processed_requests,
             )
+            end_time = _time.perf_counter()
+            computation_time = end_time - start_time
+            logger.info(f"Opportunity computation time: {computation_time:.2f} seconds")
 
             # Thread-safe update of the result
             with self.master_file_lock:

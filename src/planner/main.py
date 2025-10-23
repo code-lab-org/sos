@@ -57,11 +57,18 @@ class Environment(Observer):
         grounds (:obj:`DataFrame`): DataFrame of ground station information including groundId (*int*), latitude-longitude location (:obj:`GeographicPosition`), min_elevation (*float*) angle constraints, and operational status (*bool*)
     """
 
-    def __init__(self, app, enable_uploads=None):  # , planner_freeze):
+    def __init__(
+        self, 
+        app, 
+        budget: int = 50,
+        enable_uploads=None
+        ):  # , planner_freeze):
         self.app = app
         # self.planner_freeze = planner_freeze
+        self.budget = budget
         self.visualize_swe_change = True
         self.visualize_all_layers = False
+
 
         # Flag to control S3 uploads - check environment variable if not explicitly set
         if enable_uploads is None:
@@ -925,7 +932,7 @@ class Environment(Observer):
             selected_blocks_gdf (gpd.GeoDataFrame): The selected blocks GeoDataFrame.
         """
         unique_time = pd.Timestamp(final_eta_gdf["time"].iloc[0])
-        N = 50
+        N = self.budget
         final_eta_gdf["final_eta"] = final_eta_gdf["final_eta"].replace(
             [np.inf, -np.inf], np.nan
         )
@@ -1414,6 +1421,9 @@ class Environment(Observer):
         source = thread_data["source"]
         property_name = thread_data["property_name"]
         app = thread_data["app"]
+
+        # printing budget info
+        logger.info(f"Current budget: {self.budget}")
 
         logger.info(
             f"Background thread starting planner processing for {old_value} -> {new_value}"
@@ -1957,16 +1967,18 @@ class DailyFreeze(Observer):
 
 def main():
     # Load config
-    config = ConnectionConfig(yaml_file="sos.yaml")
+    config = ConnectionConfig(yaml_file="sos.yaml",app_name="planner")
 
     # create the managed application
     app = ManagedApplication(app_name="planner")
 
     # Add the daily time scale updater observer
-    app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(hours=1)))
+    app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(minutes=1)))
 
     # add the environment observer to monitor simulation for switch to EXECUTING mode
-    app.simulator.add_observer(Environment(app))  # , planner_freeze))
+    app.simulator.add_observer(Environment(
+        app,budget=config.rc.application_configuration["budget"][0]
+        )) 
 
     # add a shutdown observer to shut down after a single test case
     app.simulator.add_observer(ShutDownObserver(app))
@@ -1977,6 +1989,7 @@ def main():
         config,
         True,
     )
+    
 
     while True:
         pass
