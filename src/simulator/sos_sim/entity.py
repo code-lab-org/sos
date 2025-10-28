@@ -1,14 +1,15 @@
-import logging
-import threading
-import time as _time
 from datetime import datetime, timedelta
 from typing import List
+import logging
 import numpy as np
+import os
 import pandas as pd
-from constellation_config_files.schemas import SatelliteStatus, VectorLayer
+import threading
+import time as _time
 
 # from geojson_pydantic import Polygon, MultiPolygon
 # from joblib import Parallel, delayed
+from constellation_config_files.schemas import SatelliteStatus, VectorLayer
 from nost_tools import Application, Entity
 from pyproj import Transformer
 from skyfield.api import load
@@ -20,8 +21,9 @@ from .function import (  # update_requests,
     compute_ground_track_and_format,
     compute_opportunity,
     compute_sensor_radius,
-    convert_to_vector_layer_format,
+    convert_to_vector_layer_format,    
     filter_and_sort_observations,
+    message_to_geojson
 )
 
 logger = logging.getLogger(__name__)
@@ -55,7 +57,7 @@ class Collect_Observations(Entity):
         self.time_between_observations = time_interval
 
         # Flag to control S3 uploads - check environment variable if not explicitly set
-        import os
+        
 
         if enable_uploads is None:
             self.enable_uploads = os.environ.get("ENABLE_UPLOADS", "true").lower() in (
@@ -74,6 +76,7 @@ class Collect_Observations(Entity):
         self.last_observation_time = None
         self.observation_collected = None
         self.new_request_flag = False
+        self.master_data = None
         # Threading state variables
         self.master_file_processing = False
         self.processed_requests = None
@@ -206,20 +209,22 @@ class Collect_Observations(Entity):
         import time as _time
 
         _start = _time.perf_counter()
-        current_requests = thread_data["current_requests"]
+        # current_requests = thread_data["current_requests"]
+        # master_data = 
         current_time = thread_data["current_time"]
         constellation_values = thread_data["constellation_values"]
 
-        logger.info(
-            f"Background thread starting master file processing with {len(current_requests)} requests"
-        )
+        # logger.info(
+        #     f"Background thread starting master file processing with {len(current_requests)} requests"
+        # )
 
         try:
             # Import here to avoid circular imports in thread
-            from .function import process_master_file
+            from .function import read_master_file
 
             # Process the master file (this is the blocking operation)
-            processed_requests = process_master_file(current_requests)
+            # processed_requests = process_master_file(current_requests,self.master_data)
+            processed_requests = read_master_file(self.master_data)
 
             # Also compute incomplete requests and opportunities in background
             incomplete_requests = [
@@ -322,7 +327,9 @@ class Collect_Observations(Entity):
             # Don't reset new_request_flag here - let it be reset when processing completes
 
     def message_received_from_appender(self, ch, method, properties, body):
-        # logger.info(f"Message succesfully received at {self.app.simulator._time}")
+        logger.info(f"Message succesfully received at {self.app.simulator._time}")
+        self.master_data = message_to_geojson(body)
+        logger.info(f"Master data received with {len(self.master_data)} records and type {type(self.master_data)}")
         self.on_appender()
 
 
