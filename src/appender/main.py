@@ -113,7 +113,6 @@ class Environment(Observer):
             "active"
         )
         logger.info(f"Converting simulator expiration date to string")
-
         gdf["simulator_expiration_date"] = gdf["simulator_expiration_date"].astype(str)
 
         return gdf
@@ -410,10 +409,12 @@ def main():
                                 )
 
     # add the environment observer to monitor simulation for switch to EXECUTING mode
-    app.simulator.add_observer(Environment(app,
-                                           set_expiration = config.rc.application_configuration['set_expiration_time'][0],
-                                           expiration_time = config.rc.application_configuration['expiration_time'][0]
-                                           ))
+    # app.simulator.add_observer(Environment(app,
+    #                                        set_expiration = config.rc.application_configuration['set_expiration_time'][0],
+    #                                        expiration_time = config.rc.application_configuration['expiration_time'][0]
+    #                                        ))
+
+    app.simulator.add_observer(environment)
 
     # add a shutdown observer to shut down after a single test case
     app.simulator.add_observer(ShutDownObserver(app))

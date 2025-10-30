@@ -646,6 +646,9 @@ def _write_back_to_appender_impl(thread_data):
         # appender_data = process_master_file(requests, master_data)
         # logger.info(f"Processed master file, got {len(appender_data)} entries")
 
+        # computation time of this function
+        start_time_gdf = _time.perf_counter()
+
         selected_data = pd.DataFrame(requests)
         selected_data = selected_data.drop(columns=["point"])
         logger.info(f"Selected json data column dtypes: {selected_data.dtypes}")
@@ -706,6 +709,11 @@ def _write_back_to_appender_impl(thread_data):
         )
         daily_gdf_filtered.to_file(output_file, index=False)
         logger.info(f"Wrote daily file: {output_file}")
+        end_time_gdf = _time.perf_counter()
+        logger.info(f"GeoDataFrame processing time: {end_time_gdf - start_time_gdf:.2f} seconds.")
+
+        # Computation time for upload
+        # start_time_upload = _time.perf_counter()
 
         # Upload to S3 only if uploads are enabled
         if enable_uploads:
@@ -726,6 +734,9 @@ def _write_back_to_appender_impl(thread_data):
             logger.info(f"Uploaded to S3: {output_file}")
         else:
             logger.info(f"Upload skipped (uploads disabled): {output_file}")
+
+        # Computation time for appender message
+        start_time_appender = _time.perf_counter()
 
         daily_gdf_filtered = daily_gdf_filtered[
         [
@@ -748,6 +759,8 @@ def _write_back_to_appender_impl(thread_data):
         logger.info("Simulator sent message to appender")
 
         elapsed = _time.perf_counter() - _start
+        elapsed_appender = _time.perf_counter() - start_time_appender
+        logger.info(f"Total appender message time: {elapsed_appender:.2f} seconds.")        
         logger.info(f"write_back_to_appender completed in {elapsed:.2f} seconds")
 
     except Exception as e:
