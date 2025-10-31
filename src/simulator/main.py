@@ -8,7 +8,7 @@ from nost_tools.application_utils import ShutDownObserver
 from nost_tools.configuration import ConnectionConfig
 from nost_tools.managed_application import ManagedApplication
 from nost_tools.observer import ScenarioTimeIntervalCallback
-from sos_sim.entity import Collect_Observations
+from sos_sim.entity import Collect_Observations, RandomValueGenerator
 from sos_sim.function import Snowglobe_constellation, write_back_to_appender
 
 logging.basicConfig(level=logging.INFO)
@@ -34,6 +34,8 @@ def main():
         enable_uploads=None,  # Will check ENABLE_UPLOADS environment variable
     )    
 
+    # Add observer classes to constellation's object class
+    entity.add_observer(RandomValueGenerator(app))
     app.simulator.add_entity(entity)
 
     # Add a ScenarioTimeIntervalCallback to write back to the appender every day

@@ -7,10 +7,10 @@ import pandas as pd
 import threading
 import time as _time
 
-# from geojson_pydantic import Polygon, MultiPolygon
-# from joblib import Parallel, delayed
 from constellation_config_files.schemas import SatelliteStatus, VectorLayer
 from nost_tools import Application, Entity
+from nost_tools.simulator import Mode, Simulator
+from nost_tools.observer import Observer
 from pyproj import Transformer
 from skyfield.api import load
 from skyfield.framelib import itrs
@@ -23,12 +23,11 @@ from .function import (  # update_requests,
     compute_sensor_radius,
     convert_to_vector_layer_format,    
     filter_and_sort_observations,
-    message_to_geojson
+    message_to_geojson,
+    Daily_random_value
 )
 
 logger = logging.getLogger(__name__)
-np.random.seed(0)
-
 
 class Collect_Observations(Entity):
     """
@@ -54,11 +53,9 @@ class Collect_Observations(Entity):
         self.init_requests = requests
         self.app = application
         self.constellation_capacity = const_capacity
-        self.time_between_observations = time_interval
+        self.time_between_observations = int(time_interval)
 
-        # Flag to control S3 uploads - check environment variable if not explicitly set
-        
-
+        # Flag to control S3 uploads - check environment variable if not explicitly set        
         if enable_uploads is None:
             self.enable_uploads = os.environ.get("ENABLE_UPLOADS", "true").lower() in (
                 "true",
@@ -77,6 +74,9 @@ class Collect_Observations(Entity):
         self.observation_collected = None
         self.new_request_flag = False
         self.master_data = None
+        self.seed_value = 0 # Seed value for daily random value generation
+        self.rng_cache = {}  # Cache for daily random values
+        self.daily_random_value = None  # Daily random value object
         # Threading state variables
         self.master_file_processing = False
         self.processed_requests = None
@@ -94,47 +94,52 @@ class Collect_Observations(Entity):
         self.observation_collected = None
         self.new_request_flag = None
 
+    def on_change(self, source, property_name, old_value, new_value):
+        """
+        Forward simulator time changes to this entity's observers.
+        """
+        # Check if the simulator is notifying time updates
+        if property_name == Simulator.PROPERTY_TIME:
+            # Forward the same event to any observers attached to this entity
+            self.notify_observers(property_name, old_value, new_value) 
+
     def on_appender(self):
         self.new_request_flag = True
 
     def tick(self, time_step: timedelta):        
 
         super().tick(time_step)
-        # logger.info(
-        #     f"entering tick time {self._time}, {len(self.requests)}, next time {self._next_time}"
-        # )
         # Set all the tick operations here
         self.observation_collected = None
-        # logger.info(
-        #     f"Type of date {type(self._time)} and self.last_observation_time {type(self.last_observation_time)}"
-        # )
-
-        # Printing constellation capacity and time between observations
-        # logger.info(f"Constellation capacity: {self.constellation_capacity}")
-        # logger.info(f"Time between observations: {self.time_between_observations}")
-
-        t1 = self._time.replace(tzinfo=None)
-        t2 = self.last_observation_time.replace(tzinfo=None) + timedelta(seconds=self.time_between_observations)
-        # logger.info(f"t1 {t1} and t2 {t2}")
+        # Converting simulation time and last observation time to naive datetime for comparison
+        t1 = self.get_time().replace(tzinfo=None)
+        t2 = self.last_observation_time.replace(tzinfo=None) + timedelta(seconds=self.time_between_observations)       
 
         if t1 > t2:
 
             if self.possible_observations is not None:
-                # logger.info(
-                # #     f"Number of possible observations {len(self.possible_observations)}"
-                # )
+
                 self.observation_collected = filter_and_sort_observations(
                     self.possible_observations,
                     self._time,
                     self.incomplete_requests,
-                    timedelta(seconds=30),
+                    timedelta(seconds=self.time_between_observations),
                 )
 
             if self.observation_collected is not None:
+                # Generate or retrieve the daily random value
+                # Generate and cache the random value for the new day
 
+                self.daily_random_value = Daily_random_value(
+                    seed_value=self.seed_value,
+                    min_value=0.0,
+                    max_value=1.0,
+                    rng_cache=self.rng_cache
+                )
                 if (
-                    np.random.rand() <= self.constellation_capacity
-                ):  # Simulate a 75% chance of collecting an observation
+                    self.daily_random_value <= self.constellation_capacity
+                ):  
+                    # Simulate a x% chance of collecting an observation
                     # Get the satellite that collected the observation
                     satellite = self.constellation[
                         self.observation_collected["satellite"]
@@ -145,16 +150,10 @@ class Collect_Observations(Entity):
                             satellite, self.observation_collected["epoch"]
                         )
                     )
-                    # logger.info(f"Observation {self.observation_collected}")
-                    # logger.info(f"Observation type {type(self.observation_collected)}")
-
                     self.next_requests = self.requests.copy() if self.requests is not None else []
-
-                    # update next_requests to reflect collected observation
+                    # Update next_requests to reflect collected observation
                     for row in self.next_requests:
-                        if row["point"].id == self.observation_collected["point_id"]:
-                            # row["point"] = TATC_Point(id = self.observation_collected["point_id"], latitude = self.observation_collected['geometry'].y, longitude = self.observation_collected['geometry'].x)
-                            # Point(id=r["simulator_id"], latitude=r["planner_latitude"], longitude=r["planner_longitude"])
+                        if row["point"].id == self.observation_collected["point_id"]:                            
                             row["simulator_simulation_status"] = "Completed"
                             row["simulator_completion_date"] = (
                                 self.observation_collected["epoch"]
@@ -166,20 +165,12 @@ class Collect_Observations(Entity):
                                 self.observation_collected["ground_track"]
                             )
 
-                            # logger.info(f"Type of collected time {type(self.observation_collected['epoch'])}")
-
                             self.last_observation_time = self.observation_collected[
                                 "epoch"
                             ]
-                            # logger.info(
-                            #     f"Type of collected time {type(self.last_observation_time)}"
-                            # )
-
                             # Remove from incomplete_requests
                             if row["point"].id in self.incomplete_requests:
                                 self.incomplete_requests.remove(row["point"].id)
-
-                        # logger.info(f"Type of polygon groundtrack{type(row['simulator_polygon_groundtrack'])}")
 
                     # Visualization
                     # write a function to convert the self.next request to json format to send to the cesium application
@@ -208,22 +199,15 @@ class Collect_Observations(Entity):
         """
         import time as _time
 
-        _start = _time.perf_counter()
-        # current_requests = thread_data["current_requests"]
-        # master_data = 
+        _start = _time.perf_counter() 
         current_time = thread_data["current_time"]
         constellation_values = thread_data["constellation_values"]
 
-        # logger.info(
-        #     f"Background thread starting master file processing with {len(current_requests)} requests"
-        # )
 
         try:
             # Import here to avoid circular imports in thread
             from .function import read_master_file
 
-            # Process the master file (this is the blocking operation)
-            # processed_requests = process_master_file(current_requests,self.master_data)
             processed_requests = read_master_file(self.master_data)
 
             # Also compute incomplete requests and opportunities in background
@@ -245,7 +229,7 @@ class Collect_Observations(Entity):
             )
             end_time = _time.perf_counter()
             computation_time = end_time - start_time
-            logger.info(f"Opportunity computation time: {computation_time:.2f} seconds")
+            logger.info("Opportunity computation time: %.2f seconds", computation_time)
 
             # Thread-safe update of the result
             with self.master_file_lock:
@@ -472,3 +456,51 @@ class SatelliteVisualization(Entity):
         #     )
 
         # logger.info("Satellite position published successfully.")
+
+class RandomValueGenerator(Observer):
+    """
+    This object class inherits from Observer and generates random values each day.
+    """
+    def __init__(self, app):
+        self.app = app
+
+    def detect_level_change(self, new_value, old_value, level):
+        """
+        Detect a change in the level of the time value (day, week, or month).
+
+        Args:
+            new_value (datetime): New time value
+            old_value (datetime): Old time value
+            level (str): Level of time value to detect changes ('day', 'week', or 'month')
+
+        Returns:
+            bool: True if the level has changed, False otherwise
+        """
+        if level == "day":
+            return new_value.date() != old_value.date()
+        elif level == "week":
+            return new_value.isocalendar()[1] != old_value.isocalendar()[1]
+        elif level == "month":
+            return new_value.month != old_value.month
+        else:
+            raise ValueError("Invalid level. Choose from 'day', 'week', or 'month'.")
+    
+    def on_change(self, source, property_name, old_value, new_value):
+        """
+        Callback when simulation properties change.
+
+        Args:
+            source: The object that changed
+            property_name (str): Name of the property that changed
+            old_value: Previous value
+            new_value: New value
+        """
+        # Only respond to time changes when simulation is executing
+        if (
+            property_name == Simulator.PROPERTY_TIME
+            and source.app.simulator.get_mode() == Mode.EXECUTING
+            and new_value is not None
+            and self.detect_level_change(new_value, old_value, "day")
+        ):
+            # Update the seed value based on the new day
+            source.seed_value = int(new_value.strftime("%Y%m%d"))

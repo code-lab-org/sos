@@ -27,10 +27,36 @@ from tatc.utils import swath_width_to_field_of_regard, swath_width_to_field_of_v
 logger = logging.getLogger(__name__)
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
-
 from src.simulator.constellation_config_files.schemas import VectorLayer
 from src.sos_tools.aws_utils import AWSUtils
 from src.sos_tools.data_utils import DataUtils
+
+
+# Function for random value generation each day
+def Daily_random_value(
+    seed_value: int,
+    min_value: float,
+    max_value: float,
+    rng_cache: dict
+) -> float:
+    """
+    Generate a random value between min_value and max_value using a given seed.
+    Uses an external RNG cache so the same RNG can be reused across calls.
+    
+    Args:
+        seed_value (int): Seed value (e.g., date-based seed).
+        min_value (float): Minimum possible random value.
+        max_value (float): Maximum possible random value.
+        rng_cache (dict): Dictionary that stores RNGs for reuse.
+    
+    Returns:
+        float: A random number between min_value and max_value.
+    """
+    if seed_value not in rng_cache:
+        rng_cache[seed_value] = np.random.default_rng(seed_value)
+
+    rng = rng_cache[seed_value]
+    return rng.uniform(min_value, max_value)
 
 
 def Snowglobe_constellation(start: datetime) -> List[Satellite]:
@@ -102,7 +128,6 @@ def compute_opportunity(
     ]
 
     if filtered_requests:
-        # column_names = list(filtered_requests[0].keys())
 
         def collect_observations_for_request(request):
             try:
@@ -126,16 +151,8 @@ def compute_opportunity(
         else:
             observation_results = pd.DataFrame()
 
-        # observation_results = pd.concat(
-        #     [
-        #         collect_multi_observations(request["point"], const, time, end)
-        #         for request in filtered_requests
-        #     ],
-        #     ignore_index=True,
-        # ).sort_values(by="epoch", ascending=True)
-
         if observation_results is not None and not observation_results.empty:
-            # logger.info(f"Observation opportunity exist{time + duration}")
+
             id_to_eta = {
                 request["point"].id: request["planner_final_eta"]
                 for request in filtered_requests
@@ -143,10 +160,7 @@ def compute_opportunity(
             observation_results["planner_final_eta"] = observation_results[
                 "point_id"
             ].map(id_to_eta)
-            # observations = pd.concat(observation_results, ignore_index=True).sort_values(by="epoch", ascending=True)
-            # end_time = _time.perf_counter()
-            # computation_time = end_time - start_time
-            # logger.info(f"Observation opportunity computation time: {computation_time:.2f} seconds")
+
             return observation_results
         return None
     else:
@@ -158,10 +172,7 @@ def compute_opportunity(
 
 def filter_and_sort_observations(df, sim_time, incomplete_ids, time_step_constr):
 
-    # logger.debug(
-    #     f"Filtering and sorting observations, type of df is {type(df)}, length of df is {len(df)}"
-    # )
-    # Filter for observations with incomplete simulation status
+
     df = df[df["point_id"].isin(incomplete_ids)]
     # Ensure sim_time is timezone-aware and same tz as df
     if df["epoch"].dt.tz is not None and sim_time.tzinfo is None:
@@ -169,15 +180,9 @@ def filter_and_sort_observations(df, sim_time, incomplete_ids, time_step_constr)
 
     # Step 1: Filter for observations within 1 minute of simulation time
     time_step_later = sim_time + time_step_constr
-    # logger.debug(
-    #     f"Filtering observations, sim_time: {sim_time}, time_step_later: {time_step_later}, type of sim_time is {type(sim_time)}, type of time_step_later is {type(time_step_later)}"
-    # )
     mask = (df["epoch"] >= sim_time) & (df["epoch"] <= time_step_later)
     filtered = df[mask]
 
-    # logger.debug(
-    #     f"Filtered observations, type of filtered is {type(filtered)}, length of filtered is {len(filtered)}"
-    # )
     # Step 2: Sort by planner_final_eta descending
     sorted_filtered = filtered.sort_values(by="planner_final_eta", ascending=False)
     logger.debug(
@@ -200,12 +205,8 @@ def compute_ground_track_and_format(
     Returns:
         Geometry: The ground track as a Shapely geometry object.
     """
-    # logger.info(
-    #     f"Computing ground track for {sat_object.name} at {observation_time}, type of observation time is {type(observation_time)}"
-    # )
     observation_time = observation_time.replace(tzinfo=timezone.utc)
     results = collect_ground_track(sat_object, [observation_time], crs="spice")
-    # logger.info(f"Length of results: {len(results)}, Type of results: {type(results)}")
     return results["geometry"].iloc[0]
 
 
@@ -218,11 +219,7 @@ def read_master_file(request_data=None) -> List[dict]:
     logger.info("Reading master file")
     # Computation time of this function
     start_time = _time.perf_counter()
-    # logger.info(f"Type of request_data: {type(request_data)}")
-    # logger.info(f"Request data :{request_data}")
-    # output_filename = "outputs/master.geojson"
     if request_data is not None:
-        # request_data = gpd.read_file(output_filename)
         request_points = request_data.apply(
             lambda r: {
                 "point": Point(
@@ -251,255 +248,10 @@ def read_master_file(request_data=None) -> List[dict]:
 
     end_time = _time.perf_counter()
 
-    # end_time = t.time()
     # Calculate the total time taken
     computation_time = end_time - start_time
     logger.info(f"Reading master file time: {computation_time:.2f} seconds")
     return request_points
-
-
-# this function is triggered by scenario time interval callback, it writes the daily output to a geojson file
-# def _write_back_to_appender_impl(thread_data):
-#     """
-#     Internal implementation of write_back_to_appender that does the actual work.
-#     This runs in a background thread to avoid blocking the simulation.
-
-#     Args:
-#         thread_data (dict): Dictionary containing captured data from the main thread
-#     """
-#     logger.info("write_back_to_appender thread started.")
-#     # Monotonic timer (avoid shadowing by aliasing time as _time)
-#     _start = _time.perf_counter()
-
-#     # Extract data from thread_data
-#     requests = thread_data["requests"]
-#     master_data = thread_data["master_data"]
-#     app_name = thread_data["app_name"]
-#     sim_time = thread_data["sim_time"]
-#     callback_time = thread_data["callback_time"]
-#     source = thread_data.get("source")
-#     enable_uploads = thread_data.get(
-#         "enable_uploads", True
-#     )  # Default to True for backward compatibility
-
-#     logger.info(
-#         f"Background thread starting with {len(requests)} requests, app_name: {app_name}, sim_time: {sim_time}"
-#     )
-
-#     # Establish connection to S3
-#     s3 = AWSUtils().client
-#     output_directory = os.path.join("outputs", app_name)
-#     data_utils = DataUtils()
-#     data_utils.create_directories([output_directory])
-
-#     logger.info(
-#         f"Checking if appender function is reading the requests: {len(requests)}, type: {type(requests)}, callback_time: {callback_time}, sim_time: {sim_time}"
-#     )
-
-#     try:
-#         # Build DataFrame of updated master requests
-#         appender_data = process_master_file(requests, master_data)
-#         logger.info(f"Processed master file, got {len(appender_data)} entries")
-
-#         selected_json_data = pd.DataFrame(appender_data)
-#         logger.info(f"Created DataFrame with shape: {selected_json_data.shape}")
-
-#         # Vectorized WKT parsing for performance
-#         if "simulator_polygon_groundtrack" in selected_json_data.columns:
-#             col = selected_json_data["simulator_polygon_groundtrack"]
-#             if not col.empty:
-#                 mask = col.apply(lambda v: isinstance(v, str))
-#                 if mask.any():
-#                     selected_json_data.loc[mask, "simulator_polygon_groundtrack"] = (
-#                         gpd.GeoSeries.from_wkt(col.loc[mask].astype(str))
-#                     )
-
-#         gdf = gpd.GeoDataFrame(
-#             selected_json_data, geometry="simulator_polygon_groundtrack"
-#         )
-#         logger.info(f"Created GeoDataFrame with shape: {gdf.shape}")
-
-#         # Write master file without index to reduce IO
-#         gdf.to_file("outputs/master.geojson", driver="GeoJSON", index=False)
-#         logger.info(f"Wrote master.geojson with {len(gdf)} records")
-
-#         logger.info(f"{app_name} sending message.")
-#         date_sim_time = sim_time
-#         date_sim = date_sim_time.strftime("%Y%m%d")
-
-#         # Ensure datetime dtype only if needed
-#         if (
-#             "simulator_completion_date" in gdf.columns
-#             and not pd.api.types.is_datetime64_any_dtype(
-#                 gdf["simulator_completion_date"]
-#             )
-#         ):
-#             gdf["simulator_completion_date"] = pd.to_datetime(
-#                 gdf["simulator_completion_date"], errors="coerce"
-#             )
-
-#         # Filter for the current simulation date
-#         daily_gdf_filtered = gdf[
-#             gdf["simulator_completion_date"].dt.date == sim_time.date()
-#         ]
-
-#         logger.info(
-#             f"Filtered daily data: {len(daily_gdf_filtered)} records for date {sim_time.date()}"
-#         )
-
-#         current_simulation_date = os.path.join(
-#             output_directory, str(date_sim_time.date())
-#         )
-#         data_utils.create_directories([current_simulation_date])
-#         output_file = os.path.join(
-#             current_simulation_date, f"simulator_output_{date_sim}.geojson"
-#         )
-#         daily_gdf_filtered.to_file(output_file, index=False)
-#         logger.info(f"Wrote daily file: {output_file}")
-
-#         # Upload to S3 only if uploads are enabled
-#         if enable_uploads:
-#             logger.info(f"Uploading file to S3: {output_file}")
-#             # Use threaded multipart upload for speed
-#             upload_cfg = TransferConfig(
-#                 multipart_threshold=8 * 1024 * 1024,
-#                 multipart_chunksize=8 * 1024 * 1024,
-#                 max_concurrency=32,
-#                 use_threads=True,
-#             )
-#             s3.upload_file(
-#                 Bucket="snow-observing-systems",
-#                 Key=output_file,
-#                 Filename=output_file,
-#                 Config=upload_cfg,
-#             )
-#             logger.info(f"Uploaded to S3: {output_file}")
-#         else:
-#             logger.info(f"Upload skipped (uploads disabled): {output_file}")
-
-#         daily_gdf_filtered = daily_gdf_filtered[
-#         [
-#             "simulator_id",
-#             "simulator_simulation_status",
-#             "simulator_completion_date",
-#             "simulator_satellite",
-#             "simulator_polygon_groundtrack"
-#         ]
-#         ]
-#         daily_gdf_filtered["simulator_completion_date"] = daily_gdf_filtered["simulator_completion_date"].astype(str)
-
-#         selected_json_data = daily_gdf_filtered.to_json()
-#         source.app.send_message(
-#             app_name,
-#             "simulator_daily",  # ["master", "selected"],
-#             VectorLayer(vector_layer=selected_json_data).model_dump_json()
-#         )
-
-#         logger.info("Simulator sent message to appender")
-
-#         elapsed = _time.perf_counter() - _start
-#         logger.info(f"write_back_to_appender completed in {elapsed:.2f} seconds")
-
-#     except Exception as e:
-#         elapsed = _time.perf_counter() - _start
-#         logger.error(
-#             f"write_back_to_appender failed after {elapsed:.2f} seconds: {e}",
-#             exc_info=True,
-#         )
-
-
-# def write_back_to_appender(source, time):
-#     """
-#     Write the processed data back to the appender and upload it to S3.
-#     This function runs the actual work in a background thread to avoid blocking the simulation.
-
-#     Args:
-#         source: The source object containing the data to be processed.
-#         time (datetime): The time at which to write back the data.
-#     """
-#     # Capture the current state of source.requests to avoid race conditions
-#     # Make a deep copy of the requests list to ensure thread safety
-#     import copy
-
-#     captured_requests = copy.deepcopy(source.requests)
-#     captured_app_name = source.app.app_name
-#     captured_sim_time = source.app.simulator._time
-#     master_data = copy.deepcopy(source.master_data)
-
-#     logger.info(
-#         f"Capturing data for background thread: {len(captured_requests)} requests, sim_time: {captured_sim_time}"
-#     )
-
-#     # Create a simple data container to pass to the thread
-#     thread_data = {
-#         "requests": captured_requests,
-#         "app_name": captured_app_name,
-#         "sim_time": captured_sim_time,
-#         "master_data": master_data,
-#         "callback_time": time,
-#         "source": source,
-#         "enable_uploads": getattr(
-#             source, "enable_uploads", True
-#         ),  # Default to True for backward compatibility
-#     }
-
-#     logger.info(f"Thread data prepared, length of requests: {len(thread_data['requests'])}")
-
-#     # Create a daemon thread so it doesn't prevent program shutdown
-#     thread = threading.Thread(
-#         target=_write_back_to_appender_impl,
-#         args=(thread_data,),
-#         daemon=True,
-#         name=f"write_back_to_appender-{time.strftime('%Y%m%d-%H%M%S')}",
-#     )
-
-#     logger.info(f"Starting write_back_to_appender in background thread for time {time}")
-#     thread.start()
-
-    # Return immediately - don't wait for the thread to complete
-    # This allows the simulation to continue without blocking
-
-
-# def process_master_file(existing_request,master_data) -> List[dict]:
-#     """
-#     Process the master file and update the existing requests with the new data.
-#     Args:
-#         existing_request (List[dict]): The existing requests to be updated.
-#     Returns:
-#         List[dict]: The updated list of requests.
-#     """
-#     logger.info(f"Processing master file.")
-#     # Computing computation time of this function
-#     start_time = _time.perf_counter()
-
-#     master = read_master_file(master_data)
-#     # Computation time of master_processed
-#     master_processed_start = _time.perf_counter()
-#     master_processed = [
-#         request
-#         for request in master
-#         if request["simulator_simulation_status"] == "Completed"
-#     ]
-#     master_processed_end = _time.perf_counter()
-#     logger.info(f"Processed master simulation status file in {master_processed_end - master_processed_start:.2f} seconds.")
-
-#     master_unprocessed = [
-#         request for request in master if request["simulator_simulation_status"] is None
-#     ]
-#     # Update unprocessed master entries with latest fields from existing_request by point match
-#     for unprocessed_request in master_unprocessed:
-#         for request in existing_request:
-#             if request["point"] == unprocessed_request["point"]:
-#                 for key, value in request.items():
-#                     unprocessed_request[key] = value
-
-#     end_time = _time.perf_counter()
-#     computation_time = end_time - start_time
-#     logger.info(f"Processed master file in {computation_time:.2f} seconds.")
-
-#     # Return the combined list of processed and unprocessed requests
-#     return master_processed + master_unprocessed
-
 
 def convert_to_vector_layer_format(visual_requests):
     """
@@ -615,6 +367,8 @@ def _write_back_to_appender_impl(thread_data):
     logger.info("write_back_to_appender thread started.")
     # Monotonic timer (avoid shadowing by aliasing time as _time)
     _start = _time.perf_counter()
+    # Computation time for unpacking thread data
+    start_time_thread = _time.perf_counter()
 
     # Extract data from thread_data
     requests = thread_data["requests"]
@@ -627,9 +381,15 @@ def _write_back_to_appender_impl(thread_data):
         "enable_uploads", True
     )  # Default to True for backward compatibility
 
+    end_time_thread = _time.perf_counter()
+    logger.info(f"Thread unpacking time: {end_time_thread - start_time_thread:.2f} seconds.")
+
     logger.info(
         f"Background thread starting with {len(requests)} requests, app_name: {app_name}, sim_time: {sim_time}"
     )
+
+    # computation time for S3 connection and directory setup
+    start_time_setup = _time.perf_counter()
 
     # Establish connection to S3
     s3 = AWSUtils().client
@@ -637,46 +397,25 @@ def _write_back_to_appender_impl(thread_data):
     data_utils = DataUtils()
     data_utils.create_directories([output_directory])
 
+    end_time_setup = _time.perf_counter()
+    logger.info(f"S3 connection and directory setup time: {end_time_setup - start_time_setup:.2f} seconds.")
+
     logger.info(
         f"Checking if appender function is reading the requests: {len(requests)}, type: {type(requests)}, callback_time: {callback_time}, sim_time: {sim_time}"
     )
 
     try:
         # # Build DataFrame of updated master requests
-        # appender_data = process_master_file(requests, master_data)
-        # logger.info(f"Processed master file, got {len(appender_data)} entries")
-
         # computation time of this function
         start_time_gdf = _time.perf_counter()
-
         selected_data = pd.DataFrame(requests)
         selected_data = selected_data.drop(columns=["point"])
-        logger.info(f"Selected json data column dtypes: {selected_data.dtypes}")
-        # .to_json(orient="records")
-        # logger.info(f"Created DataFrame with shape: {selected_data.shape}")
-
-        # # Vectorized WKT parsing for performance
-        # if "simulator_polygon_groundtrack" in selected_data.columns:
-        #     col = selected_data["simulator_polygon_groundtrack"]
-        #     if not col.empty:
-        #         mask = col.apply(lambda v: isinstance(v, str))
-        #         if mask.any():
-        #             selected_data.loc[mask, "simulator_polygon_groundtrack"] = (
-        #                 gpd.GeoSeries.from_wkt(col.loc[mask].astype(str))
-        #             )
-
         gdf = gpd.GeoDataFrame(
             selected_data,
             geometry="simulator_polygon_groundtrack",
             crs="EPSG:4326"
         )
-        # logger.info(f"Created GeoDataFrame with shape: {gdf.shape}")
 
-        # # Write master file without index to reduce IO
-        # gdf.to_file("outputs/master.geojson", driver="GeoJSON", index=False)
-        # logger.info(f"Wrote master.geojson with {len(gdf)} records")
-
-        # logger.info(f"{app_name} sending message.")
         date_sim_time = sim_time
         date_sim = sim_time.strftime("%Y%m%d")
 
@@ -697,7 +436,9 @@ def _write_back_to_appender_impl(thread_data):
         ]
 
         logger.info(
-            f"Filtered daily data: {len(daily_gdf_filtered)} records for date {sim_time.date()}"
+            "Filtered daily data: %s records for date %s",
+            len(daily_gdf_filtered),
+            sim_time.date()
         )
 
         current_simulation_date = os.path.join(

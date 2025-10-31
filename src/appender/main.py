@@ -39,8 +39,6 @@ class Environment(Observer):
         self.set_expiration = set_expiration
         self.expiration_time = expiration_time
 
-        # logger.info(f"Environment initialized with set_expiration={self.set_expiration} and expiration_time={self.expiration_time}")
-
         # Flag to control S3 uploads - check environment variable if not explicitly set
         if enable_uploads is None:
             self.enable_uploads = os.environ.get("ENABLE_UPLOADS", "true").lower() in (
@@ -85,16 +83,15 @@ class Environment(Observer):
         """
         gdf["simulator_simulation_status"] = pd.Series(dtype="string")
         gdf["simulator_completion_date"] = pd.NaT 
-        # logger.info(f"Self.set_expiration is {self.set_expiration} and type is {type(self.set_expiration)}")
+        
 
-        if self.set_expiration:         
-            logger.info(f"Setting expiration date with expiration time of {self.expiration_time} days")
+        if self.set_expiration:
+            logger.info(f"Setting expiration date with expiration time of %s days", self.expiration_time)
             gdf["simulator_expiration_date"] = pd.to_datetime(
                 gdf["planner_time"], utc=True
             ) + timedelta(days=int(self.expiration_time))
-        else:
-            
-            logger.info(f"Expiration time not set, setting expiration date as infinite (future date)")
+        else:            
+            logger.info("Expiration time not set setting expiration date as infinite (future date)")
             gdf["simulator_expiration_date"] = pd.Timestamp.max.tz_localize("UTC")
 
         gdf["simulator_expiration_status"] = pd.Series(dtype="string")
@@ -103,16 +100,16 @@ class Environment(Observer):
         gdf["planner_latitude"] = gdf["planner_centroid"].y
         gdf["planner_longitude"] = gdf["planner_centroid"].x
         gdf["planner_centroid"] = gdf["planner_centroid"].to_wkt()
-        logger.info(f"Computing simulator expiration status")
-        current_sim_time = self.app.simulator._time  # Must be datetime
+        
+        # current_sim_time = self.app.simulator._time  # Must be datetime
+        current_sim_time = self.app.simulator.get_time()
         if isinstance(current_sim_time, (int, float)):
             current_sim_time = datetime.fromtimestamp(current_sim_time)
         gdf["simulator_expiration_status"] = np.where(
             gdf["simulator_expiration_date"].dt.date < current_sim_time.date(),
             "expired",
             "active"
-        )
-        logger.info(f"Converting simulator expiration date to string")
+        )       
         gdf["simulator_expiration_date"] = gdf["simulator_expiration_date"].astype(str)
 
         return gdf
@@ -209,14 +206,10 @@ class Environment(Observer):
         k = gpd.GeoDataFrame.from_features(
             json.loads(data.vector_layer)["features"], crs="EPSG:4326"
         )
-
-        # logger.info(f"Message body successfully converted to GeoDataFrame. {type(k)}")
+        logger.info("Conversion to GeoDataFrame completed")
         return k
 
-        # return gpd.GeoDataFrame.from_features(
-        #     json.loads(data.vector_layer)["features"], crs="EPSG:4326" )
 
-        # logger.info("Message body successfully converted to GeoDataFrame.")
 
     def on_planner(self, ch, method, properties, body):
         """
@@ -245,7 +238,7 @@ class Environment(Observer):
         self.master_gdf = pd.concat(self.master_components, ignore_index=True)
         self.remove_duplicates()
         self.master_gdf = self.master_gdf.sort_values(by="simulator_id").reset_index(drop=True)
-        date = self.app.simulator._time
+        date = self.app.simulator.get_time()
         date_new_format = str(date.date()).replace("-", "")
         self.current_simulation_date = os.path.join(
             self.output_directory, str(date.date())
@@ -261,7 +254,7 @@ class Environment(Observer):
 
         # Upload to S3 only if uploads are enabled
         if self.enable_uploads:
-            logger.info(f"Uploading file to S3: {output_file}")
+            logger.info("Uploading file to S3: %s", output_file)
             s3.upload_file(
                 Bucket="snow-observing-systems",
                 Key=output_file,
@@ -269,7 +262,7 @@ class Environment(Observer):
                 Config=TransferConfig(use_threads=False),
             )
         else:
-            logger.info(f"Upload skipped (uploads disabled): {output_file}")
+            logger.info("Upload skipped (uploads disabled): %s", output_file)
 
         self.master_gdf.to_file("outputs/master.geojson", driver="GeoJSON")
         logger.info("Master geosjon file created")
@@ -283,8 +276,7 @@ class Environment(Observer):
         else:
             filtered_gdf = self.master_gdf
 
-        logger.info(f"Length of filtered gdf: {len(filtered_gdf)}")
-        logger.info(f"Data type pd dataframe all columns {filtered_gdf.dtypes}")
+        logger.info("Filtered gdf based on expiration: %d", len(filtered_gdf))
 
         # selected_json_data = self.master_gdf.to_json()
         selected_json_data = filtered_gdf.to_json()
@@ -299,7 +291,7 @@ class Environment(Observer):
                 "selected",
                 VectorLayer(vector_layer=selected_json_data).model_dump_json(),
             )
-        logger.info(f"{self.app.app_name} sent message. at {self.app.simulator._time}")
+            logger.info("%s sent message. at %s", self.app.app_name, self.app.simulator.get_time())
 
     def on_simulator(self, ch, method, properties, body):
         """
@@ -314,39 +306,11 @@ class Environment(Observer):
         """
         logger.info("entering appender _on_simulator")
         component_gdf = self.message_to_geojson(body)
-        logger.info(f"Data type pd dataframe all columns {component_gdf.dtypes}")
-        # component_gdf['simulator_completion_time'] = component_gdf['simulator_completion_time'].apply(
-        #  lambda x: x.astimezone(pytz.UTC).strftime("%Y-%m-%d %H:%M:%S %Z") if isinstance(x, datetime) else str(x)
-        # )
-
-        # date = self.app.simulator._time
-        # date = date.date()
-        # date = str(date.date()).replace("-", "")
-        # logger.info(f"Date is {date}, type is {type(date)}")
-        # logger.info(f"sample data from component gdf {component_gdf.head()}")
-        # Filter the component gdf to get the data where "simulator_completion_date" is equal to the current date
-        # component_gdf["simulator_completion_date"] = pd.to_datetime(
-        #     component_gdf["simulator_completion_date"], errors="coerce"
-        # )
-        # logger.info(f"Date is {date}, type is {type(date)}")
-        # logger.info(f"Data type pd dataframe all columns {component_gdf.dtypes}")
-        # logger.info(f"Daily Simulator file saved at {self.app.simulator._time}")
-
+        
         if component_gdf.empty:
             logger.warning("Received empty message from simulator. Skipping update.")
             return
 
-        # # Select safe columns
-        # safe_cols = ["simulator_id", "simulator_simulation_status", "simulator_completion_date", "simulator_satellite"]
-        # safe_cols = [col for col in safe_cols if col in component_gdf.columns]
-        # component_gdf_clean = component_gdf[safe_cols].dropna(subset=["simulator_id"])
-        # component_gdf_clean['simulator_completion_date'] = pd.to_datetime(
-        #     component_gdf_clean['simulator_completion_date'], errors='coerce'
-        # )
-
-        # logger.info(f"Master_components type before update: {type(self.master_components)}")
-        # logger.info(f"Master_components length before update: {len(self.master_components)}")
-        # Computation time
         import time as time
         start_time = time.perf_counter()
 
@@ -356,11 +320,7 @@ class Environment(Observer):
         component_gdf.set_index("simulator_id", inplace=True)
         master_gdf_combined.update(component_gdf)
         master_gdf_combined.reset_index(inplace=True)
-        component_gdf.reset_index(inplace=True)
-        # Splitting back into list of geodataframes and updating self.master_components
-        # logger.info(f"Master_gdf_combined after update: {master_gdf_combined.head()}")
-        # logger.info(f"Columns in master_gdf_combined: {master_gdf_combined.columns}")
-        
+        component_gdf.reset_index(inplace=True)        
 
         self.master_components = [
             gpd.GeoDataFrame(
@@ -369,11 +329,9 @@ class Environment(Observer):
                 crs="EPSG:4326",
             ).reset_index(drop=True)
             for _, group in master_gdf_combined.groupby("planner_time")
-        ]
-
-        # logger.info(f"Updated master_components length: {len(self.master_components)}")        
+        ]              
         end_time = time.perf_counter()
-        logger.info(f"Time taken to update master_gdf_combined: {end_time - start_time} seconds")
+        logger.info("Time taken to update master_gdf_combined: %f seconds", end_time - start_time)
 
     def on_change(self, source, property_name, old_value, new_value):
         """
@@ -408,17 +366,9 @@ def main():
                               expiration_time = config.rc.application_configuration['expiration_time'][0]
                                 )
 
-    # add the environment observer to monitor simulation for switch to EXECUTING mode
-    # app.simulator.add_observer(Environment(app,
-    #                                        set_expiration = config.rc.application_configuration['set_expiration_time'][0],
-    #                                        expiration_time = config.rc.application_configuration['expiration_time'][0]
-    #                                        ))
-
     app.simulator.add_observer(environment)
-
     # add a shutdown observer to shut down after a single test case
     app.simulator.add_observer(ShutDownObserver(app))
-
     # start up the application on PREFIX, publish time status every 10 seconds of wallclock time
     app.start_up(
         config.rc.simulation_configuration.execution_parameters.general.prefix,
@@ -426,12 +376,9 @@ def main():
         True,
     )
 
-    # logger.info(f"Configuration parameter expiration time: {config.rc.application_configuration['set_expiration_time'][0]}")
-
     # Add a message callback to handle messages from the planner
     app.add_message_callback("planner", "selected_cells", environment.on_planner)
     app.add_message_callback("simulator", "simulator_daily", environment.on_simulator)
-    # app.add_message_callback("simulator", "selected_cells", environment.on_simulator)
 
     while True:
         pass
