@@ -1,5 +1,7 @@
 import logging
+import shutil
 import time
+import os
 import pandas as pd
 import subprocess
 
@@ -128,6 +130,10 @@ def main():
     app.add_message_callback("manager", "stop", environment.on_stop)
     logger.info("Exiting main function")
 
+    # Ensure run_output directory exists
+    run_output_base = "run_output"
+    os.makedirs(run_output_base, exist_ok=True)
+
     for idx, row in df.iterrows():
         if idx == 0:
             subprocess.run("docker-compose down", shell=True, check=True, capture_output=True, text=True)
@@ -138,6 +144,16 @@ def main():
         environment.send_execute_command(f"Process data for {row['Run']}")
         environment.wait_for_shutdown()
         logger.info("Completed processing for row: %s", row.to_dict())
+        # Copy the outputs folder with run number
+        # Copy the output folder
+        src_folder = "output"
+        dest_folder = os.path.join(run_output_base, f"run_{row['Run']}_output")
+
+        if os.path.exists(src_folder):
+            shutil.copytree(src_folder, dest_folder, dirs_exist_ok=True)
+            logger.info("Copied %s to %s", src_folder, dest_folder)
+        else:
+            logger.warning("Source folder '%s' not found; skipping copy.", src_folder)
 
 if __name__ == "__main__":
     main()
