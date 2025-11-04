@@ -1,0 +1,4 @@
+Run,time scale factor,budget,observation interval,constellation capacity,expiration
+1,144,50,30,50,2
+2,96,50,20,100,3
+3,48,50,10,50,10
