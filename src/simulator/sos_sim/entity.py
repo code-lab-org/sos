@@ -4,6 +4,7 @@ import logging
 import numpy as np
 import os
 import pandas as pd
+import sys
 import threading
 import time as _time
 
@@ -17,6 +18,7 @@ from skyfield.framelib import itrs
 from tatc.analysis import collect_ground_track, collect_orbit_track
 from tatc.schemas import Satellite as TATC_Satellite
 
+
 from .function import (  # update_requests,
     compute_ground_track_and_format,
     compute_opportunity,
@@ -26,6 +28,9 @@ from .function import (  # update_requests,
     message_to_geojson,
     Daily_random_value
 )
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+from src.sos_tools.aws_utils import AWSUtils
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +50,7 @@ class Collect_Observations(Entity):
         application: Application,
         const_capacity: float = 1.0,
         time_interval: float = 0.0,
+        s3_variable = None,
         enable_uploads=None
     ):
         super().__init__()
@@ -54,6 +60,12 @@ class Collect_Observations(Entity):
         self.app = application
         self.constellation_capacity = const_capacity
         self.time_between_observations = int(time_interval)
+
+        if s3_variable is not None:
+            self.s3_bucket = s3_variable
+        else:
+            self.s3_bucket = AWSUtils().client
+            
 
         # Flag to control S3 uploads - check environment variable if not explicitly set        
         if enable_uploads is None:
@@ -77,6 +89,7 @@ class Collect_Observations(Entity):
         self.seed_value = 0 # Seed value for daily random value generation
         self.rng_cache = {}  # Cache for daily random values
         self.daily_random_value = None  # Daily random value object
+        # self.sim_stop_flag = False
         # Threading state variables
         self.master_file_processing = False
         self.processed_requests = None
@@ -110,6 +123,7 @@ class Collect_Observations(Entity):
 
         super().tick(time_step)
         # Set all the tick operations here
+        # logger.info("Simulation stop time is %s and type is %s", self.sim_stop_time, type(self.sim_stop_time))
         self.observation_collected = None
         # Converting simulation time and last observation time to naive datetime for comparison
         t1 = self.get_time().replace(tzinfo=None)

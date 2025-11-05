@@ -392,12 +392,31 @@ def _write_back_to_appender_impl(thread_data):
     start_time_setup = _time.perf_counter()
 
     # Establish connection to S3
-    s3 = AWSUtils().client
+    start_time_s3 = _time.perf_counter()
+    # s3 = AWSUtils().client
+    s3 = source.s3_bucket  
+    try:  
+        response = s3.head_bucket(Bucket='snow-observing-systems')
+
+        if response["ResponseMetadata"]["HTTPStatusCode"] == 200:
+            logger.info("Connection is live")
+        else:
+            s3 = AWSUtils().client
+            source.s3_bucket = s3
+    except Exception as e:
+        logger.info("Reinitializing S3 client...")
+        source.s3_bucket = AWSUtils().client
+
+    # logger.info(f"s3 head bucket {response}")
+    end_time_s3 = _time.perf_counter()
+    logger.info(f"Contents of s3 variable {s3}")
+    logger.info("Computation time to establish s3 conenction %.2f seconds",end_time_s3-start_time_s3)
     output_directory = os.path.join("outputs", app_name)
+    start_time_utils = _time.perf_counter()
     data_utils = DataUtils()
     data_utils.create_directories([output_directory])
-
     end_time_setup = _time.perf_counter()
+    logger.info("Utils setup time %.2f seconds",end_time_setup - start_time_utils)
     logger.info(f"S3 connection and directory setup time: {end_time_setup - start_time_setup:.2f} seconds.")
 
     logger.info(
