@@ -168,25 +168,26 @@ class Environment(Observer):
         logger.info("Processing component GeoJSON successfully completed.")
         return component_gdf
 
-    def remove_duplicates(self):
+    def remove_duplicates(self,master_gdf):
         """
         Removes duplicate rows from the master GeoDataFrame.
 
         Returns:
             GeoDataFrame: The master GeoDataFrame with duplicates
         """
-        completed_rows = self.master_gdf[
-            self.master_gdf["simulator_simulation_status"] == "Completed"
+        completed_rows = master_gdf[
+            master_gdf["simulator_simulation_status"] == "Completed"
         ]
-        none_rows = self.master_gdf[
-            self.master_gdf["simulator_simulation_status"].isna()
+        none_rows = master_gdf[
+            master_gdf["simulator_simulation_status"].isna()
         ]
         most_recent_none_rows = none_rows.loc[
             none_rows.groupby("geometry")["planner_time"].idxmax()
         ]
-        self.master_gdf = pd.concat(
+        master_gdf = pd.concat(
             [completed_rows, most_recent_none_rows], ignore_index=True
         )
+        return master_gdf
 
     def message_to_geojson(self, body):
         """
@@ -236,7 +237,7 @@ class Environment(Observer):
         # min_value = component_gdf["simulator_id"].min()
         # max_value = component_gdf["simulator_id"].max()
         self.master_gdf = pd.concat(self.master_components, ignore_index=True)
-        self.remove_duplicates()
+        self.master_gdf = self.remove_duplicates(self.master_gdf)
         self.master_gdf = self.master_gdf.sort_values(by="simulator_id").reset_index(drop=True)
         date = self.app.simulator.get_time()
         date_new_format = str(date.date()).replace("-", "")
@@ -264,8 +265,8 @@ class Environment(Observer):
         else:
             logger.info("Upload skipped (uploads disabled): %s", output_file)
 
-        self.master_gdf.to_file("outputs/master.geojson", driver="GeoJSON")
-        logger.info("Master geosjon file created")
+        # self.master_gdf.to_file("outputs/master.geojson", driver="GeoJSON")
+        # logger.info("Master geosjon file created")
 
         # Filter based on expiration status, not equal to 'expired'
         # Filter if self.expiration is set else use master_gdf
@@ -320,8 +321,13 @@ class Environment(Observer):
         component_gdf.set_index("simulator_id", inplace=True)
         master_gdf_combined.update(component_gdf)
         master_gdf_combined.reset_index(inplace=True)
-        component_gdf.reset_index(inplace=True)        
-
+        component_gdf.reset_index(inplace=True)      
+        # Saving master geojson output file
+        master_gdf_combined = self.remove_duplicates(master_gdf_combined)
+        master_gdf_combined = master_gdf_combined.sort_values(by="simulator_id").reset_index(drop=True)
+        master_gdf_combined.to_file("outputs/master.geojson", driver="GeoJSON")
+        logger.info("Master geosjon file created") 
+        
         self.master_components = [
             gpd.GeoDataFrame(
                 group.sort_values("simulator_id"),  # sort within each group
