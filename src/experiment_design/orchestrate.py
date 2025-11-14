@@ -49,14 +49,14 @@ class OrchestrateObserver(Observer):
         # shutdown_received = self.shutdown_received
         print("Waiting for shutdown...")
         while not self.shutdown_received:
-            time.sleep(30)  # Sleep for 3 seconds before checking again
+            time.sleep(120)  # Sleep for 3 seconds before checking again
             logger.info("Still waiting for shutdown signal...")
         logger.info("Sleep complete, shutdown signal received.")
         self.shutdown_received = False
         logger.info("Setting docker compose down in nost environment.")
         subprocess.run("docker compose down", shell=True, check=True, capture_output=True, text=True)
         logger.info("Sleeping for 30 seconds to ensure proper shutdown.")
-        time.sleep(30)
+        time.sleep(10)
         print("Proceeding to next iteration.")
 
     # def update_yaml_config(self, config, row):
@@ -140,7 +140,7 @@ def main():
         if idx == 0:
             subprocess.run("docker compose down", shell=True, check=True, capture_output=True, text=True)
             logger.info("Sleeping for 30 seconds to ensure proper shutdown.")
-            time.sleep(30)
+            time.sleep(10)
         logger.info("Processing row: %s", row.to_dict())
         environment.update_yaml_config(config, row)
         environment.send_execute_command(f"Process data for {row['Run']}")
