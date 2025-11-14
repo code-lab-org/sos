@@ -428,7 +428,7 @@ def _write_back_to_appender_impl(thread_data):
         # computation time of this function
         start_time_gdf = _time.perf_counter()
         selected_data = pd.DataFrame(requests)
-        selected_data = selected_data.drop(columns=["point"])
+        selected_data = selected_data.drop(columns=["point"], errors="ignore")
         gdf = gpd.GeoDataFrame(
             selected_data,
             geometry="simulator_polygon_groundtrack",
