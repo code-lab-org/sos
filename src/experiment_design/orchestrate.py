@@ -4,6 +4,8 @@ import time
 import os
 import pandas as pd
 import subprocess
+import json
+import csv
 
 from nost_tools.application import Application
 from nost_tools.configuration import ConnectionConfig
@@ -39,7 +41,7 @@ class OrchestrateObserver(Observer):
 
     def send_execute_command(self, command: str):
         logger.info(f"Sending execute command: {command}")
-        subprocess.run("docker-compose up -d", shell=True, check=True, capture_output=True, text=True)
+        subprocess.run("docker compose up -d", shell=True, check=True, capture_output=True, text=True)
         # Add logic to send execute command
 
     def wait_for_shutdown(self):
@@ -47,12 +49,12 @@ class OrchestrateObserver(Observer):
         # shutdown_received = self.shutdown_received
         print("Waiting for shutdown...")
         while not self.shutdown_received:
-            time.sleep(3)  # Sleep for 3 seconds before checking again
+            time.sleep(30)  # Sleep for 3 seconds before checking again
             logger.info("Still waiting for shutdown signal...")
         logger.info("Sleep complete, shutdown signal received.")
         self.shutdown_received = False
         logger.info("Setting docker compose down in nost environment.")
-        subprocess.run("docker-compose down", shell=True, check=True, capture_output=True, text=True)
+        subprocess.run("docker compose down", shell=True, check=True, capture_output=True, text=True)
         logger.info("Sleeping for 30 seconds to ensure proper shutdown.")
         time.sleep(30)
         print("Proceeding to next iteration.")
@@ -136,7 +138,7 @@ def main():
 
     for idx, row in df.iterrows():
         if idx == 0:
-            subprocess.run("docker-compose down", shell=True, check=True, capture_output=True, text=True)
+            subprocess.run("docker compose down", shell=True, check=True, capture_output=True, text=True)
             logger.info("Sleeping for 30 seconds to ensure proper shutdown.")
             time.sleep(30)
         logger.info("Processing row: %s", row.to_dict())
@@ -146,7 +148,7 @@ def main():
         logger.info("Completed processing for row: %s", row.to_dict())
         # Copy the outputs folder with run number
         # Copy the output folder
-        src_folder = "output"
+        src_folder = "outputs"
         dest_folder = os.path.join(run_output_base, f"run_{row['Run']}_output")
 
         if os.path.exists(src_folder):
@@ -154,6 +156,36 @@ def main():
             logger.info("Copied %s to %s", src_folder, dest_folder)
         else:
             logger.warning("Source folder '%s' not found; skipping copy.", src_folder)
+
+        # Creating summary for the runs
+        geojson_path = os.path.join(dest_folder, "master.geojson")
+        csv_path = os.path.join(dest_folder, "simulation_config.csv")
+
+        if os.path.exists(geojson_path):
+            with open(geojson_path, encoding="utf-8") as f:
+                feats = json.load(f).get("features", [])
+            total = len(feats)
+            completed = [f for f in feats if f.get("properties", {}).get("simulator_simulation_status") == "Completed"]
+            eta_sum = sum(
+                f.get("properties", {}).get("planner_final_eta", 0)
+                for f in completed if isinstance(f.get("properties", {}).get("planner_final_eta"), (int, float))
+            )
+            avg_eta = eta_sum / len(completed) if completed else 0
+            logger.info("Total=%d Completed=%d ETA_Sum=%.2f", total, len(completed), eta_sum)
+
+            if os.path.exists(csv_path):
+                with open(csv_path, "a", newline="", encoding="utf-8") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(["summary", "total_records", total])
+                    writer.writerow(["summary", "completed_records", len(completed)])
+                    writer.writerow(["summary", "eta_sum", eta_sum])
+                    writer.writerow(["summary", "eta_avg", avg_eta])
+                logger.info("Appended summary rows to %s", csv_path)
+            else:
+                logger.warning("CSV '%s' not found; skipping append.", csv_path)
+        else:
+            logger.warning("GeoJSON '%s' not found; skipping processing.", geojson_path)
+
 
 if __name__ == "__main__":
     main()
