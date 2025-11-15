@@ -182,6 +182,7 @@ backup/
 **/.env
 .env
 simulation_config.csv
+outputs/simulation_config.csv
 
 # Ignore all env.js files anywhere in the repository
 **/env.js
