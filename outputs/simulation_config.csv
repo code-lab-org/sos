@@ -9,3 +9,4 @@ appender,set_expiration_time,True
 appender,expiration_time,10
 simulator,constellation_capacity,1
 simulator,observation_interval,10
+simulator,observation_interval,10

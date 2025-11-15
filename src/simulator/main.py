@@ -5,6 +5,8 @@ import logging
 from datetime import timedelta
 import os
 import sys
+import os
+import sys
 
 from nost_tools.application_utils import ShutDownObserver
 from nost_tools.configuration import ConnectionConfig
@@ -12,6 +14,8 @@ from nost_tools.managed_application import ManagedApplication
 from nost_tools.observer import ScenarioTimeIntervalCallback
 from sos_sim.entity import Collect_Observations, RandomValueGenerator
 from sos_sim.function import Snowglobe_constellation, write_back_to_appender
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+from src.sos_tools.aws_utils import AWSUtils
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 from src.sos_tools.aws_utils import AWSUtils
 
@@ -43,16 +47,21 @@ def main():
         time_interval=config.rc.application_configuration["observation_interval"][0],
         s3_variable=s3,
         # sim_stop_time=config.rc.simulation_configuration.execution_parameters.manager.sim_stop_time,
+        s3_variable=s3,
+        # sim_stop_time=config.rc.simulation_configuration.execution_parameters.manager.sim_stop_time,
         enable_uploads=None,  # Will check ENABLE_UPLOADS environment variable
     )    
 
     # Add observer classes to constellation's object class
+    entity.add_observer(RandomValueGenerator(app))   
     entity.add_observer(RandomValueGenerator(app))   
 
     # Add a ScenarioTimeIntervalCallback to write back to the appender every day
     entity.add_observer(
         ScenarioTimeIntervalCallback(write_back_to_appender, timedelta(days=1))
     )
+
+    app.simulator.add_entity(entity)
 
     app.simulator.add_entity(entity)
 
