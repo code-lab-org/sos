@@ -1972,7 +1972,7 @@ def main():
     app = ManagedApplication(app_name="planner")
 
     # Add the daily time scale updater observer
-    app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(seconds=5)))
+    app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(minutes=2)))
 
     # add the environment observer to monitor simulation for switch to EXECUTING mode
     app.simulator.add_observer(Environment(
