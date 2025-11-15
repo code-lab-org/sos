@@ -98,7 +98,7 @@ class OrchestrateObserver(Observer):
         # Configuration parameters
         yaml_data["execution"]["managed_applications"]["planner"]["configuration_parameters"]["budget"] = [int(row["budget"])]
         yaml_data["execution"]["managed_applications"]["simulator"]["configuration_parameters"]["observation_interval"] = [int(row["observation interval"])]
-        yaml_data["execution"]["managed_applications"]["simulator"]["configuration_parameters"]["constellation_capacity"] = [int(row["constellation capacity"])]
+        yaml_data["execution"]["managed_applications"]["simulator"]["configuration_parameters"]["constellation_capacity"] = [float(row["constellation capacity"])]
         yaml_data["execution"]["managed_applications"]["appender"]["configuration_parameters"]["expiration_time"] = [int(row["expiration"])]
 
         # --- Save updated YAML ---
