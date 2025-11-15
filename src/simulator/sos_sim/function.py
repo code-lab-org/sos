@@ -509,14 +509,19 @@ def _write_back_to_appender_impl(thread_data):
         ]
         daily_gdf_filtered["simulator_completion_date"] = daily_gdf_filtered["simulator_completion_date"].astype(str)
 
-        selected_json_data = daily_gdf_filtered.to_json()
-        source.app.send_message(
-            app_name,
-            "simulator_daily",  # ["master", "selected"],
-            VectorLayer(vector_layer=selected_json_data).model_dump_json()
-        )
 
-        logger.info("Simulator sent message to appender")
+        if not daily_gdf_filtered.empty:
+            logger.info(f"Preparing to send message to appender with {len(daily_gdf_filtered)} records.")
+            selected_json_data = daily_gdf_filtered.to_json()
+            source.app.send_message(
+                app_name,
+                "simulator_daily",  # ["master", "selected"],
+                VectorLayer(vector_layer=selected_json_data).model_dump_json()
+            )            
+            logger.info("Simulator sent message to appender")
+        else:
+            logger.info("No records to send to appender for this simulation date.")
+
 
         elapsed = _time.perf_counter() - _start
         elapsed_appender = _time.perf_counter() - start_time_appender

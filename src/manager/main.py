@@ -2,6 +2,7 @@ from datetime import timedelta
 import logging
 import pandas as pd
 from datetime import datetime, timedelta
+import os
 
 from nost_tools.application_utils import ShutDownObserver
 from nost_tools.configuration import ConnectionConfig
@@ -62,8 +63,18 @@ if __name__ == "__main__":
     # Create the DataFrame
     df = pd.DataFrame(config_rows)
 
-    # Save to CSV if needed
-    df.to_csv("outputs/simulation_config.csv", index=False)
+    # Ensure the outputs directory exists
+    OUTPUT_DIRECTORY = "outputs"
+    os.makedirs(OUTPUT_DIRECTORY, exist_ok=True)
+
+    # Save DataFrame to CSV inside outputs folder
+    output_path = os.path.join(OUTPUT_DIRECTORY, "simulation_config.csv")
+    df.to_csv(output_path, index=False)
+
+    print(f"Saved simulation config to: {output_path}")
+
+    # # Save to CSV if needed
+    # df.to_csv("outputs/simulation_config.csv", index=False)
 
     # create the manager application from the template in the tools library
     manager = Manager()
