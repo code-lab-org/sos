@@ -409,7 +409,7 @@ def _write_back_to_appender_impl(thread_data):
 
     # logger.info(f"s3 head bucket {response}")
     end_time_s3 = _time.perf_counter()
-    logger.info(f"Contents of s3 variable {s3}")
+    # logger.info(f"Contents of s3 variable {s3}")
     logger.info("Computation time to establish s3 conenction %.2f seconds",end_time_s3-start_time_s3)
     output_directory = os.path.join("outputs", app_name)
     start_time_utils = _time.perf_counter()

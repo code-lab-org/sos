@@ -47,7 +47,7 @@ def main():
         time_interval=config.rc.application_configuration["observation_interval"][0],
         s3_variable=s3,
         # sim_stop_time=config.rc.simulation_configuration.execution_parameters.manager.sim_stop_time,
-        s3_variable=s3,
+        # s3_variable=s3,
         # sim_stop_time=config.rc.simulation_configuration.execution_parameters.manager.sim_stop_time,
         enable_uploads=None,  # Will check ENABLE_UPLOADS environment variable
     )    
