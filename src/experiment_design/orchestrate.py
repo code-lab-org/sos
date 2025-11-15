@@ -56,7 +56,7 @@ class OrchestrateObserver(Observer):
         logger.info("Setting docker compose down in nost environment.")
         subprocess.run("docker compose down", shell=True, check=True, capture_output=True, text=True)
         logger.info("Sleeping for 30 seconds to ensure proper shutdown.")
-        time.sleep(10)
+        time.sleep(30)
         print("Proceeding to next iteration.")
 
     # def update_yaml_config(self, config, row):
@@ -140,7 +140,7 @@ def main():
         if idx == 0:
             subprocess.run("docker compose down", shell=True, check=True, capture_output=True, text=True)
             logger.info("Sleeping for 30 seconds to ensure proper shutdown.")
-            time.sleep(10)
+            time.sleep(30)
         logger.info("Processing row: %s", row.to_dict())
         environment.update_yaml_config(config, row)
         environment.send_execute_command(f"Process data for {row['Run']}")
