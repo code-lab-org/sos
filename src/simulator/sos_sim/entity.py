@@ -7,7 +7,6 @@ import pandas as pd
 import sys
 import threading
 import time as _time
-
 from constellation_config_files.schemas import SatelliteStatus, VectorLayer
 from nost_tools import Application, Entity
 from nost_tools.simulator import Mode, Simulator
@@ -84,6 +83,7 @@ class Collect_Observations(Entity):
         self.possible_observations = None
         self.last_observation_time = None
         self.observation_collected = None
+        self.observation_collected_flag = False
         self.new_request_flag = False
         self.master_data = None
         self.seed_value = 0 # Seed value for daily random value generation
@@ -133,6 +133,7 @@ class Collect_Observations(Entity):
         if t1 > t2:
 
             if self.possible_observations is not None:
+                logger.info("Self.possible_observations length is %d", len(self.possible_observations))
 
                 self.observation_collected = filter_and_sort_observations(
                     self.possible_observations,
@@ -141,67 +142,72 @@ class Collect_Observations(Entity):
                     timedelta(seconds=self.time_between_observations),
                 )
 
-            if self.observation_collected is not None:
-                # Generate or retrieve the daily random value
-                # Generate and cache the random value for the new day
+                if self.observation_collected is not None:
+                    # Generate or retrieve the daily random value
+                    # Generate and cache the random value for the new day
 
-                self.daily_random_value = Daily_random_value(
-                    seed_value=self.seed_value,
-                    min_value=0.0,
-                    max_value=1.0,
-                    rng_cache=self.rng_cache
-                )
-                if (
-                    self.daily_random_value <= self.constellation_capacity
-                ):  
-                    # Simulate a x% chance of collecting an observation
-                    # Get the satellite that collected the observation
-                    satellite = self.constellation[
-                        self.observation_collected["satellite"]
-                    ]
-                    # Call the groundtrack function
-                    self.observation_collected["ground_track"] = (
-                        compute_ground_track_and_format(
-                            satellite, self.observation_collected["epoch"]
-                        )
+                    self.daily_random_value = Daily_random_value(
+                        seed_value=self.seed_value,
+                        min_value=0.0,
+                        max_value=1.0,
+                        rng_cache=self.rng_cache
                     )
-                    self.next_requests = self.requests.copy() if self.requests is not None else []
-                    logger.info("Updated next_requests with current requests, length is %d", len(self.next_requests) if self.next_requests is not None else 0   )
-                    # Update next_requests to reflect collected observation
-                    for row in self.next_requests:
-                        if row["point"].id == self.observation_collected["point_id"]:                            
-                            row["simulator_simulation_status"] = "Completed"
-                            row["simulator_completion_date"] = (
-                                self.observation_collected["epoch"]
+                    if (
+                        self.daily_random_value <= self.constellation_capacity
+                    ): 
+
+                        self.observation_collected_flag = True
+                        logger.info("Observation collected: %s", self.observation_collected) 
+                        # Simulate a x% chance of collecting an observation
+                        # Get the satellite that collected the observation
+                        satellite = self.constellation[
+                            self.observation_collected["satellite"]
+                        ]
+                        # Call the groundtrack function
+                        self.observation_collected["ground_track"] = (
+                            compute_ground_track_and_format(
+                                satellite, self.observation_collected["epoch"]
                             )
-                            row["simulator_satellite"] = self.observation_collected[
-                                "satellite"
-                            ]
-                            row["simulator_polygon_groundtrack"] = (
-                                self.observation_collected["ground_track"]
+                        )
+                        logger.info("self.rquest is %d", len(self.requests) if self.requests is not None else 0)
+                        self.next_requests = self.requests.copy() if self.requests is not None else []
+                        logger.info("Updated next_requests with current requests, length is %d", len(self.next_requests) if self.next_requests is not None else 0   )
+                        logger.info("self.rquest is %d", len(self.requests) if self.requests is not None else 0)
+                        # Update next_requests to reflect collected observation
+                        for row in self.next_requests:
+                            if row["point"].id == self.observation_collected["point_id"]:                            
+                                row["simulator_simulation_status"] = "Completed"
+                                row["simulator_completion_date"] = (
+                                    self.observation_collected["epoch"]
+                                )
+                                row["simulator_satellite"] = self.observation_collected[
+                                    "satellite"
+                                ]
+                                row["simulator_polygon_groundtrack"] = (
+                                    self.observation_collected["ground_track"]
+                                )
+
+                                self.last_observation_time = self.observation_collected[
+                                    "epoch"
+                                ]
+                                # Remove from incomplete_requests
+                                if row["point"].id in self.incomplete_requests:
+                                    self.incomplete_requests.remove(row["point"].id)
+
+                        # Visualization
+                        # write a function to convert the self.next request to json format to send to the cesium application
+                        # Execute if self. next_requests is not None
+
+                        if self.next_requests:
+                            vector_data_json = convert_to_vector_layer_format(
+                                self.next_requests
                             )
-
-                            self.last_observation_time = self.observation_collected[
-                                "epoch"
-                            ]
-                            # Remove from incomplete_requests
-                            if row["point"].id in self.incomplete_requests:
-                                self.incomplete_requests.remove(row["point"].id)
-
-                    # Visualization
-                    # write a function to convert the self.next request to json format to send to the cesium application
-                    # Execute if self. next_requests is not None
-
-                    if self.next_requests:
-                        vector_data_json = convert_to_vector_layer_format(
-                            self.next_requests
-                        )
-                        # Sending message to visualization
-                        self.app.send_message(
-                            self.app.app_name,
-                            "selected",
-                            VectorLayer(vector_layer=vector_data_json).model_dump_json(),
-                        )
+                            # Sending message to visualization
+                            self.app.send_message(
+                                self.app.app_name,
+                                "selected",
+                                VectorLayer(vector_layer=vector_data_json).model_dump_json(),
+                            )
                     # logger.info("(SELECTED) Publishing message successfully completed.")
                 # else:
                 #     self.observation_collected = None
@@ -251,6 +257,8 @@ class Collect_Observations(Entity):
             computation_time = end_time - start_time
             logger.info("Opportunity computation time: %.2f seconds", computation_time)
 
+            logger.info("Computed %d possible observations", len(possible_observations))
+
             # Thread-safe update of the result
             with self.master_file_lock:
                 self.processed_requests = processed_requests
@@ -281,9 +289,13 @@ class Collect_Observations(Entity):
 
         logger.info("Length of requests at tock: %d", len(self.requests) if self.requests is not None else 0)
         logger.info("Length of next_requests at tock: %d", len(self.next_requests) if self.next_requests is not None else 0)
+        logger.info("Master file processing status at tock: %s", self.master_file_processing)
         # logger.info("entering tock time")
-        if self.observation_collected is not None:
+        if self.observation_collected_flag:    
+            logger.info("Observation collected at tock: %s", self.observation_collected)    
             self.requests = self.next_requests
+            self.observation_collected_flag = False  # Reset the flag after updating
+            logger.info("Updated requests from next_requests at tock after observation collected)")
 
         logger.info("Length of requests after updating from next_requests at tock: %d", len(self.requests) if self.requests is not None else 0)
         
