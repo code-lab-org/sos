@@ -427,13 +427,56 @@ def _write_back_to_appender_impl(thread_data):
         # # Build DataFrame of updated master requests
         # computation time of this function
         start_time_gdf = _time.perf_counter()
-        selected_data = pd.DataFrame(requests)
-        selected_data = selected_data.drop(columns=["point"], errors="ignore")
-        gdf = gpd.GeoDataFrame(
-            selected_data,
-            geometry="simulator_polygon_groundtrack",
-            crs="EPSG:4326"
-        )
+
+        # Handle empty requests safely
+        if not requests:
+            print("No requests found — creating empty GeoDataFrame.")
+            
+            # Define the expected columns based on your simulator output schema
+            columns = [
+                "simulator_id",
+                "planner_time",
+                "planner_final_eta",
+                "planner_latitude",
+                "planner_longitude",
+                "simulator_expiration_date",
+                "simulator_expiration_status",
+                "simulator_simulation_status",
+                "simulator_completion_date",
+                "simulator_satellite",
+                "planner_geometry",
+            ]
+            
+            # Create an empty GeoDataFrame with correct structure and CRS
+            gdf = gpd.GeoDataFrame(
+                pd.DataFrame(columns=columns),
+                geometry=[],
+                crs="EPSG:4326"
+            )
+
+        else:
+            # Convert requests to DataFrame
+            selected_data = pd.DataFrame(requests)
+            
+            # Drop unused column if it exists
+            selected_data = selected_data.drop(columns=["point"], errors="ignore")
+
+            # Create GeoDataFrame from the selected data
+            gdf = gpd.GeoDataFrame(
+                selected_data,
+                geometry="simulator_polygon_groundtrack",  # adjust this if geometry column name differs
+                crs="EPSG:4326"
+            )
+
+        # selected_data = pd.DataFrame(requests)
+        # selected_data = selected_data.drop(columns=["point"], errors="ignore")
+        # # adding error handling if there are 0 records
+
+        # gdf = gpd.GeoDataFrame(
+        #     selected_data,
+        #     geometry="simulator_polygon_groundtrack",
+        #     crs="EPSG:4326"
+        # )
 
         date_sim_time = sim_time
         date_sim = sim_time.strftime("%Y%m%d")
@@ -498,19 +541,30 @@ def _write_back_to_appender_impl(thread_data):
         # Computation time for appender message
         start_time_appender = _time.perf_counter()
 
-        daily_gdf_filtered = daily_gdf_filtered[
-        [
-            "simulator_id",
-            "simulator_simulation_status",
-            "simulator_completion_date",
-            "simulator_satellite",
-            "simulator_polygon_groundtrack"
-        ]
-        ]
-        daily_gdf_filtered["simulator_completion_date"] = daily_gdf_filtered["simulator_completion_date"].astype(str)
-
+        # daily_gdf_filtered = daily_gdf_filtered[
+        # [
+        #     "simulator_id",
+        #     "simulator_simulation_status",
+        #     "simulator_completion_date",
+        #     "simulator_satellite",
+        #     "simulator_polygon_groundtrack"
+        # ]
+        # ]
+        # daily_gdf_filtered["simulator_completion_date"] = daily_gdf_filtered["simulator_completion_date"].astype(str)
 
         if not daily_gdf_filtered.empty:
+            
+            daily_gdf_filtered = daily_gdf_filtered[
+            [
+                "simulator_id",
+                "simulator_simulation_status",
+                "simulator_completion_date",
+                "simulator_satellite",
+                "simulator_polygon_groundtrack"
+            ]
+            ]
+            daily_gdf_filtered["simulator_completion_date"] = daily_gdf_filtered["simulator_completion_date"].astype(str)
+
             logger.info(f"Preparing to send message to appender with {len(daily_gdf_filtered)} records.")
             selected_json_data = daily_gdf_filtered.to_json()
             source.app.send_message(
@@ -550,6 +604,8 @@ def write_back_to_appender(source, time):
     import copy
 
     captured_requests = copy.deepcopy(source.requests)
+    logger.info("Source of requests is : %s", source)
+    logger.info(f"lenght of source requests being copied: {len(source.requests)}")
     captured_app_name = source.app.app_name
     captured_sim_time = source.app.simulator._time
     # master_data = copy.deepcopy(source.master_data)

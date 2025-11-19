@@ -119,7 +119,8 @@ class Collect_Observations(Entity):
     def on_appender(self):
         self.new_request_flag = True
 
-    def tick(self, time_step: timedelta):        
+    def tick(self, time_step: timedelta):  
+        logger.info("Entering tick time")      
 
         super().tick(time_step)
         # Set all the tick operations here
@@ -165,6 +166,7 @@ class Collect_Observations(Entity):
                         )
                     )
                     self.next_requests = self.requests.copy() if self.requests is not None else []
+                    logger.info("Updated next_requests with current requests, length is %d", len(self.next_requests) if self.next_requests is not None else 0   )
                     # Update next_requests to reflect collected observation
                     for row in self.next_requests:
                         if row["point"].id == self.observation_collected["point_id"]:                            
@@ -222,7 +224,11 @@ class Collect_Observations(Entity):
             # Import here to avoid circular imports in thread
             from .function import read_master_file
 
+            logger.info("Starting master file processing in background thread,length of self.master_data is %d", len(self.master_data))
+
             processed_requests = read_master_file(self.master_data)
+
+            logger.info("Master file read and processed with %d requests", len(processed_requests))
 
             # Also compute incomplete requests and opportunities in background
             incomplete_requests = [
@@ -251,6 +257,7 @@ class Collect_Observations(Entity):
                 self.incomplete_requests_processed = incomplete_requests
                 self.possible_observations_processed = possible_observations
                 self.master_file_processing = False
+                self.new_request_flag = False
 
             elapsed = _time.perf_counter() - _start
             logger.info(
@@ -271,25 +278,15 @@ class Collect_Observations(Entity):
     def tock(self):
         # logger.info("entering tock time")
         super().tock()
+
+        logger.info("Length of requests at tock: %d", len(self.requests) if self.requests is not None else 0)
+        logger.info("Length of next_requests at tock: %d", len(self.next_requests) if self.next_requests is not None else 0)
         # logger.info("entering tock time")
         if self.observation_collected is not None:
             self.requests = self.next_requests
 
-        # Check if background processing completed
-        if self.master_file_processing is False and self.processed_requests is not None:
-            with self.master_file_lock:
-                if self.processed_requests is not None:
-                    logger.info("Applying processed master file results")
-                    self.requests = self.processed_requests
-                    self.incomplete_requests = self.incomplete_requests_processed
-                    self.possible_observations = self.possible_observations_processed
-
-                    # Clear the processed results
-                    self.processed_requests = None
-                    self.incomplete_requests_processed = None
-                    self.possible_observations_processed = None
-                    self.new_request_flag = False
-
+        logger.info("Length of requests after updating from next_requests at tock: %d", len(self.requests) if self.requests is not None else 0)
+        
         # Start background processing if new requests arrived and not already processing
         if self.new_request_flag and not self.master_file_processing:
             logger.info(
@@ -322,8 +319,25 @@ class Collect_Observations(Entity):
             )
             thread.start()
 
-            # Don't reset new_request_flag here - let it be reset when processing completes
+            # Don't reset new_request_flag here - let it be reset when processing completes        
 
+        # Check if background processing completed
+        if self.master_file_processing is False and self.processed_requests is not None:
+            with self.master_file_lock:
+                if self.processed_requests is not None:
+                    logger.info("Applying processed master file results")
+                    self.requests = self.processed_requests
+                    logger.info("Number of requests after processing: %d", len(self.requests))
+                    self.incomplete_requests = self.incomplete_requests_processed
+                    self.possible_observations = self.possible_observations_processed
+
+                    # Clear the processed results
+                    self.processed_requests = None
+                    self.incomplete_requests_processed = None
+                    self.possible_observations_processed = None
+                    self.new_request_flag = False
+
+       
     def message_received_from_appender(self, ch, method, properties, body):
         logger.info(f"Message succesfully received at {self.app.simulator._time}")
         self.master_data = message_to_geojson(body)
