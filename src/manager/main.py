@@ -30,7 +30,7 @@ if __name__ == "__main__":
     # Convert strings to datetime
     sim_start = sim_start_time_str
     sim_stop = sim_stop_time_str
-    time_step = timedelta(seconds=1)  # from "0:00:01"
+    time_step = timedelta(seconds=5)  # from "0:00:01"
     sim_duration = sim_stop - sim_start
 
     # Application values
@@ -81,6 +81,13 @@ if __name__ == "__main__":
 
     # add a shutdown observer to shut down after a single test case
     manager.simulator.add_observer(ShutDownObserver(manager))
+
+    # logger.info("Starting Manager Application")
+    # logger.info(f"Simulation time step : {config.rc.simulation_configuration.execution_parameters.manager.time_step}")
+    # logger.info(f"time step :{time_step}")
+    # logger.info(f"Simulation time step : {config.rc.simulation_configuration.execution_parameters.manager.time_step}")
+    # logger.info(f"self.app.")
+   
 
     # start up the manager on PREFIX from config file
     manager.start_up(

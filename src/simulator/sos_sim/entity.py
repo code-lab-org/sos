@@ -25,7 +25,8 @@ from .function import (  # update_requests,
     convert_to_vector_layer_format,    
     filter_and_sort_observations,
     message_to_geojson,
-    Daily_random_value
+    Daily_random_value,
+    process_master_file
 )
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
@@ -48,7 +49,7 @@ class Collect_Observations(Entity):
         requests: List[dict],
         application: Application,
         const_capacity: float = 1.0,
-        time_interval: float = 0.0,
+        time_interval: float = 1.0,
         s3_variable = None,
         enable_uploads=None
     ):
@@ -120,7 +121,7 @@ class Collect_Observations(Entity):
         self.new_request_flag = True
 
     def tick(self, time_step: timedelta):  
-        logger.info("Entering tick time")      
+        # logger.info("Entering tick time")      
 
         super().tick(time_step)
         # Set all the tick operations here
@@ -133,7 +134,7 @@ class Collect_Observations(Entity):
         if t1 > t2:
 
             if self.possible_observations is not None:
-                logger.info("Self.possible_observations length is %d", len(self.possible_observations))
+                # logger.info("Self.possible_observations length is %d", len(self.possible_observations))
 
                 self.observation_collected = filter_and_sort_observations(
                     self.possible_observations,
@@ -157,7 +158,9 @@ class Collect_Observations(Entity):
                     ): 
 
                         self.observation_collected_flag = True
-                        logger.info("Observation collected: %s", self.observation_collected) 
+                        logger.info("Daily random value is %f", self.daily_random_value)
+                        logger.info("Constellation capacity is %f", self.constellation_capacity)
+                        logger.info("Observation collected") 
                         # Simulate a x% chance of collecting an observation
                         # Get the satellite that collected the observation
                         satellite = self.constellation[
@@ -169,10 +172,10 @@ class Collect_Observations(Entity):
                                 satellite, self.observation_collected["epoch"]
                             )
                         )
-                        logger.info("self.rquest is %d", len(self.requests) if self.requests is not None else 0)
+                        # logger.info("self.rquest is %d", len(self.requests) if self.requests is not None else 0)
                         self.next_requests = self.requests.copy() if self.requests is not None else []
-                        logger.info("Updated next_requests with current requests, length is %d", len(self.next_requests) if self.next_requests is not None else 0   )
-                        logger.info("self.rquest is %d", len(self.requests) if self.requests is not None else 0)
+                        # logger.info("Updated next_requests with current requests, length is %d", len(self.next_requests) if self.next_requests is not None else 0   )
+                        # logger.info("self.rquest is %d", len(self.requests) if self.requests is not None else 0)
                         # Update next_requests to reflect collected observation
                         for row in self.next_requests:
                             if row["point"].id == self.observation_collected["point_id"]:                            
@@ -224,6 +227,8 @@ class Collect_Observations(Entity):
         _start = _time.perf_counter() 
         current_time = thread_data["current_time"]
         constellation_values = thread_data["constellation_values"]
+        current_requests = thread_data["current_requests"]
+        logger.info("Current requests length in background thread is %d and type %s", len(current_requests), type(current_requests))
 
 
         try:
@@ -232,9 +237,9 @@ class Collect_Observations(Entity):
 
             logger.info("Starting master file processing in background thread,length of self.master_data is %d", len(self.master_data))
 
-            processed_requests = read_master_file(self.master_data)
+            processed_requests = process_master_file(current_requests)
 
-            logger.info("Master file read and processed with %d requests", len(processed_requests))
+            # logger.info("Master file read and processed with %d requests", len(processed_requests))
 
             # Also compute incomplete requests and opportunities in background
             incomplete_requests = [
@@ -257,7 +262,7 @@ class Collect_Observations(Entity):
             computation_time = end_time - start_time
             logger.info("Opportunity computation time: %.2f seconds", computation_time)
 
-            logger.info("Computed %d possible observations", len(possible_observations))
+            # logger.info("Computed %d possible observations", len(possible_observations))
 
             # Thread-safe update of the result
             with self.master_file_lock:
@@ -287,17 +292,17 @@ class Collect_Observations(Entity):
         # logger.info("entering tock time")
         super().tock()
 
-        logger.info("Length of requests at tock: %d", len(self.requests) if self.requests is not None else 0)
-        logger.info("Length of next_requests at tock: %d", len(self.next_requests) if self.next_requests is not None else 0)
-        logger.info("Master file processing status at tock: %s", self.master_file_processing)
+        # logger.info("Length of requests at tock: %d", len(self.requests) if self.requests is not None else 0)
+        # logger.info("Length of next_requests at tock: %d", len(self.next_requests) if self.next_requests is not None else 0)
+        # logger.info("Master file processing status at tock: %s", self.master_file_processing)
         # logger.info("entering tock time")
         if self.observation_collected_flag:    
-            logger.info("Observation collected at tock: %s", self.observation_collected)    
+            # logger.info("Observation collected at tock: %s", self.observation_collected)    
             self.requests = self.next_requests
             self.observation_collected_flag = False  # Reset the flag after updating
             logger.info("Updated requests from next_requests at tock after observation collected)")
 
-        logger.info("Length of requests after updating from next_requests at tock: %d", len(self.requests) if self.requests is not None else 0)
+        # logger.info("Length of requests after updating from next_requests at tock: %d", len(self.requests) if self.requests is not None else 0)
         
         # Start background processing if new requests arrived and not already processing
         if self.new_request_flag and not self.master_file_processing:
@@ -309,7 +314,7 @@ class Collect_Observations(Entity):
             import copy
 
             thread_data = {
-                "current_requests": copy.deepcopy(self.requests),
+                "current_requests": copy.deepcopy(self.master_data),
                 "current_time": self._time,
                 "constellation_values": list(self.constellation.values()),
             }

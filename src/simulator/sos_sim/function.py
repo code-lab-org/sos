@@ -172,7 +172,6 @@ def compute_opportunity(
 
 def filter_and_sort_observations(df, sim_time, incomplete_ids, time_step_constr):
 
-
     df = df[df["point_id"].isin(incomplete_ids)]
     # Ensure sim_time is timezone-aware and same tz as df
     if df["epoch"].dt.tz is not None and sim_time.tzinfo is None:
@@ -185,9 +184,9 @@ def filter_and_sort_observations(df, sim_time, incomplete_ids, time_step_constr)
 
     # Step 2: Sort by planner_final_eta descending
     sorted_filtered = filtered.sort_values(by="planner_final_eta", ascending=False)
-    logger.debug(
-        f"Sorted observations, type of sorted is {sorted_filtered}, length of sorted is {len(sorted_filtered)}"
-    )
+    # logger.info(
+    #     f"Sorted observations, type of sorted is {sorted_filtered}, length of sorted is {len(sorted_filtered)}"
+    # )
     return sorted_filtered.iloc[0] if not sorted_filtered.empty else None
 
 
@@ -252,6 +251,49 @@ def read_master_file(request_data=None) -> List[dict]:
     computation_time = end_time - start_time
     logger.info(f"Reading master file time: {computation_time:.2f} seconds")
     return request_points
+
+
+def process_master_file(existing_request) -> List[dict]:
+    """
+    Process the master file and update the existing requests with the new data.
+    Args:
+        existing_request (List[dict]): The existing requests to be updated.
+    Returns:
+        List[dict]: The updated list of requests.
+    """
+    logger.info("Processing master file")
+
+    master = read_master_file(existing_request)
+
+    # Split into processed and unprocessed
+    master_processed = [
+        req for req in master
+        if req.get("simulator_simulation_status") == "Completed"
+    ]
+    master_unprocessed = [
+        req for req in master
+        if req.get("simulator_simulation_status") is None
+    ]
+
+    # # Build a quick lookup for existing requests by id
+
+    by_id = {d["simulator_id"]: d for d in master if "simulator_id" in d}
+
+    for unp in master_unprocessed:
+        match = by_id.get(unp.get("simulator_id"))
+        if match:
+            unp.update(match)
+            
+    # existing_by_point = {req["point"]: req for req in master}
+
+    # # Update unprocessed requests in-place using the lookup
+    # for unprocessed in master_unprocessed:
+    #     match = existing_by_point.get(unprocessed["point"])
+    #     if match:
+    #         unprocessed.update(match)
+
+    return master_processed + master_unprocessed
+
 
 def convert_to_vector_layer_format(visual_requests):
     """

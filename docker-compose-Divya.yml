@@ -1,0 +1,70 @@
+name: sos_execution_Divya
+networks:
+  sos_net:
+    driver: bridge
+services:
+  manager:
+    container_name: sos_manager_Divya
+    image: codelaborg/sos:latest
+    command: python3 src/manager/main.py
+    env_file: .env
+    volumes:
+      - ./sos.yaml:/opt/sos.yaml
+      - ~/.aws/credentials:/root/.aws/credentials:ro
+      - ./:/opt/
+    networks:
+      - sos_net
+    restart: "no"
+
+  planner:
+    container_name: sos_planner_Divya
+    image: codelaborg/sos:latest
+    command: python3 src/planner/main.py
+    env_file: .env
+    environment:
+      - DOWNLOAD_CHECK_INTERVAL=5
+      - DOWNLOAD_MAX_ATTEMPTS=1
+      - ENABLE_UPLOADS=false
+    volumes:
+      - ./sos.yaml:/opt/sos.yaml
+      - ~/.aws/credentials:/root/.aws/credentials:ro
+      - ./:/opt/
+    networks:
+      - sos_net
+    restart: "no"
+    depends_on:
+      - manager
+
+  appender:
+    container_name: sos_appender_Divya
+    image: codelaborg/sos:latest
+    command: python3 src/appender/main.py
+    env_file: .env
+    environment:
+      - ENABLE_UPLOADS=false
+    volumes:
+      - ./sos.yaml:/opt/sos.yaml
+      - ~/.aws/credentials:/root/.aws/credentials:ro
+      - ./:/opt/
+    networks:
+      - sos_net
+    restart: "no"
+    depends_on:
+      - manager
+
+  simulator:
+    container_name: sos_simulator_Divya
+    image: codelaborg/sos:latest
+    command: python3 src/simulator/main.py
+    env_file: .env
+    environment:
+      - ENABLE_UPLOADS=false
+    volumes:
+      - ./sos.yaml:/opt/sos.yaml
+      - ~/.aws/credentials:/root/.aws/credentials:ro
+      - ./:/opt/
+    networks:
+      - sos_net
+    restart: "no"
+    depends_on:
+      - manager
