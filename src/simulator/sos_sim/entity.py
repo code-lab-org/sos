@@ -158,9 +158,9 @@ class Collect_Observations(Entity):
                     ): 
 
                         self.observation_collected_flag = True
-                        logger.info("Daily random value is %f", self.daily_random_value)
-                        logger.info("Constellation capacity is %f", self.constellation_capacity)
-                        logger.info("Observation collected") 
+                        # logger.info("Daily random value is %f", self.daily_random_value)
+                        # logger.info("Constellation capacity is %f", self.constellation_capacity)
+                        # logger.info("Observation collected") 
                         # Simulate a x% chance of collecting an observation
                         # Get the satellite that collected the observation
                         satellite = self.constellation[
@@ -198,7 +198,7 @@ class Collect_Observations(Entity):
                                     self.incomplete_requests.remove(row["point"].id)
 
                         # Visualization
-                        # write a function to convert the self.next request to json format to send to the cesium application
+                        # Write a function to convert the self.next request to json format to send to the cesium application
                         # Execute if self. next_requests is not None
 
                         if self.next_requests:
@@ -227,8 +227,9 @@ class Collect_Observations(Entity):
         _start = _time.perf_counter() 
         current_time = thread_data["current_time"]
         constellation_values = thread_data["constellation_values"]
-        current_requests = thread_data["current_requests"]
-        logger.info("Current requests length in background thread is %d and type %s", len(current_requests), type(current_requests))
+        new_requests = thread_data["new_requests"]
+        existing_completed_requests = thread_data["existing_completed_requests"]
+        logger.info("New requests length in background thread is %d and type %s", len(new_requests), type(new_requests))
 
 
         try:
@@ -237,7 +238,7 @@ class Collect_Observations(Entity):
 
             logger.info("Starting master file processing in background thread,length of self.master_data is %d", len(self.master_data))
 
-            processed_requests = process_master_file(current_requests)
+            processed_requests = process_master_file(new_requests,existing_completed_requests)
 
             # logger.info("Master file read and processed with %d requests", len(processed_requests))
 
@@ -300,7 +301,7 @@ class Collect_Observations(Entity):
             # logger.info("Observation collected at tock: %s", self.observation_collected)    
             self.requests = self.next_requests
             self.observation_collected_flag = False  # Reset the flag after updating
-            logger.info("Updated requests from next_requests at tock after observation collected)")
+            # logger.info("Updated requests from next_requests at tock after observation collected)")
 
         # logger.info("Length of requests after updating from next_requests at tock: %d", len(self.requests) if self.requests is not None else 0)
         
@@ -310,11 +311,20 @@ class Collect_Observations(Entity):
                 "Requests received. Starting background master file processing."
             )
 
+            # Filtering the completed requests from self.request, this will be passed to the processing function to capture completed request by the time new requests arrive
+
+            completed_requests = [
+            r
+            for r in self.requests
+            if r.get("simulator_simulation_status") == "Completed"
+            ]
+
             # Capture current state for thread safety
             import copy
 
             thread_data = {
-                "current_requests": copy.deepcopy(self.master_data),
+                "new_requests": self.master_data,
+                "existing_completed_requests": copy.deepcopy(completed_requests),
                 "current_time": self._time,
                 "constellation_values": list(self.constellation.values()),
             }

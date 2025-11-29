@@ -90,6 +90,7 @@ class OrchestrateObserver(Observer):
         # --- Update values directly ---
         # Manager & application time scale factor
         time_scale = int(row["time scale factor"])
+        time_scale = 72  # TEMPORARY OVERRIDE FOR TESTING
         yaml_data["execution"]["manager"]["time_scale_factor"] = time_scale
         yaml_data["execution"]["managed_applications"]["planner"]["time_scale_factor"] = time_scale
         yaml_data["execution"]["managed_applications"]["simulator"]["time_scale_factor"] = time_scale
@@ -141,7 +142,21 @@ def main():
             subprocess.run("docker compose down", shell=True, check=True, capture_output=True, text=True)
             logger.info("Sleeping for 30 seconds to ensure proper shutdown.")
             time.sleep(30)
+
         logger.info("Processing row: %s", row.to_dict())
+        # -------------------------------------------
+        # DELETE SIMULATOR SUBFOLDERS BEFORE EXECUTION
+        # -------------------------------------------
+        simulator_root = os.path.join("outputs", "simulator")
+        if os.path.exists(simulator_root):
+            for item in os.listdir(simulator_root):
+                item_path = os.path.join(simulator_root, item)
+                if os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+                    logger.info("Deleted subfolder: %s", item_path)
+        else:
+            logger.warning("Simulator folder not found at %s", simulator_root)
+
         environment.update_yaml_config(config, row)
         environment.send_execute_command(f"Process data for {row['Run']}")
         environment.wait_for_shutdown()

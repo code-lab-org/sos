@@ -30,7 +30,7 @@ if __name__ == "__main__":
     # Convert strings to datetime
     sim_start = sim_start_time_str
     sim_stop = sim_stop_time_str
-    time_step = timedelta(seconds=5)  # from "0:00:01"
+    # time_step = timedelta(seconds=5)  # from "0:00:01"
     sim_duration = sim_stop - sim_start
 
     # Application values
