@@ -29,7 +29,7 @@ class OrchestrateObserver(Observer):
 
     def on_stop(self, ch, method, properties, body):
         logger.info("Received stop message. Stopping application.")
-        time.sleep(120)  # Wait for 2 minutes before proceeding
+        time.sleep(90)  # Wait for 1.5 minutes before proceeding
         self.shutdown_received = True
         return
     
