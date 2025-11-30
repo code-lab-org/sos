@@ -90,7 +90,7 @@ class OrchestrateObserver(Observer):
         # --- Update values directly ---
         # Manager & application time scale factor
         time_scale = int(row["time scale factor"])
-        time_scale = 72  # TEMPORARY OVERRIDE FOR TESTING
+        time_scale = 96  # TEMPORARY OVERRIDE FOR TESTING
         yaml_data["execution"]["manager"]["time_scale_factor"] = time_scale
         yaml_data["execution"]["managed_applications"]["planner"]["time_scale_factor"] = time_scale
         yaml_data["execution"]["managed_applications"]["simulator"]["time_scale_factor"] = time_scale
