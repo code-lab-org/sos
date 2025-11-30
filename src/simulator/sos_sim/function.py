@@ -638,6 +638,14 @@ def _write_back_to_appender_impl(thread_data):
             exc_info=True,
         )
 
+    if sim_time.date() >= datetime(2025, 1, 4).date():
+        logger.info("sim_time is after 2025-01-04")
+        source.app.send_message(
+        app_name,
+        "simulator_end",  # ["master", "selected"],
+        "end-of-simulation"
+        )
+
 
 def write_back_to_appender(source, time):
     """

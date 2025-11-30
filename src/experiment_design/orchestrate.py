@@ -29,12 +29,10 @@ class OrchestrateObserver(Observer):
 
     def on_stop(self, ch, method, properties, body):
         logger.info("Received stop message. Stopping application.")
+        time.sleep(120)  # Wait for 2 minutes before proceeding
         self.shutdown_received = True
-        return 
-
-        # Seeing content of body
-        # logger.info(f"Body content: {body}")
-
+        return
+    
     def on_change(self, ch, method, properties, body):
         logger.info("Received change message.")
         logger.info(f"Change content: {body}")
@@ -49,14 +47,14 @@ class OrchestrateObserver(Observer):
         # shutdown_received = self.shutdown_received
         print("Waiting for shutdown...")
         while not self.shutdown_received:
-            time.sleep(120)  # Sleep for 3 seconds before checking again
+            time.sleep(60)  # Sleep for 3 seconds before checking again
             logger.info("Still waiting for shutdown signal...")
         logger.info("Sleep complete, shutdown signal received.")
         self.shutdown_received = False
         logger.info("Setting docker compose down in nost environment.")
         subprocess.run("docker compose down", shell=True, check=True, capture_output=True, text=True)
-        logger.info("Sleeping for 30 seconds to ensure proper shutdown.")
-        time.sleep(30)
+        logger.info("Sleeping for 120 seconds to ensure proper shutdown.")
+        time.sleep(20)
         print("Proceeding to next iteration.")
 
     # def update_yaml_config(self, config, row):
@@ -107,7 +105,7 @@ class OrchestrateObserver(Observer):
             yaml.safe_dump(yaml_data, f, sort_keys=False, indent=2)
 
         logger.info("YAML configuration updated with new parameters. Sleeping for 10 seconds.")
-        time.sleep(10)
+        time.sleep(5)
 
 def main():
     logger.info("Entering main function")
@@ -130,7 +128,8 @@ def main():
 
     # # print(df)
     app.add_message_callback("manager", "start", environment.on_start)
-    app.add_message_callback("manager", "stop", environment.on_stop)
+    # app.add_message_callback("appender", "stop", environment.on_stop)
+    app.add_message_callback("simulator", "simulator_end", environment.on_stop)
     logger.info("Exiting main function")
 
     # Ensure run_output directory exists
