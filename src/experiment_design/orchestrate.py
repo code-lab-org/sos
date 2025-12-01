@@ -128,7 +128,7 @@ def main():
 
     # # print(df)
     app.add_message_callback("manager", "start", environment.on_start)
-    # app.add_message_callback("appender", "stop", environment.on_stop)
+    # app.add_message_callback("manager", "stop", environment.on_stop)
     app.add_message_callback("simulator", "simulator_end", environment.on_stop)
     logger.info("Exiting main function")
 
