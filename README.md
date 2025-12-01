@@ -11,7 +11,10 @@ This repository contains the codebase for Snow Observing Strategy (SOS) applicat
   - [Data Structure \& Interfaces](#data-structure--interfaces)
 - [Execution](#execution)
   - [YAML](#yaml)
+    - [Optional Freezes](#optional-freezes)
   - [.env](#env)
+    - [Localhost](#localhost)
+    - [Cloud-Hosted](#cloud-hosted)
   - [Conda](#conda)
   - [Docker](#docker)
 - [Cesium Visualization](#cesium-visualization)
@@ -362,8 +365,118 @@ execution:
       shut_down_when_terminated: True
       manager_app_name: "manager"
 ```
+#### Optional Freezes
+
+Depending on whether the applications are running in isolation or in integration with LIS, scenario time freezes may be required. To enhance flexibility, multiple freezes modes are possible and detailed below:
+
+- Indefinite Freeze
+  Scenario: When running together with LIS
+
+  ```yaml
+  configuration_parameters:
+    scenario_day_freeze:
+      enabled: true
+      mode: "indefinite"
+  ```
+
+- Timed Freeze
+  Scenario: When running together with LIS
+
+  ```yaml
+  configuration_parameters:
+    scenario_day_freeze:
+      enabled: true
+      mode: "timed"
+      duration: "0:02:00" # duration for timed freeze (HH:MM:SS format)
+  ```
+
+- No Freeze
+  Scenario: Running Planner, Appender, and Simulator applications separately from LIS for experimental or development purposes.
+  
+  ```yaml
+  configuration_parameters:
+    scenario_day_freeze:
+      enabled: false
+  ```
+
+Below is a complete example showing the various freeze modes implemented in the YAML configuration file:
+
+```yaml
+info:
+  title: Novel Observing Strategies Testbed (NOS-T) YAML Configuration
+  version: '1.0.0'
+  description: Version-controlled AsyncAPI document for RabbitMQ event broker with Keycloak authentication within NOS-T
+servers:
+  rabbitmq:
+    keycloak_authentication: False
+    host: "localhost"
+    port: 5672
+    tls: False
+    virtual_host: "/"
+execution:
+  general:
+    prefix: sos
+  manager:
+    sim_start_time: "2019-03-01T23:59:59+00:00"
+    sim_stop_time: "2019-03-10T23:59:59+00:00"
+    start_time: 
+    time_step: "0:00:01"
+    time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
+    time_scale_updates: []
+    time_status_step: "0:00:01" # 1 second * time scale factor
+    time_status_init: "2019-03-01T23:59:59+00:00"
+    command_lead: "0:00:05"
+    required_apps:
+      - manager
+      - planner
+      - appender
+      - simulator
+    init_retry_delay_s: 5
+    init_max_retry: 5
+    set_offset: True
+    shut_down_when_terminated: True
+  managed_applications:
+    planner:
+      time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
+      time_step: "0:00:01" # 1 second * time scale factor
+      set_offset: True
+      time_status_step: "0:00:10" # 10 seconds * time scale factor
+      time_status_init: "2019-03-01T23:59:59+00:00"
+      shut_down_when_terminated: True
+      manager_app_name: "manager"
+      # configuration_parameters:
+        # Optional: Scenario day freeze configuration
+        # If this section is omitted, planner will default to no freeze behavior (freeze disabled)
+        # scenario_day_freeze:
+        #   enabled: true          # false = no freeze, true = enable freeze on scenario day change
+        #   mode: "indefinite"     # "timed" = resume after duration, "indefinite" = resume after S3 upload
+        # scenario_day_freeze:
+        #   enabled: true          # false = no freeze, true = enable freeze on scenario day change
+        #   mode: "timed"     # "timed" = resume after duration, "indefinite" = resume after S3 upload
+        #   duration: "0:02:00"    # duration for timed freeze (HH:MM:SS format)
+        # scenario_day_freeze:
+        #   enabled: false          # false = no freeze, true = enable freeze on scenario day change
+    appender:
+      time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
+      time_step: "0:00:01" # 1 second * time scale factor
+      set_offset: True
+      time_status_step: "0:00:10" # 10 seconds * time scale factor
+      time_status_init: "2019-03-01T23:59:59+00:00"
+      shut_down_when_terminated: True
+      manager_app_name: "manager"
+    simulator:
+      time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
+      time_step: "0:01:00" # 1 second * time scale factor
+      set_offset: True
+      time_status_step: "0:00:10" # 10 seconds * time scale factor
+      time_status_init: "2019-03-01T23:59:59+00:00"
+      shut_down_when_terminated: True
+      manager_app_name: "manager"
+```
 
 ### .env
+
+#### Localhost
 
 In the `sos` directory, create a `.env` file with the following content specific to your event broker running on local host:
 
@@ -371,6 +484,27 @@ In the `sos` directory, create a `.env` file with the following content specific
 USERNAME="admin"
 PASSWORD="admin"
 ```
+
+#### Cloud-Hosted
+
+In the `sos` directory, create a `.env` file with the following content to access the event broker hosted on the Science Cloud:
+
+- Service Account:
+
+  ```sh
+  CLIENT_ID="<Request from NOS-T Operator>"
+  CLIENT_SECRET_KEY="<Request from NOS-T Operator>"
+  ```
+
+- User Account:
+
+  ```sh
+  USERNAME="<Keycloak Username>"
+  PASSWORD="<Keycloak Password>"
+  CLIENT_ID="<Request from NOS-T Operator>"
+  CLIENT_SECRET_KEY="<Request from NOS-T Operator>"
+  ```
+
 
 ### Conda
 
