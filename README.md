@@ -369,8 +369,7 @@ execution:
 
 Depending on whether the applications are running in isolation or in integration with LIS, scenario time freezes may be required. To enhance flexibility, multiple freezes modes are possible and detailed below:
 
-- Indefinite Freeze
-  Scenario: When running together with LIS
+- **Indefinite Freeze**: Useful when running Planner, Appender, and Simulator applications with LIS
 
   ```yaml
   configuration_parameters:
@@ -379,8 +378,7 @@ Depending on whether the applications are running in isolation or in integration
       mode: "indefinite"
   ```
 
-- Timed Freeze
-  Scenario: When running together with LIS
+- **Timed Freeze**: Useful when running Planner, Appender, and Simulator applications with LIS
 
   ```yaml
   configuration_parameters:
@@ -390,8 +388,7 @@ Depending on whether the applications are running in isolation or in integration
       duration: "0:02:00" # duration for timed freeze (HH:MM:SS format)
   ```
 
-- No Freeze
-  Scenario: Running Planner, Appender, and Simulator applications separately from LIS for experimental or development purposes.
+- **No Freeze**: Useful when running Planner, Appender, and Simulator applications separately from LIS (e.g., experimental or development purposes).
   
   ```yaml
   configuration_parameters:
