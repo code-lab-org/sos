@@ -49,6 +49,28 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 
 
+def detect_level_change(new_value, old_value, level):
+    """
+    Detect a change in the level of the time value (day, week, or month).
+
+    Args:
+        new_value (datetime): New time value
+        old_value (datetime): Old time value
+        level (str): Level of time value to detect changes ('day', 'week', or 'month')
+
+    Returns:
+        bool: True if the level has changed, False otherwise
+    """
+    if level == "day":
+        return new_value.date() != old_value.date()
+    elif level == "week":
+        return new_value.isocalendar()[1] != old_value.isocalendar()[1]
+    elif level == "month":
+        return new_value.month != old_value.month
+    else:
+        raise ValueError("Invalid level. Choose from 'day', 'week', or 'month'.")
+
+
 class Environment(Observer):
     """
     *The Environment object class inherits properties from the Observer object class in the NOS-T tools library*
@@ -1379,27 +1401,6 @@ class Environment(Observer):
             Polygon(mo_basin.iloc[0].geometry.exterior), crs="EPSG:4326"
         )
 
-    def detect_level_change(self, new_value, old_value, level):
-        """
-        Detect a change in the level of the time value (day, week, or month).
-
-        Args:
-            new_value (datetime): New time value
-            old_value (datetime): Old time value
-            level (str): Level of time value to detect changes ('day', 'week', or 'month')
-
-        Returns:
-            bool: True if the level has changed, False otherwise
-        """
-        if level == "day":
-            return new_value.date() != old_value.date()
-        elif level == "week":
-            return new_value.isocalendar()[1] != old_value.isocalendar()[1]
-        elif level == "month":
-            return new_value.month != old_value.month
-        else:
-            raise ValueError("Invalid level. Choose from 'day', 'week', or 'month'.")
-
     def _on_change_impl(self, thread_data):
         """
         Internal implementation of on_change that does the actual work.
@@ -1848,27 +1849,6 @@ class Environment(Observer):
                 exc_info=True,
             )
 
-    def detect_level_change(self, new_value, old_value, level):
-        """
-        Detect a change in the level of the time value (day, week, or month).
-
-        Args:
-            new_value (datetime): New time value
-            old_value (datetime): Old time value
-            level (str): Level of time value to detect changes ('day', 'week', or 'month')
-
-        Returns:
-            bool: True if the level has changed, False otherwise
-        """
-        if level == "day":
-            return new_value.date() != old_value.date()
-        elif level == "week":
-            return new_value.isocalendar()[1] != old_value.isocalendar()[1]
-        elif level == "month":
-            return new_value.month != old_value.month
-        else:
-            raise ValueError("Invalid level. Choose from 'day', 'week', or 'month'.")
-
     def on_change(self, source, property_name, old_value, new_value):
         """
         Handle changes to properties in a non-blocking manner.
@@ -1891,8 +1871,6 @@ class Environment(Observer):
 
             # Capture the current state to avoid race conditions
             # Make copies of the necessary data to ensure thread safety
-            import copy
-
             thread_data = {
                 "old_value": copy.deepcopy(old_value),
                 "new_value": copy.deepcopy(new_value),
@@ -1928,15 +1906,13 @@ class Environment(Observer):
             and source.get_mode() == Mode.EXECUTING
             and new_value is not None
             and old_value is not None
-            and self.detect_level_change(new_value, old_value, "day")
+            and detect_level_change(new_value, old_value, "day")
         ):
             logger.info(
                 f"Day change detected (no freeze mode): {old_value} -> {new_value}"
             )
 
             # Capture the current state to avoid race conditions
-            import copy
-
             thread_data = {
                 "old_value": copy.deepcopy(old_value),
                 "new_value": copy.deepcopy(new_value),
@@ -2004,27 +1980,6 @@ class DailyFreeze(Observer):
                     "freeze_duration must be specified when freeze_mode is 'timed'."
                 )
 
-    def detect_level_change(self, new_value, old_value, level):
-        """
-        Detect a change in the level of the time value (day, week, or month).
-
-        Args:
-            new_value (datetime): New time value
-            old_value (datetime): Old time value
-            level (str): Level of time value to detect changes ('day', 'week', or 'month')
-
-        Returns:
-            bool: True if the level has changed, False otherwise
-        """
-        if level == "day":
-            return new_value.date() != old_value.date()
-        elif level == "week":
-            return new_value.isocalendar()[1] != old_value.isocalendar()[1]
-        elif level == "month":
-            return new_value.month != old_value.month
-        else:
-            raise ValueError("Invalid level. Choose from 'day', 'week', or 'month'.")
-
     def on_change(self, source, property_name, old_value, new_value):
         """
         Callback when simulation properties change.
@@ -2040,11 +1995,11 @@ class DailyFreeze(Observer):
             property_name == Simulator.PROPERTY_TIME
             and source.get_mode() == Mode.EXECUTING
             and new_value is not None
-            and self.detect_level_change(new_value, old_value, "day")
+            and detect_level_change(new_value, old_value, "day")
         ):
-            # Check if freeze is enabled
+            # Only request freeze if freeze is enabled
             if not self.freeze_enabled:
-                # No freeze - continue immediately after scenario day change
+                # No freeze - Environment will trigger directly on day change
                 return
 
             # Determine freeze duration based on mode
