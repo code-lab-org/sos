@@ -1133,7 +1133,7 @@ class Environment(Observer):
 
         # Priority 1: assimilation (search all subdirs in descending order)
         for directory in directories:
-            logger.debug(f"Searching in directory: {directory}")
+            # logger.debug(f"Searching in directory: {directory}")
             if "assimilation" in directory:
                 logger.info(
                     f"Looking for subdirectories in assimilation path: {directory}"
@@ -1158,7 +1158,7 @@ class Environment(Observer):
 
                     # Search through each subdirectory in order
                     for subdir in sorted_subdirs:
-                        logger.info(f"Searching in assimilation subdir: {subdir}")
+                        # logger.info(f"Searching in assimilation subdir: {subdir}")
 
                         pages = paginator.paginate(Bucket=bucket_name, Prefix=subdir)
                         for page in pages:
@@ -1430,7 +1430,6 @@ class Environment(Observer):
 
         try:
             # All the heavy processing logic from the original on_change method
-            logger.info("Resuming after a pause......")
             new_value = source.get_time()
             old_value = new_value - timedelta(days=1)
 
@@ -2046,7 +2045,9 @@ def main():
             duration_str = freeze_config.get("duration", None)
             if duration_str is not None:
                 hours, minutes, seconds = map(int, duration_str.split(":"))
-                freeze_duration = timedelta(hours=hours, minutes=minutes, seconds=seconds)
+                freeze_duration = timedelta(
+                    hours=hours, minutes=minutes, seconds=seconds
+                )
             else:
                 freeze_duration = None
         else:
