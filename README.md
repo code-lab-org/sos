@@ -367,6 +367,20 @@ execution:
 ```
 #### Optional Freezes
 
+```mermaid
+flowchart LR
+    A{"Scenario day change"} -- Freeze --> B{"Timed or indefinite?"}
+    B -- Timed --> C["Resume after timed freeze<br>(1-2 hours)"]
+    B -- Indefinite --> D["Data Upload Triggers Lambda Function<br>"]
+    D -->F["Resume after S3 upload"]
+    A -- No freeze --> E["Continue after scenario day change"]
+    style F fill:#C8E6C9,stroke:#00C853
+    style E stroke:#D50000,fill:#FFCDD2
+    linkStyle 2 stroke:#00C853,fill:none
+    linkStyle 3 stroke:#00C853,fill:none
+    linkStyle 4 stroke:#D50000,fill:none
+```
+
 Depending on whether the applications are running in isolation or in integration with LIS, scenario time freezes may be required. To enhance flexibility, multiple freezes modes are possible and detailed below:
 
 - **Indefinite Freeze**: Useful when running Planner, Appender, and Simulator applications with LIS
