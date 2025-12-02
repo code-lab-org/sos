@@ -1172,7 +1172,7 @@ class Environment(Observer):
                                     )
                                     return obj["Key"]
 
-                        logger.info(f"No matching file found in {subdir}")
+                        # logger.info(f"No matching file found in {subdir}")
 
         logger.warning("No matching file found in any assimilation subdirectory.")
 
