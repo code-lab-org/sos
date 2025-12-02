@@ -1866,7 +1866,6 @@ class Environment(Observer):
             and old_value == Mode.RESUMING
             and new_value == Mode.EXECUTING
         ):
-            logger.info(f"Execution is paused..... {old_value} -> {new_value}")
 
             # Capture the current state to avoid race conditions
             # Make copies of the necessary data to ensure thread safety
