@@ -374,8 +374,6 @@ flowchart LR
     B -- Indefinite --> D["Data Upload Triggers Lambda Function<br>"]
     D -->F["Resume after S3 upload"]
     A -- No freeze --> E["Continue after scenario day change"]
-    style F fill:#C8E6C9,stroke:#00C853
-    style E stroke:#D50000,fill:#FFCDD2
     linkStyle 2 stroke:#00C853,fill:none
     linkStyle 3 stroke:#00C853,fill:none
     linkStyle 4 stroke:#D50000,fill:none
