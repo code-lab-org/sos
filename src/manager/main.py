@@ -1,4 +1,3 @@
-from datetime import timedelta
 import logging
 import pandas as pd
 from datetime import datetime, timedelta
@@ -9,7 +8,6 @@ from nost_tools.configuration import ConnectionConfig
 from nost_tools.manager import Manager
 
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger()
 
 if __name__ == "__main__":
     # Load config

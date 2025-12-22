@@ -11,7 +11,10 @@ This repository contains the codebase for Snow Observing Strategy (SOS) applicat
   - [Data Structure \& Interfaces](#data-structure--interfaces)
 - [Execution](#execution)
   - [YAML](#yaml)
+    - [Optional Freezes](#optional-freezes)
   - [.env](#env)
+    - [Localhost](#localhost)
+    - [Cloud-Hosted](#cloud-hosted)
   - [Conda](#conda)
   - [Docker](#docker)
 - [Cesium Visualization](#cesium-visualization)
@@ -45,12 +48,6 @@ A single manager application is responsible for orchestrating the various applic
 ### Applications Overview
 
 Applications communicate via a RabbitMQ message broker utilizing the Advanced Message Queuing Protocol (AMQP) protocol. The figure below illustrates the overall workflow:
-
-<!-- <p align="center">
-  <img src="https://pointillism.io/code-lab-org/sos/blob/main/docs/workflow.dot.svg"/>
-  <br>
-  <em>Snow Observing Systems (SOS) application workflow.</em>
-</p> -->
 
 ```mermaid
 flowchart LR
@@ -362,8 +359,127 @@ execution:
       shut_down_when_terminated: True
       manager_app_name: "manager"
 ```
+#### Optional Freezes
+
+```mermaid
+flowchart LR
+    A{"Scenario day change"} -- Freeze --> B{"Timed or indefinite?"}
+    B -- Timed --> C["Resume after timed freeze<br>(1-2 hours)"]
+    B -- Indefinite --> D["Data Upload Triggers Lambda Function<br>"]
+    D -->F["Resume after S3 upload"]
+    A -- No freeze --> E["Continue after scenario day change"]
+    linkStyle 2 stroke:#00C853,fill:none
+    linkStyle 3 stroke:#00C853,fill:none
+    linkStyle 4 stroke:#D50000,fill:none
+```
+
+Depending on whether the applications are running in isolation or in integration with LIS, scenario time freezes may be required. To enhance flexibility, multiple freezes modes are possible and detailed below:
+
+- **Indefinite Freeze**: Useful when running Planner, Appender, and Simulator applications with LIS
+
+  ```yaml
+  configuration_parameters:
+    scenario_day_freeze:
+      enabled: true
+      mode: "indefinite"
+  ```
+
+- **Timed Freeze**: Useful when running Planner, Appender, and Simulator applications with LIS
+
+  ```yaml
+  configuration_parameters:
+    scenario_day_freeze:
+      enabled: true
+      mode: "timed"
+      duration: "0:02:00" # duration for timed freeze (HH:MM:SS format)
+  ```
+
+- **No Freeze**: Useful when running Planner, Appender, and Simulator applications separately from LIS (e.g., experimental or development purposes).
+  
+  ```yaml
+  configuration_parameters:
+    scenario_day_freeze:
+      enabled: false
+  ```
+
+Below is a complete example showing the various freeze modes implemented in the YAML configuration file:
+
+```yaml
+info:
+  title: Novel Observing Strategies Testbed (NOS-T) YAML Configuration
+  version: '1.0.0'
+  description: Version-controlled AsyncAPI document for RabbitMQ event broker with Keycloak authentication within NOS-T
+servers:
+  rabbitmq:
+    keycloak_authentication: False
+    host: "localhost"
+    port: 5672
+    tls: False
+    virtual_host: "/"
+execution:
+  general:
+    prefix: sos
+  manager:
+    sim_start_time: "2019-03-01T23:59:59+00:00"
+    sim_stop_time: "2019-03-10T23:59:59+00:00"
+    start_time: 
+    time_step: "0:00:01"
+    time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
+    time_scale_updates: []
+    time_status_step: "0:00:01" # 1 second * time scale factor
+    time_status_init: "2019-03-01T23:59:59+00:00"
+    command_lead: "0:00:05"
+    required_apps:
+      - manager
+      - planner
+      - appender
+      - simulator
+    init_retry_delay_s: 5
+    init_max_retry: 5
+    set_offset: True
+    shut_down_when_terminated: True
+  managed_applications:
+    planner:
+      time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
+      time_step: "0:00:01" # 1 second * time scale factor
+      set_offset: True
+      time_status_step: "0:00:10" # 10 seconds * time scale factor
+      time_status_init: "2019-03-01T23:59:59+00:00"
+      shut_down_when_terminated: True
+      manager_app_name: "manager"
+      # configuration_parameters:
+        # Optional: Scenario day freeze configuration
+        # If this section is omitted, planner will default to no freeze behavior (freeze disabled)
+        # scenario_day_freeze:
+        #   enabled: true          # false = no freeze, true = enable freeze on scenario day change
+        #   mode: "indefinite"     # "timed" = resume after duration, "indefinite" = resume after S3 upload
+        # scenario_day_freeze:
+        #   enabled: true          # false = no freeze, true = enable freeze on scenario day change
+        #   mode: "timed"     # "timed" = resume after duration, "indefinite" = resume after S3 upload
+        #   duration: "0:02:00"    # duration for timed freeze (HH:MM:SS format)
+        # scenario_day_freeze:
+        #   enabled: false          # false = no freeze, true = enable freeze on scenario day change
+    appender:
+      time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
+      time_step: "0:00:01" # 1 second * time scale factor
+      set_offset: True
+      time_status_step: "0:00:10" # 10 seconds * time scale factor
+      time_status_init: "2019-03-01T23:59:59+00:00"
+      shut_down_when_terminated: True
+      manager_app_name: "manager"
+    simulator:
+      time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
+      time_step: "0:01:00" # 1 second * time scale factor
+      set_offset: True
+      time_status_step: "0:00:10" # 10 seconds * time scale factor
+      time_status_init: "2019-03-01T23:59:59+00:00"
+      shut_down_when_terminated: True
+      manager_app_name: "manager"
+```
 
 ### .env
+
+#### Localhost
 
 In the `sos` directory, create a `.env` file with the following content specific to your event broker running on local host:
 
@@ -371,6 +487,27 @@ In the `sos` directory, create a `.env` file with the following content specific
 USERNAME="admin"
 PASSWORD="admin"
 ```
+
+#### Cloud-Hosted
+
+In the `sos` directory, create a `.env` file with the following content to access the event broker hosted on the Science Cloud:
+
+- Service Account:
+
+  ```sh
+  CLIENT_ID="<Request from NOS-T Operator>"
+  CLIENT_SECRET_KEY="<Request from NOS-T Operator>"
+  ```
+
+- User Account:
+
+  ```sh
+  USERNAME="<Keycloak Username>"
+  PASSWORD="<Keycloak Password>"
+  CLIENT_ID="<Request from NOS-T Operator>"
+  CLIENT_SECRET_KEY="<Request from NOS-T Operator>"
+  ```
+
 
 ### Conda
 
@@ -481,106 +618,3 @@ To setup an event broker on local host, follow the directions [here](https://nos
 3. In your web browser, navigate to http://localhost:7000
 
 4. Finally, click on `cesium_visualization.html`. You should see a Cesium visualization web application running on local host.
-
-<!-- ### Docker (Development)
-
-Each container can be built individually during development, to build a local version of a container, you can use ```docker build```. 
-
-For example, to build the "manager" comntainer:
-
-```
-cd src/manager/
-docker build -t sos_manager .
-docker run --rm --env-file .env -v "$(pwd)/data":/opt/data sos_manager
-```
-
-> NOTE: You can follow similar steps to build the other containers, such as satellites, layer_resolution, layer_snow_cover, etc.
-
-### Docker Compose
-Three applications, including manager, satellite, and snow cover layer applications, can be run using Docker compose. To run applications, do the following:
-
-1. Download input data, which should be in the following structure:
-
-    ```
-    data/
-    ├── Downloaded_files
-    │   ├── Mo_basin_shp
-    │   │   ├── WBD_10_HU2_Shape
-    │   │   └── WBD_10_HU2_Shape.zip
-    │   ├── Resolution_raw
-    │   │   └── SNODAS
-    │   └── Snow_cover_raw
-    │       ├── hdf
-    │       └── nc
-    ├── Efficiency_files
-    │   ├── Efficiency_high_resolution_Caesium
-    │   │   ├── efficiency_resolution.nc
-    │   │   ├── efficiency_resolution_taskable.nc
-    │   │   ├── efficiency_snow_cover.nc
-    │   │   └── efficiency_snow_cover_up.nc
-    │   └── Efficiency_resolution20_Optimization
-    │       ├── Efficiency_SWE_Change_dataset_Capella.nc
-    │       ├── Efficiency_Sensor_dataset.nc
-    │       ├── Efficiency_Sensor_dataset_Capella.nc
-    │       ├── Efficiency_Sensor_dataset_GCOM.nc
-    │       ├── Efficiency_Temperature_dataset.nc
-    │       ├── Efficiency_Temperature_dataset_coarsened.nc
-    │       ├── Optimization_result.geojson
-    │       ├── Temperature_dataset.nc
-    │       ├── coarsened_eta_output_Capella.nc
-    │       ├── coarsened_eta_output_GCOM.nc
-    │       ├── efficiency_resolution_layer.nc
-    │       ├── efficiency_snow_cover.nc
-    │       ├── eta0_resampled_to_match_coarsened_grid.nc
-    │       ├── final_blocks_rewards.geojson
-    │       ├── final_eta_combined_output_Capella.nc
-    │       └── final_eta_combined_output_GCOM.nc
-    └── Preprocessed_files
-        ├── preprocessed_resolution.nc
-        └── preprocessed_snow_cover.nc
-    ```
-
-1. Confirm you have a .env file in your working directory with the following contents:
-
-    ```
-    # FILE/DIR PATHS 
-    path_hdf=data/Downloaded_files/Snow_cover_raw/hdf
-    path_nc=data/Downloaded_files/Snow_cover_raw/nc/
-    path_shp=data/Downloaded_files/Mo_basin_shp/
-    path_preprocessed=data/Preprocessed_files/
-    path_efficiency=data/Efficiency_files/Efficiency_high_resolution_Caesium/
-    raw_path=data/Downloaded_files/Resolution_raw/
-
-    # EARTHACCESS LOGIN
-    EARTHDATA_USERNAME=<Your EarthAccess username>
-    EARTHDATA_PASSWORD=<Your EarthAccess password>
-
-    # NOS-T LOGIN
-    HOST=<Contact NOS-T admins>
-    KEYCLOAK_PORT=8443
-    KEYCLOAK_REALM=<Contact NOS-T admins>
-    RABBITMQ_PORT=5671
-    USERNAME=<Your Keycloak username in NOS-T ecosystem>
-    PASSWORD=<Your Keycloak password in NOS-T ecosystem>
-    CLIENT_ID=<Contact NOS-T admins>
-    CLIENT_SECRET_KEY=<Contact NOS-T admins>
-    VIRTUAL_HOST="/"
-    IS_TLS=True
-
-    # CESIUM LOGIN
-    TOKEN=<Cesium access token>
-    ```
-
-1. Orchestrate the containers:
-
-    ```
-    docker-compose up -d
-    ```
-
-    > NOTE: To confirm Docker containers are running, run the command: ```docker ps```. You should see three containers list: sos_manager, sos_satellites, and sos_snow_cover_layer.
-
-1. To shutdown the Docker containers:
-
-    ```
-    docker-compose down
-    ``` -->

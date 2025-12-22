@@ -1,4 +1,5 @@
 import base64
+import copy
 import io
 import logging
 import os
@@ -40,11 +41,34 @@ from tatc.utils import swath_width_to_field_of_regard, swath_width_to_field_of_v
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from scipy.special import expit
+
 from src.sos_tools.aws_utils import AWSUtils
 from src.sos_tools.data_utils import DataUtils
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
+
+
+def detect_level_change(new_value, old_value, level):
+    """
+    Detect a change in the level of the time value (day, week, or month).
+
+    Args:
+        new_value (datetime): New time value
+        old_value (datetime): Old time value
+        level (str): Level of time value to detect changes ('day', 'week', or 'month')
+
+    Returns:
+        bool: True if the level has changed, False otherwise
+    """
+    if level == "day":
+        return new_value.date() != old_value.date()
+    elif level == "week":
+        return new_value.isocalendar()[1] != old_value.isocalendar()[1]
+    elif level == "month":
+        return new_value.month != old_value.month
+    else:
+        raise ValueError("Invalid level. Choose from 'day', 'week', or 'month'.")
 
 
 class Environment(Observer):
@@ -57,17 +81,14 @@ class Environment(Observer):
     """
 
     def __init__(
-        self, 
-        app, 
-        budget: int = 50,
-        enable_uploads=None
-        ):  # , planner_freeze):
+        self, app, budget: int = 50, enable_uploads=None, freeze_enabled: bool = True
+    ):  # , planner_freeze):
         self.app = app
         # self.planner_freeze = planner_freeze
         self.budget = budget
+        self.freeze_enabled = freeze_enabled
         self.visualize_swe_change = True
         self.visualize_all_layers = False
-
 
         # Flag to control S3 uploads - check environment variable if not explicitly set
         if enable_uploads is None:
@@ -1112,7 +1133,7 @@ class Environment(Observer):
 
         # Priority 1: assimilation (search all subdirs in descending order)
         for directory in directories:
-            logger.debug(f"Searching in directory: {directory}")
+            # logger.debug(f"Searching in directory: {directory}")
             if "assimilation" in directory:
                 logger.info(
                     f"Looking for subdirectories in assimilation path: {directory}"
@@ -1137,7 +1158,7 @@ class Environment(Observer):
 
                     # Search through each subdirectory in order
                     for subdir in sorted_subdirs:
-                        logger.info(f"Searching in assimilation subdir: {subdir}")
+                        # logger.info(f"Searching in assimilation subdir: {subdir}")
 
                         pages = paginator.paginate(Bucket=bucket_name, Prefix=subdir)
                         for page in pages:
@@ -1151,7 +1172,7 @@ class Environment(Observer):
                                     )
                                     return obj["Key"]
 
-                        logger.info(f"No matching file found in {subdir}")
+                        # logger.info(f"No matching file found in {subdir}")
 
         logger.warning("No matching file found in any assimilation subdirectory.")
 
@@ -1380,27 +1401,6 @@ class Environment(Observer):
             Polygon(mo_basin.iloc[0].geometry.exterior), crs="EPSG:4326"
         )
 
-    def detect_level_change(self, new_value, old_value, level):
-        """
-        Detect a change in the level of the time value (day, week, or month).
-
-        Args:
-            new_value (datetime): New time value
-            old_value (datetime): Old time value
-            level (str): Level of time value to detect changes ('day', 'week', or 'month')
-
-        Returns:
-            bool: True if the level has changed, False otherwise
-        """
-        if level == "day":
-            return new_value.date() != old_value.date()
-        elif level == "week":
-            return new_value.isocalendar()[1] != old_value.isocalendar()[1]
-        elif level == "month":
-            return new_value.month != old_value.month
-        else:
-            raise ValueError("Invalid level. Choose from 'day', 'week', or 'month'.")
-
     def _on_change_impl(self, thread_data):
         """
         Internal implementation of on_change that does the actual work.
@@ -1430,7 +1430,6 @@ class Environment(Observer):
 
         try:
             # All the heavy processing logic from the original on_change method
-            logger.info("Resuming after a pause......")
             new_value = source.get_time()
             old_value = new_value - timedelta(days=1)
 
@@ -1860,18 +1859,16 @@ class Environment(Observer):
             old_value (object): The old value
             new_value (object): The new value
         """
+        # Trigger on RESUMING -> EXECUTING transition (after freeze/resume)
         if (
             property_name == Simulator.PROPERTY_MODE
             and source.get_mode() == Mode.EXECUTING
             and old_value == Mode.RESUMING
             and new_value == Mode.EXECUTING
         ):
-            logger.info(f"Execution is paused..... {old_value} -> {new_value}")
 
             # Capture the current state to avoid race conditions
             # Make copies of the necessary data to ensure thread safety
-            import copy
-
             thread_data = {
                 "old_value": copy.deepcopy(old_value),
                 "new_value": copy.deepcopy(new_value),
@@ -1900,84 +1897,179 @@ class Environment(Observer):
             # Return immediately - don't wait for the thread to complete
             # This allows the simulation to continue without blocking
 
+        # Trigger on day change when freeze is disabled (no freeze/resume cycle)
+        elif (
+            not self.freeze_enabled
+            and property_name == Simulator.PROPERTY_TIME
+            and source.get_mode() == Mode.EXECUTING
+            and new_value is not None
+            and old_value is not None
+            and detect_level_change(new_value, old_value, "day")
+        ):
+            logger.info(
+                f"Day change detected (no freeze mode): {old_value} -> {new_value}"
+            )
+
+            # Capture the current state to avoid race conditions
+            thread_data = {
+                "old_value": copy.deepcopy(old_value),
+                "new_value": copy.deepcopy(new_value),
+                "source": source,
+                "property_name": property_name,
+                "app": self.app,
+            }
+
+            logger.info(
+                f"Capturing data for background planner thread (no freeze mode): {old_value} -> {new_value}"
+            )
+
+            # Create a daemon thread so it doesn't prevent program shutdown
+            thread = threading.Thread(
+                target=self._on_change_impl,
+                args=(thread_data,),
+                daemon=True,
+                name=f"planner_on_change-{new_value.strftime('%Y%m%d-%H%M%S') if hasattr(new_value, 'strftime') else str(new_value)}",
+            )
+
+            logger.info(
+                f"Starting planner on_change processing in background thread (no freeze mode) for {old_value} -> {new_value}"
+            )
+            thread.start()
+
+            # Return immediately - don't wait for the thread to complete
+            # This allows the simulation to continue without blocking
+
 
 class DailyFreeze(Observer):
     """
     Observer that automatically freezes the simulation at the start of each day.
+    Supports configurable freeze modes: none, timed, or indefinite.
     """
 
     def __init__(
-        self, app: ManagedApplication, freeze_duration: timedelta = timedelta(hours=2)
-    ):
-        """
-        Initialize the daily time scale updater.
+        self,
+        # create the managed application
+        app = ManagedApplication(app_name="planner")
 
-        Args:
-            manager (Manager): The manager instance to send update requests
-            freeze_duration (timedelta): Duration to freeze the simulation at the start of each day (default 2 wall clock hours)
-        """
-        self.app = app
-        self.freeze_duration = freeze_duration
+        # Read optional freeze configuration from sos.yaml
+        freeze_config = config.rc.application_configuration.get("scenario_day_freeze", None)
 
-    def detect_level_change(self, new_value, old_value, level):
-        """
-        Detect a change in the level of the time value (day, week, or month).
-
-        Args:
-            new_value (datetime): New time value
-            old_value (datetime): Old time value
-            level (str): Level of time value to detect changes ('day', 'week', or 'month')
-
-        Returns:
-            bool: True if the level has changed, False otherwise
-        """
-        if level == "day":
-            return new_value.date() != old_value.date()
-        elif level == "week":
-            return new_value.isocalendar()[1] != old_value.isocalendar()[1]
-        elif level == "month":
-            return new_value.month != old_value.month
+        if freeze_config is None:
+            freeze_enabled = False
+            freeze_mode = None
+            freeze_duration = None
         else:
-            raise ValueError("Invalid level. Choose from 'day', 'week', or 'month'.")
+            freeze_enabled = freeze_config.get("enabled", False)
+            if freeze_enabled:
+                freeze_mode = freeze_config.get("mode", None)
+                if "duration_seconds" in freeze_config:
+                    freeze_duration = timedelta(seconds=freeze_config.get("duration_seconds"))
+                elif "duration_minutes" in freeze_config:
+                    freeze_duration = timedelta(minutes=freeze_config.get("duration_minutes"))
+                else:
+                    freeze_duration = None
+            else:
+                freeze_mode = None
+                freeze_duration = None
 
-    def on_change(self, source, property_name, old_value, new_value):
-        """
-        Callback when simulation properties change.
+        # Add the daily freeze observer with configured parameters
+        app.simulator.add_observer(
+            DailyFreeze(
+                app,
+                freeze_enabled=freeze_enabled,
+                freeze_mode=freeze_mode,
+                freeze_duration=freeze_duration,
+            )
+        )
 
-        Args:
-            source: The object that changed
-            property_name (str): Name of the property that changed
-            old_value: Previous value
-            new_value: New value
-        """
-        # Only respond to time changes when simulation is executing
-        if (
-            property_name == Simulator.PROPERTY_TIME
-            and source.get_mode() == Mode.EXECUTING
-            and new_value is not None
-            and self.detect_level_change(new_value, old_value, "day")
-        ):
-            # Request the freeze from the manager
+        # Determine budget value (support list or scalar in config)
+        budget_cfg = config.rc.application_configuration.get("budget", 50)
+        if isinstance(budget_cfg, (list, tuple)):
+            budget = budget_cfg[0]
+        else:
+            budget = budget_cfg
+
+        # add the environment observer to monitor simulation for switch to EXECUTING mode
+        app.simulator.add_observer(
+            Environment(app, budget=budget, freeze_enabled=freeze_enabled)
+        )
+            # Only request freeze if freeze is enabled
+            if not self.freeze_enabled:
+                # No freeze - Environment will trigger directly on day change
+                return
+
+            # Determine freeze duration based on mode
+            if self.freeze_mode == "indefinite":
+                # Indefinite freeze - wait for resume from Lambda after S3 upload
+                duration = None
+            else:  # self.freeze_mode == "timed"
+                # Timed freeze - resume automatically after specified duration
+                duration = self.freeze_duration
+
+            # Request freeze from the manager
             self.app.request_freeze(
-                freeze_duration=self.freeze_duration,
+                freeze_duration=duration,
                 sim_freeze_time=new_value,
             )
 
 
 def main():
     # Load config
-    config = ConnectionConfig(yaml_file="sos.yaml",app_name="planner")
+    config = ConnectionConfig(yaml_file="sos.yaml", app_name="planner")
 
     # create the managed application
     app = ManagedApplication(app_name="planner")
 
-    # Add the daily time scale updater observer
-    app.simulator.add_observer(DailyFreeze(app, freeze_duration=timedelta(minutes=2)))
+    # Read freeze configuration from sos.yaml (optional section)
+    # If section is not provided, default to no freeze behavior
+    freeze_config = config.rc.application_configuration.get("scenario_day_freeze", None)
+
+    if freeze_config is None:
+        # No scenario_day_freeze section - default to no freeze
+        freeze_enabled = False
+        freeze_mode = None
+        freeze_duration = None
+    else:
+        # Section exists - read enabled flag first
+        freeze_enabled = freeze_config.get("enabled", False)
+
+        if freeze_enabled:
+            # Freeze is enabled - read mode and duration
+            freeze_mode = freeze_config.get("mode", "indefinite")
+
+            # Parse freeze duration from HH:MM:SS format (only if provided)
+            # Indefinite freezes don't require duration specification
+            duration_str = freeze_config.get("duration", None)
+            if duration_str is not None:
+                hours, minutes, seconds = map(int, duration_str.split(":"))
+                freeze_duration = timedelta(
+                    hours=hours, minutes=minutes, seconds=seconds
+                )
+            else:
+                freeze_duration = None
+        else:
+            # Freeze is disabled - set mode and duration to None
+            freeze_mode = None
+            freeze_duration = None
+
+    # Add the daily freeze observer with configured parameters
+    app.simulator.add_observer(
+        DailyFreeze(
+            app,
+            freeze_enabled=freeze_enabled,
+            freeze_mode=freeze_mode,
+            freeze_duration=freeze_duration,
+        )
+    )
 
     # add the environment observer to monitor simulation for switch to EXECUTING mode
-    app.simulator.add_observer(Environment(
-        app,budget=config.rc.application_configuration["budget"][0]
-        )) 
+    app.simulator.add_observer(
+        Environment(
+            app,
+            budget=config.rc.application_configuration["budget"],
+            freeze_enabled=freeze_enabled,
+        )
+    )
 
     # add a shutdown observer to shut down after a single test case
     app.simulator.add_observer(ShutDownObserver(app))
@@ -1988,7 +2080,6 @@ def main():
         config,
         True,
     )
-    
 
     while True:
         pass

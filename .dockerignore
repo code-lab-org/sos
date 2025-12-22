@@ -16,3 +16,4 @@ Dockerfile
 **/*.simg
 inputs/
 outputs/
+logs/
