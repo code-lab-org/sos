@@ -638,7 +638,7 @@ def _write_back_to_appender_impl(thread_data):
             exc_info=True,
         )
 
-    if sim_time.date() >= datetime(2025, 1, 4).date():
+    if sim_time.date() >= datetime(2025, 1, 8).date():
         logger.info("sim_time is after 2025-01-04")
         source.app.send_message(
         app_name,
