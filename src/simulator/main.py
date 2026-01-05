@@ -29,8 +29,9 @@ def main():
     logger.info("Simulation start time is %s", config.rc.simulation_configuration.execution_parameters.manager.sim_start_time) 
     logger.info("Simulation stop time is %s", config.rc.simulation_configuration.execution_parameters.manager.sim_stop_time)
 
-    s3 = AWSUtils().client
-    logger.info("s3 Connection %s",s3)
+    # s3 = AWSUtils().client
+    # logger.info("s3 Connection %s",s3)
+    s3 = None
     # Add Collect_Observations entity
     entity = Collect_Observations(
         constellation=Snowglobe_constellation(
