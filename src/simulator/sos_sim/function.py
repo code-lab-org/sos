@@ -253,17 +253,17 @@ def read_master_file(request_data=None) -> List[dict]:
     return request_points
 
 
-def process_master_file(existing_request) -> List[dict]:
+def process_master_file(new_request,existing_completed_request) -> List[dict]:
     """
     Process the master file and update the existing requests with the new data.
     Args:
-        existing_request (List[dict]): The existing requests to be updated.
+        new_request (List[dict]): The new requests to be updated.
     Returns:
         List[dict]: The updated list of requests.
     """
     logger.info("Processing master file")
 
-    master = read_master_file(existing_request)
+    master = read_master_file(new_request)
 
     # Split into processed and unprocessed
     master_processed = [
@@ -275,9 +275,9 @@ def process_master_file(existing_request) -> List[dict]:
         if req.get("simulator_simulation_status") is None
     ]
 
-    # # Build a quick lookup for existing requests by id
+    # Build a quick lookup for existing requests by id
 
-    by_id = {d["simulator_id"]: d for d in master if "simulator_id" in d}
+    by_id = {d["simulator_id"]: d for d in existing_completed_request if "simulator_id" in d}
 
     for unp in master_unprocessed:
         match = by_id.get(unp.get("simulator_id"))
@@ -474,7 +474,7 @@ def _write_back_to_appender_impl(thread_data):
         if not requests:
             print("No requests found — creating empty GeoDataFrame.")
             
-            # Define the expected columns based on your simulator output schema
+            # Define correct schema (all columns that appear in real data)
             columns = [
                 "simulator_id",
                 "planner_time",
@@ -486,13 +486,17 @@ def _write_back_to_appender_impl(thread_data):
                 "simulator_simulation_status",
                 "simulator_completion_date",
                 "simulator_satellite",
-                "planner_geometry",
+                "simulator_polygon_groundtrack",  # geometry column
+                "planner_geometry",               # non-geometry extra column
             ]
-            
-            # Create an empty GeoDataFrame with correct structure and CRS
+
+            # Create empty DataFrame with all columns
+            df = pd.DataFrame({col: [] for col in columns})
+
+            # Create empty GeoDataFrame with correct geometry column
             gdf = gpd.GeoDataFrame(
-                pd.DataFrame(columns=columns),
-                geometry=[],
+                df,
+                geometry="simulator_polygon_groundtrack",
                 crs="EPSG:4326"
             )
 
@@ -594,30 +598,33 @@ def _write_back_to_appender_impl(thread_data):
         # ]
         # daily_gdf_filtered["simulator_completion_date"] = daily_gdf_filtered["simulator_completion_date"].astype(str)
 
-        if not daily_gdf_filtered.empty:
+        # if not daily_gdf_filtered.empty:
             
-            daily_gdf_filtered = daily_gdf_filtered[
-            [
-                "simulator_id",
-                "simulator_simulation_status",
-                "simulator_completion_date",
-                "simulator_satellite",
-                "simulator_polygon_groundtrack"
-            ]
-            ]
-            daily_gdf_filtered["simulator_completion_date"] = daily_gdf_filtered["simulator_completion_date"].astype(str)
-
-            logger.info(f"Preparing to send message to appender with {len(daily_gdf_filtered)} records.")
-            selected_json_data = daily_gdf_filtered.to_json()
-            source.app.send_message(
-                app_name,
-                "simulator_daily",  # ["master", "selected"],
-                VectorLayer(vector_layer=selected_json_data).model_dump_json()
-            )            
-            logger.info("Simulator sent message to appender")
-        else:
-            logger.info("No records to send to appender for this simulation date.")
-
+        daily_gdf_filtered = daily_gdf_filtered[
+        [
+            "simulator_id",
+            "simulator_simulation_status",
+            "simulator_completion_date",
+            "simulator_satellite",
+            "simulator_polygon_groundtrack"
+        ]
+        ]
+        daily_gdf_filtered["simulator_completion_date"] = daily_gdf_filtered["simulator_completion_date"].astype(str)
+        logger.info(f"Preparing to send message to appender with {len(daily_gdf_filtered)} records.")
+        selected_json_data = daily_gdf_filtered.to_json()
+        source.app.send_message(
+            app_name,
+            "simulator_daily",  # ["master", "selected"],
+            VectorLayer(vector_layer=selected_json_data).model_dump_json()
+        )            
+        logger.info("Simulator sent message to appender")
+        # else:
+        #     logger.info("Sending empty list simulation date.")
+        #     source.app.send_message(
+        #         app_name,
+        #         "simulator_daily",  # ["master", "selected"],
+        #         "no-data"
+        #     )
 
         elapsed = _time.perf_counter() - _start
         elapsed_appender = _time.perf_counter() - start_time_appender
