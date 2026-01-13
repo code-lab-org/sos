@@ -48,6 +48,10 @@ from src.sos_tools.data_utils import DataUtils
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 
+# import inspect
+# from nost_tools.configuration import ConnectionConfig
+# print(inspect.signature(ConnectionConfig))
+# help(ConnectionConfig)
 
 def detect_level_change(new_value, old_value, level):
     """
@@ -89,6 +93,11 @@ class Environment(Observer):
         self.freeze_enabled = freeze_enabled
         self.visualize_swe_change = True
         self.visualize_all_layers = False
+        
+        #Recency layer parameters
+        self.initial_recency = 31
+        self.k_recency = 3.0 #1.75
+        self.x0_recency = 4
 
         # Flag to control S3 uploads - check environment variable if not explicitly set
         if enable_uploads is None:
@@ -677,6 +686,69 @@ class Environment(Observer):
             resolution_file_nontaskable,
         )
 
+    # def combine_and_multiply_datasets(
+    #     self,
+    #     ds,
+    #     eta5_file,
+    #     eta0_file,
+    #     eta2_file,
+    #     eta_sc_file,
+    #     eta_res_file,
+    #     weights,
+    #     output_file,
+    # ):
+    #     """
+    #     Combine three datasets by applying weights and performing grid-cell multiplication.
+
+    #     Args:
+    #         ds (xarray.Dataset): The dataset containing the SWE values.
+    #         eta5_file (str): Path to the NetCDF file for the eta5 dataset.
+    #         eta0_file (str): Path to the NetCDF file for the eta0 dataset.
+    #         eta2_file (str): Path to the NetCDF file for the eta2 dataset.
+    #         weights (dict): Weights for eta5, eta0, and eta2 (e.g., {'eta5': 0.5, 'eta0': 0.3, 'eta2': 0.2}).
+    #         output_file (str): Path to save the resulting combined dataset.
+
+    #     Returns:
+    #         output_file (str): The output file name
+    #         combined_dataset (xarray.Dataset): The new dataset
+    #     """
+    #     logger.info("Combining and multiplying the datasets.")
+    #     swe = ds["SWE_tavg"]
+    #     eta5_ds = eta5_file
+    #     eta0_ds = eta0_file
+    #     eta2_ds = eta2_file
+    #     eta_sc_ds = eta_sc_file
+    #     eta_res_ds = eta_res_file
+    #     eta5 = eta5_ds["eta5"]
+    #     eta0 = eta0_ds["eta0"]
+    #     eta2 = eta2_ds["eta2"]
+    #     eta_sc = eta_sc_ds
+    #     eta_res = eta_res_ds["SWE_tavg"]
+    #     weighted_eta5 = eta5 * weights["eta5"]
+    #     weighted_eta0 = eta0 * weights["eta0"]
+    #     weighted_eta2 = eta2 * weights["eta2"]
+    #     weighted_eta_sc = eta_sc * weights["eta_sc"]
+    #     weighted_eta_res = eta_res * weights["eta_res"]
+    #     combined_values = (
+    #         weighted_eta5
+    #         * weighted_eta0
+    #         * weighted_eta2
+    #         * weighted_eta_sc
+    #         * weighted_eta_res
+    #     )
+    #     combined_dataset = xr.Dataset({"combined_eta": combined_values})
+    #     combined_dataset["combined_eta"] = combined_dataset[
+    #         "combined_eta"
+    #     ].assign_coords({"time": eta5["time"], "y": eta5["y"], "x": eta5["x"]})
+    #     last_date = str(swe["time"][-1].values)[:10].replace("-", "")
+    #     output_file = os.path.join(
+    #         self.current_simulation_date, f"{output_file}_{last_date}.nc"
+    #     )
+    #     combined_dataset.to_netcdf(output_file)
+    #     logger.info("Combining and multiplying the datasets successfully completed.")
+
+    #     return output_file, combined_dataset
+    
     def combine_and_multiply_datasets(
         self,
         ds,
@@ -685,60 +757,248 @@ class Environment(Observer):
         eta2_file,
         eta_sc_file,
         eta_res_file,
+        eta_recency_file,  # recency efficiency 
         weights,
         output_file,
     ):
         """
-        Combine three datasets by applying weights and performing grid-cell multiplication.
+        Combine datasets by applying weights and performing grid-cell multiplication.
 
         Args:
             ds (xarray.Dataset): The dataset containing the SWE values.
-            eta5_file (str): Path to the NetCDF file for the eta5 dataset.
-            eta0_file (str): Path to the NetCDF file for the eta0 dataset.
-            eta2_file (str): Path to the NetCDF file for the eta2 dataset.
-            weights (dict): Weights for eta5, eta0, and eta2 (e.g., {'eta5': 0.5, 'eta0': 0.3, 'eta2': 0.2}).
-            output_file (str): Path to save the resulting combined dataset.
+            eta5_file (xarray.Dataset): Dataset containing 'eta5' DataArray.
+            eta0_file (xarray.Dataset): Dataset containing 'eta0' DataArray.
+            eta2_file (xarray.Dataset): Dataset containing 'eta2' DataArray.
+            eta_sc_file (xarray.DataArray or Dataset): snowcover efficiency (DataArray or Dataset)
+            eta_res_file (xarray.Dataset): resolution-related dataset (expects a variable, see usage)
+            eta_recency_file (xarray.DataArray or Dataset): recency efficiency (DataArray or Dataset)
+            weights (dict): Weights for components (e.g., {'eta5':0.5, 'eta0':0.3, 'eta2':0.2, 'eta_sc':0.3, 'eta_res':0.2, 'eta_recency':0.1})
+            output_file (str): Base name for output file (will append date).
 
         Returns:
-            output_file (str): The output file name
-            combined_dataset (xarray.Dataset): The new dataset
+            output_file (str): Path to saved NetCDF
+            combined_dataset (xarray.Dataset): The combined dataset with variable 'combined_eta'
         """
         logger.info("Combining and multiplying the datasets.")
         swe = ds["SWE_tavg"]
-        eta5_ds = eta5_file
-        eta0_ds = eta0_file
-        eta2_ds = eta2_file
-        eta_sc_ds = eta_sc_file
-        eta_res_ds = eta_res_file
-        eta5 = eta5_ds["eta5"]
-        eta0 = eta0_ds["eta0"]
-        eta2 = eta2_ds["eta2"]
-        eta_sc = eta_sc_ds
-        eta_res = eta_res_ds["SWE_tavg"]
-        weighted_eta5 = eta5 * weights["eta5"]
-        weighted_eta0 = eta0 * weights["eta0"]
-        weighted_eta2 = eta2 * weights["eta2"]
-        weighted_eta_sc = eta_sc * weights["eta_sc"]
-        weighted_eta_res = eta_res * weights["eta_res"]
+
+        # Input datasets / arrays (accept both DataArray and Dataset where reasonable)
+        eta5 = eta5_file["eta5"] if isinstance(eta5_file, xr.Dataset) else eta5_file
+        eta0 = eta0_file["eta0"] if isinstance(eta0_file, xr.Dataset) else eta0_file
+        eta2 = eta2_file["eta2"] if isinstance(eta2_file, xr.Dataset) else eta2_file
+
+        # eta_sc 
+        if isinstance(eta_sc_file, xr.Dataset):
+            if "eta_sc" in eta_sc_file:
+                eta_sc = eta_sc_file["eta_sc"]
+            else:
+                # assume the dataset itself is a dataarray-like with SWE_tavg used as placeholder
+                eta_sc = eta_sc_file[list(eta_sc_file.data_vars)[0]]
+        else:
+            eta_sc = eta_sc_file
+
+        # eta_res_file may be a dataset (use first variable) or DataArray
+        if isinstance(eta_res_file, xr.Dataset):
+            eta_res = eta_res_file[list(eta_res_file.data_vars)[0]]
+        else:
+            eta_res = eta_res_file
+
+        # recency can be DataArray or Dataset (expecting recency_efficiency or a DataArray)
+        if isinstance(eta_recency_file, xr.Dataset):
+            if "recency_efficiency" in eta_recency_file:
+                eta_recency = eta_recency_file["recency_efficiency"]
+            else:
+                eta_recency = eta_recency_file[list(eta_recency_file.data_vars)[0]]
+        else:
+            eta_recency = eta_recency_file
+
+        # Apply weights
+        weighted_eta5 = eta5 ** weights.get("eta5", 1.0)
+        weighted_eta0 = eta0 ** weights.get("eta0", 1.0)
+        weighted_eta2 = eta2 ** weights.get("eta2", 1.0)
+        weighted_eta_sc = eta_sc ** weights.get("eta_sc", 1.0)
+        weighted_eta_res = eta_res ** weights.get("eta_res", 1.0)
+        weighted_eta_recency = eta_recency ** weights.get("eta_recency", 1.0)
+
+        # Elementwise multiplication across all features (keep broadcasting semantics of xarray)
         combined_values = (
             weighted_eta5
             * weighted_eta0
             * weighted_eta2
             * weighted_eta_sc
             * weighted_eta_res
+            * weighted_eta_recency
         )
+
         combined_dataset = xr.Dataset({"combined_eta": combined_values})
-        combined_dataset["combined_eta"] = combined_dataset[
-            "combined_eta"
-        ].assign_coords({"time": eta5["time"], "y": eta5["y"], "x": eta5["x"]})
+        # ensure coords align to eta5 (assumes eta5 has canonical coords)
+        combined_dataset["combined_eta"] = combined_dataset["combined_eta"].assign_coords(
+            {"time": eta5["time"], "y": eta5["y"], "x": eta5["x"]}
+        )
+
         last_date = str(swe["time"][-1].values)[:10].replace("-", "")
-        output_file = os.path.join(
+        out_fp = os.path.join(
             self.current_simulation_date, f"{output_file}_{last_date}.nc"
         )
-        combined_dataset.to_netcdf(output_file)
+        combined_dataset.to_netcdf(out_fp)
         logger.info("Combining and multiplying the datasets successfully completed.")
 
-        return output_file, combined_dataset
+        return out_fp, combined_dataset
+
+    
+    def make_polygon_id(self, df: pd.DataFrame, decimals: int = 5) -> pd.Series:
+        """
+        Deterministic polygon id from x,y coordinates (string).
+        Accepts a DataFrame-like object with 'x' and 'y' columns (or arrays).
+        """
+        x_arr = np.round(np.asarray(df["x"]), decimals)
+        y_arr = np.round(np.asarray(df["y"]), decimals)
+        return pd.Series(
+            [f"{x_arr[i]:.{decimals}f}_{y_arr[i]:.{decimals}f}" for i in range(len(x_arr))],
+            index=df.index if hasattr(df, "index") else None,
+        )
+        
+    def load_or_init_recency(self, template_da, sim_date):
+        # compute previous day path
+        prev_date = (sim_date - timedelta(days=1)).date()
+        prev_dir = os.path.join(self.output_directory, str(prev_date))
+        prev_path = os.path.join(prev_dir, f"recency_{prev_date.strftime('%Y%m%d')}.nc")
+
+        # Force a 2-D template for comparison
+        template = template_da.squeeze()
+        if ("y" not in template.dims) or ("x" not in template.dims):
+            raise ValueError("template_da must contain 'y' and 'x' dims (after squeeze).")
+
+        recency_da = None
+        if os.path.exists(prev_path):
+            logger.info(f"Loading previous recency file: {prev_path}")
+            prev_ds = xr.open_dataset(prev_path)
+            if "recency_days" in prev_ds:
+                recency_da = prev_ds["recency_days"]
+                # compare squeezed shapes
+                if recency_da.squeeze().shape != template.shape:
+                    logger.info("Resampling previous recency to match template grid")
+                    recency_da = recency_da.rio.write_crs("EPSG:4326").rio.set_spatial_dims("x", "y")
+                    template_rio = template.rio.write_crs("EPSG:4326").rio.set_spatial_dims("x", "y")
+                    recency_da = recency_da.rio.reproject_match(template_rio, resampling=Resampling.bilinear)
+            else:
+                logger.warning("previous recency file missing expected variable 'recency_days'; reinitializing.")
+                recency_da = None
+
+        if recency_da is None:
+            logger.info("Initializing recency from template grid")
+            recency_arr = np.full(template.shape, self.initial_recency, dtype=float)
+            recency_da = xr.DataArray(
+                data=recency_arr,
+                coords=template.coords,
+                dims=template.dims,
+                name="recency_days",
+            ).rio.write_crs("EPSG:4326").rio.set_spatial_dims("x", "y")
+
+        return recency_da
+
+
+
+    def update_and_save_recency(self, recency_da, selected_gdf, sim_date):
+        """
+        Increment recency by 1, reset selected polygon_ids to 0, compute recency_eff,
+        and save both recency and recency_eff NetCDF files under the day's directory.
+
+        Args:
+            recency_da (xarray.DataArray): current recency days array (x,y) or (time,y,x)
+            selected_gdf (gpd.GeoDataFrame): selected cells GeoDataFrame that must include 'polygon_id'
+            sim_date (datetime): current simulation datetime (used for filenames)
+        Returns:
+            updated_recency_da, recency_eff_da
+        """
+        # increment recency 
+        recency_vals = recency_da.values.copy()
+        recency_vals = recency_vals + 1
+
+        #  prepare selected polygon ids set (if any) 
+        selected_ids = set()
+        if selected_gdf is not None and not selected_gdf.empty:
+            if "polygon_id" not in selected_gdf.columns:
+                logger.info("Selected GeoDataFrame missing 'polygon_id'; computing from centroids.")
+                centroids = selected_gdf.geometry.centroid
+                selected_gdf = selected_gdf.copy()
+                selected_gdf["x"] = centroids.x
+                selected_gdf["y"] = centroids.y
+                selected_gdf["polygon_id"] = self.make_polygon_id(selected_gdf)
+            # ensure string typed ids
+            selected_ids = set(selected_gdf["polygon_id"].astype(str).values)
+
+        #  build 2D template from recency_da to construct polygon_id grid 
+        template = recency_da.squeeze()  # remove singleton dims (e.g., time) => (y,x)
+        if ("x" not in template.dims) or ("y" not in template.dims):
+            raise ValueError("recency_da (or its squeezed form) must have dims 'y' and 'x'")
+
+        x_vals = template["x"].values
+        y_vals = template["y"].values
+        X, Y = np.meshgrid(x_vals, y_vals)
+        flat_df = pd.DataFrame({"x": X.ravel(), "y": Y.ravel()})
+        polygon_id_array = self.make_polygon_id(flat_df).values.reshape(template.shape)  # shape == (ny, nx)
+
+        #  produce boolean mask of selected grid cells (2D) 
+        mask2d = np.isin(polygon_id_array, list(selected_ids)) if selected_ids else np.zeros(template.shape, dtype=bool)
+
+        #  apply mask to recency_vals whether it's 2D or (time, y, x) etc. 
+        # handle 2D case
+        if recency_vals.ndim == 2:
+            # recency_vals shape == template.shape
+            recency_vals[mask2d] = 0
+        else:
+            # General case: find the trailing 2 dimensions and apply mask across them
+            # Example shapes: (time, ny, nx) OR (1, ny, nx) etc.
+            trailing_shape = recency_vals.shape[-2:]
+            if trailing_shape != template.shape:
+                # Attempt a best-effort reshape check; raise informative error if truly incompatible
+                raise ValueError(
+                    f"recency_da trailing spatial dims {trailing_shape} do not match template shape {template.shape}"
+                )
+            # reshape to (n_leading, ny*nx), set columns where mask2d.ravel() True to 0, then reshape back
+            leading_shape = recency_vals.shape[:-2]
+            n_leading = int(np.prod(leading_shape)) if leading_shape else 1
+            rec_flat = recency_vals.reshape((n_leading, template.size))
+            mask_flat = mask2d.ravel()
+            if mask_flat.any():
+                rec_flat[:, mask_flat] = 0
+            # put back original shape
+            recency_vals = rec_flat.reshape(recency_vals.shape)
+
+        #  assign values back to recency_da preserving original shape/dtype 
+        recency_da.values = recency_vals
+
+        #  compute recency efficiency using logistic 
+        recency_eff = 1.0 / (1.0 + np.exp(-self.k_recency * (recency_da.values - self.x0_recency)))
+        recency_eff_da = xr.DataArray(
+            data=recency_eff,
+            coords=recency_da.coords,
+            dims=recency_da.dims,
+            name="recency_efficiency",
+        ).rio.write_crs("EPSG:4326").rio.set_spatial_dims("x", "y")
+
+        #  Save both files into the current simulation day's directory 
+        day_str = sim_date.date().strftime("%Y%m%d")
+        day_dir = os.path.join(self.output_directory, str(sim_date.date()))
+        os.makedirs(day_dir, exist_ok=True)
+
+        recency_fp = os.path.join(day_dir, f"recency_{day_str}.nc")
+        recency_ds = recency_da.to_dataset(name="recency_days")
+        recency_ds.to_netcdf(recency_fp, mode="w")
+        logger.info(f"Wrote recency days file: {recency_fp}")
+
+        recency_eff_fp = os.path.join(day_dir, f"recency_eff_{day_str}.nc")
+        recency_eff_da.to_dataset().to_netcdf(
+            recency_eff_fp,
+            mode="w",
+            encoding={"recency_efficiency": {"zlib": True, "complevel": 4}},
+        )
+        logger.info(f"Wrote recency efficiency file: {recency_eff_fp}")
+
+        return recency_da, recency_eff_da
+
+
 
     def process(self, gcom_ds, snowglobe_ds, mo_basin, start, end):
         """
@@ -1317,7 +1577,7 @@ class Environment(Observer):
         # Download only if the file doesn't already exist
         if not os.path.exists(local_path):
             self.s3.download_file(bucket, key, local_path)
-            logger.info("Downloafing TLE file.")
+            logger.info("Downloading TLE file.")
 
         # Read from local file
         with open(local_path, "r") as f:
@@ -1689,18 +1949,55 @@ class Environment(Observer):
                 )
                 logger.info("Publishing message successfully completed.")
                 _time.sleep(15)
+                
+            template_da_for_recency = None
+            try:
+                # Prefer eta5 template if available, else fall back to SWE_tavg
+                if "eta5_file" in locals() and eta5_file is not None:
+                    # pick a temporal slice safely (fallback to 0 if only one step)
+                    t_index = 1 if getattr(eta5_file["eta5"], "sizes", {}).get("time", 0) > 1 else 0
+                    template_da_for_recency = eta5_file["eta5"].isel(time=t_index).squeeze()
+                elif "combined_dataset" in locals() and "SWE_tavg" in combined_dataset:
+                    t_index = 1 if combined_dataset["SWE_tavg"].sizes.get("time", 0) > 1 else 0
+                    template_da_for_recency = combined_dataset["SWE_tavg"].isel(time=t_index).squeeze()
+                else:
+                    logger.warning("No template available for recency initialization (pre-combine). Recency will be uniform initial values.")
+                    template_da_for_recency = None
+
+                if template_da_for_recency is not None:
+                    recency_da_current = self.load_or_init_recency(template_da_for_recency, new_value)
+                    # compute recency efficiency (do NOT modify recency days here; that happens later in update_and_save_recency)
+                    recency_eff_vals = 1.0 / (1.0 + np.exp(-self.k_recency * (recency_da_current.values - self.x0_recency)))
+                    recency_eff_da = xr.DataArray(
+                        data=recency_eff_vals,
+                        coords=recency_da_current.coords,
+                        dims=recency_da_current.dims,
+                        name="recency_efficiency",
+                    ).rio.write_crs("EPSG:4326").rio.set_spatial_dims("x", "y")
+                else:
+                    # If no template available, create a uniform recency efficiency of 1.0
+                    template = combined_dataset["SWE_tavg"].isel(time=0).squeeze()
+                    recency_eff_da = xr.ones_like(template).astype("float32").rename("recency_efficiency")
+            except Exception as e:
+                logger.error(f"Failed to build recency_eff for combine step: {e}", exc_info=True)
+                # fallback: uniform 1 (no influence)
+                template = combined_dataset["SWE_tavg"].isel(time=0).squeeze()
+                recency_eff_da = xr.ones_like(template).astype("float32").rename("recency_efficiency")
 
             # GCOM Final ETA
             # Define the weights for each dataset
             # weights = {"eta5": 0.5, "eta0": 0.3, "eta2": 0.2}
+                        # Add recency as sixth feature (tune weight as desired)
             weights = {
-                "eta5": 0.5,
-                "eta0": 0.3,
-                "eta2": 0.2,
-                "eta_sc": 0.3,
-                "eta_res": 0.2,
+                "eta5": 0.45,
+                "eta0": 0.25,
+                "eta2": 0.15,
+                "eta_sc": 0.25,
+                "eta_res": 0.15,
+                "eta_recency": 0.2,
             }
-            # Process GCOM datasets
+
+            # Process GCOM datasets (include recency_eff_da)
             gcom_combine_multiply_output_file, gcom_dataset = (
                 self.combine_and_multiply_datasets(
                     ds=combined_dataset,
@@ -1709,10 +2006,12 @@ class Environment(Observer):
                     eta2_file=eta2_file_GCOM,
                     eta_sc_file=eta_sc_values,
                     eta_res_file=resolution_dataset_nontaskable_eta,
+                    eta_recency_file=recency_eff_da,
                     weights=weights,
                     output_file="Combined_Efficiency_Weighted_Product_GCOM",
                 )
             )
+
 
             # Upload dataset to S3
             self.upload_file(
@@ -1756,6 +2055,7 @@ class Environment(Observer):
                     eta2_file=eta2_file_Capella,
                     eta_sc_file=eta_sc_values,
                     eta_res_file=resolution_dataset_taskable_eta,
+                    eta_recency_file=recency_eff_da,
                     weights=weights,
                     output_file="Combined_Efficiency_Weighted_Product_Capella",
                 )
@@ -1835,6 +2135,38 @@ class Environment(Observer):
                 VectorLayer(vector_layer=selected_json_data).model_dump_json(),
             )
             logger.info("(SELECTED) Publishing message successfully completed.")
+            
+            # RECENCY: load previous (or init) and update based on selected cells
+            try:
+                
+                template_da = None
+                if 'eta5_file' in locals() and eta5_file is not None:
+                    template_da = eta5_file["eta5"].isel(time=1).squeeze()
+                elif 'combined_dataset' in locals() and "SWE_tavg" in combined_dataset:
+                    template_da = combined_dataset["SWE_tavg"].isel(time=1).squeeze()
+                else:
+                    logger.warning("No template available for recency initialization; skipping recency update.")
+                    template_da = None
+
+
+                if template_da is not None:
+                    # Load or initialize recency
+                    recency_da = self.load_or_init_recency(template_da, new_value)
+                    # Update recency using selected cells (selected_cells_gdf may be None)
+        
+                    sel_for_update = selected_cells_gdf if 'selected_cells_gdf' in locals() and selected_cells_gdf is not None else gpd.GeoDataFrame(columns=["geometry","polygon_id"], crs="EPSG:4326")
+                    # If selected_cells_gdf is empty or None, pass empty GeoDataFrame to update function
+                    if output_geojson is None or not os.path.exists(output_geojson):
+                        sel_for_update = gpd.GeoDataFrame(columns=["geometry", "polygon_id"], crs="EPSG:4326")
+                    else:
+                        sel_for_update = selected_cells_gdf
+
+                    recency_da, recency_eff_da = self.update_and_save_recency(recency_da, sel_for_update, new_value)
+                else:
+                    logger.info("Recency template not available; recency files not created.")
+            except Exception as e:
+                logger.error(f"Recency update failed: {e}", exc_info=True)
+
 
             elapsed = _time.perf_counter() - _start
             logger.info(
