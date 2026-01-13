@@ -171,6 +171,7 @@ class Collect_Observations(Entity):
                                 satellite, self.observation_collected["epoch"]
                             )
                         )
+                        logger.info("Observation collected for point id %s", self.observation_collected["point_id"])
                         # logger.info("self.rquest is %d", len(self.requests) if self.requests is not None else 0)
                         self.next_requests = self.requests.copy() if self.requests is not None else []
                         # logger.info("Updated next_requests with current requests, length is %d", len(self.next_requests) if self.next_requests is not None else 0   )
