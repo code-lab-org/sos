@@ -121,8 +121,7 @@ class Collect_Observations(Entity):
         self.new_request_flag = True
 
     def tick(self, time_step: timedelta):  
-        logger.info("Entering tick time")      
-
+        # logger.info("Entering tick time")
         super().tick(time_step)
         # Set all the tick operations here
         # logger.info("Simulation stop time is %s and type is %s", self.sim_stop_time, type(self.sim_stop_time))
@@ -134,7 +133,7 @@ class Collect_Observations(Entity):
         if t1 > t2:
 
             if self.possible_observations is not None:
-                logger.info("Self.possible_observations length is %d", len(self.possible_observations))
+                # logger.info("Self.possible_observations length is %d", len(self.possible_observations))
 
                 self.observation_collected = filter_and_sort_observations(
                     self.possible_observations,

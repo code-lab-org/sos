@@ -314,6 +314,7 @@ class Environment(Observer):
             "master",  # ["master", "selected"],
             VectorLayer(vector_layer=selected_json_data).model_dump_json(),
         )
+        logger.info("Sent message to simulator. Length of data sent: %d", len(filtered_gdf))
         if self.visualize_selected:
             self.app.send_message(
                 "planner",
