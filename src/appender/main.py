@@ -20,7 +20,6 @@ from src.sos_tools.data_utils import DataUtils
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
 
-
 class Environment(Observer):
     """
     *The Environment object class inherits properties from the Observer object class in the NOS-T tools library*
@@ -82,58 +81,30 @@ class Environment(Observer):
         Returns:
             GeoDataFrame: The GeoDataFrame with the additional columns added.
         """
-        gdf["simulator_simulation_status"] = pd.Series(dtype="string")
+        # gdf["simulator_simulation_status"] = pd.Series(dtype="string")
+        # Initialization with "pending" was made to enable easier filtering(NaN values caused issues in filtering)
+        gdf["simulator_simulation_status"] = "pending"
         gdf["simulator_completion_date"] = pd.NaT
         gdf["simulator_completion_date"] = pd.to_datetime(gdf["simulator_completion_date"], utc=True)  # adding this code to avoid warning when updating daily completion date from simulator(time zone naive/aware issue)        
         
-        if self.set_expiration:
-            logger.info("Expiration time set.")
-            logger.info(f"Setting expiration date with expiration time of %s days", self.expiration_time)
+        if self.set_expiration:            
             gdf["simulator_expiration_date"] = pd.to_datetime(
                 gdf["planner_time"], utc=True
             ) + timedelta(days=int(self.expiration_time))
+            logger.info("Expiration time set to %s days", self.expiration_time)
         else:            
             logger.info("Expiration time not set setting expiration date as infinite (future date)")
             gdf["simulator_expiration_date"] = pd.Timestamp.max.tz_localize("UTC")
 
-        gdf["simulator_expiration_status"] = pd.Series(dtype="string")
+        # gdf["simulator_expiration_status"] = pd.Series(dtype="string")
+        # Initializing all rows as "active" to avoid issues with NaN values during filtering
+        gdf["simulator_expiration_status"] = "active"
         gdf["simulator_satellite"] = pd.Series(dtype="string")
         gdf["simulator_polygon_groundtrack"] = np.nan  # None
         gdf["planner_latitude"] = gdf["planner_centroid"].y
         gdf["planner_longitude"] = gdf["planner_centroid"].x
-        gdf["planner_centroid"] = gdf["planner_centroid"].to_wkt()
+        gdf["planner_centroid"] = gdf["planner_centroid"].to_wkt()      
         
-        # # current_sim_time = self.app.simulator._time  # Must be datetime
-        # current_sim_time = self.app.simulator.get_time()
-        # if isinstance(current_sim_time, (int, float)):
-        #     current_sim_time = datetime.fromtimestamp(current_sim_time)
-
-        # logger.info(
-        #     "Expiration column dtype before check: %s",
-        #     gdf["simulator_expiration_date"].dtype
-        # )
-
-        # logger.info(
-        #     "Simulator current time: %s (type: %s)",
-        #     current_sim_time,
-        #     type(current_sim_time),
-        # )
-
-        # gdf["simulator_expiration_status"] = np.where(
-        #     gdf["simulator_expiration_date"].dt.date < current_sim_time.date(),
-        #     "expired",
-        #     "active"
-        # )    
-        # gdf["simulator_expiration_date"] = gdf["simulator_expiration_date"].astype(str)
-
-        # ### Temporary testing
-        # # Log results
-        # status_counts = gdf["simulator_expiration_status"].value_counts(dropna=False)
-        # logger.info(
-        #     "Expiration status counts after evaluation: %s",
-        #     status_counts.to_dict(),
-        # )
-
         return gdf
     
     def update_expiration(self, gdf):
@@ -156,11 +127,25 @@ class Environment(Observer):
             (gdf["simulator_expiration_status"] != "expired")
         )
 
-        gdf.loc[mask, "simulator_expiration_status"] = np.where(
-            gdf.loc[mask, "simulator_expiration_date"].dt.date < current_sim_time.date(),
-            "expired",
-            "active",
-        )
+        # filtered_gdf = gdf.loc[mask]
+        # logger.info(
+        #         "filtered dgf data : %s", filtered_gdf[[
+        #         "simulator_id",
+        #         "simulator_simulation_status",
+        #         "simulator_expiration_status"
+        #     ]].to_string(index=False)
+        #     )
+
+    # Only mark expired; leave everything else as "active"
+        gdf.loc[
+            mask & (gdf["simulator_expiration_date"].dt.date < current_sim_time.date()),
+            "simulator_expiration_status"
+        ] = "expired"
+
+        logger.info(
+            "Expiration status counts after update: %s",
+            gdf["simulator_expiration_status"].value_counts(dropna=False).to_dict(),
+        )        
 
         return gdf
 
@@ -230,6 +215,7 @@ class Environment(Observer):
         ]
         none_rows = master_gdf[
             master_gdf["simulator_simulation_status"].isna()
+            | (master_gdf["simulator_simulation_status"] == "pending")
         ]
         most_recent_none_rows = none_rows.loc[
             none_rows.groupby("geometry")["planner_time"].idxmax()
@@ -278,7 +264,6 @@ class Environment(Observer):
 
         return k
 
-
     def on_planner(self, ch, method, properties, body):
         """
         Responds to messages from planner application
@@ -305,11 +290,12 @@ class Environment(Observer):
         # max_value = component_gdf["simulator_id"].max()
         self.master_gdf_all = pd.concat(self.master_components, ignore_index=True)
         self.master_gdf_all = self.update_expiration(self.master_gdf_all)
-        logger.info("Expiration status updated in master_gdf_all")
+        # logger.info("Expiration status updated in master_gdf_all")
         self.master_gdf = self.remove_duplicates(self.master_gdf_all)           
         self.master_gdf = self.master_gdf.sort_values(by="simulator_id").reset_index(drop=True)
         # self.master_gdf = self.update_expiration(self.master_gdf)
-        self.master_output_copy = self.master_gdf.copy()
+        # self.master_output_copy = self.master_gdf.copy()        
+        self.master_output_copy = self.master_gdf_all.copy()
         date = self.app.simulator.get_time()
         date_new_format = str(date.date()).replace("-", "")
         self.current_simulation_date = os.path.join(
@@ -335,16 +321,19 @@ class Environment(Observer):
             )
         else:
             logger.info("Upload skipped (uploads disabled): %s", output_file)
+
+        # logger.info(f"Expiration status column data in master_gdf:{self.master_gdf['simulator_expiration_status'].value_counts(dropna=False).to_dict()}")
  
         if self.set_expiration:
             filtered_gdf = self.master_gdf[
                 self.master_gdf["simulator_expiration_status"] != "expired"
-            ]
+            ].copy()
         else:
-            filtered_gdf = self.master_gdf
+            filtered_gdf = self.master_gdf.copy()
 
         logger.info("Filtered gdf based on expiration: %d", len(filtered_gdf))
         filtered_gdf["simulator_completion_date"] = filtered_gdf["simulator_completion_date"].astype(str)
+        filtered_gdf["simulator_expiration_date"] = filtered_gdf["simulator_expiration_date"].astype(str)
         # selected_json_data = self.master_gdf.to_json()
         selected_json_data = filtered_gdf.to_json()
         self.app.send_message(
@@ -359,92 +348,7 @@ class Environment(Observer):
                 "selected",
                 VectorLayer(vector_layer=selected_json_data).model_dump_json(),
             )
-            logger.info("%s sent message. at %s", self.app.app_name, self.app.simulator.get_time())
-
-    # def on_simulator(self, ch, method, properties, body):
-    #     """
-    #     Responds to messages from simulator application(updates self.master_gdf with simulator data)
-
-    #     Inputs:
-    #         ch (Channel): The channel on which the message was received.
-    #         method (Method): The method used to receive the message.
-    #         properties (Properties): The properties of the message.
-    #         body (bytes): The body of the message.
-
-    #     """
-    #     logger.info("entering appender _on_simulator")    
-    #     component_gdf = self.message_to_geojson(body)
-
-    #     if component_gdf.empty:
-    #         logger.warning("Received empty message from simulator. Skipping update.")
-    #         logger.info(
-    #             "Length of master_output_copy before saving: %d and type: %s",
-    #             len(self.master_output_copy),
-    #             type(self.master_output_copy),
-    #         )
-
-    #         try:
-    #             self.master_output_copy.to_file(
-    #                 "outputs/master.geojson", driver="GeoJSON"
-    #             )
-    #             logger.info("Master geojson file saved (no updates applied).")
-
-    #         except Exception as e:
-    #             logger.exception(
-    #                 "Failed to save master_output_copy. Writing empty GeoDataFrame instead."
-    #             )
-
-    #             empty = gpd.GeoDataFrame(
-    #                 {"geometry": gpd.GeoSeries([], dtype="geometry")},
-    #                 geometry="geometry",
-    #                 crs=getattr(self.master_output_copy, "crs", "EPSG:4326"),
-    #             )
-    #             empty.to_file("outputs/master.geojson", driver="GeoJSON")
-    #             logger.info("Empty master geojson file saved as fallback.")
-
-    #         return
-
-        
-    #     # if component_gdf.empty:
-    #     #     logger.warning("Received empty message from simulator. Skipping update.")
-    #     #     # ALWAYS save the current master_output_copy
-    #     #     logger.info("Length of master_output_copy before saving: %d and type: %s", len(self.master_output_copy), type(self.master_output_copy))
-            
-    #     #     self.master_output_copy.to_file("outputs/master.geojson", driver="GeoJSON")
-    #     #     logger.info("Master geojson file saved (no updates applied).")
-    #     #     return
-
-    #     import time as time
-    #     start_time = time.perf_counter()
-    #     # This codes updates two files with daily simulator collected data, the ouput file saved as geojson and in the master_components list
-    #     # Combine self.master_components into a single GeoDataFrame
-    #     # master_gdf_combined = pd.concat(self.master_components, ignore_index=True)
-    #     self.master_gdf_all.set_index("simulator_id", inplace=True)
-    #     component_gdf.set_index("simulator_id", inplace=True)
-    #     logger.info("Before update: master_gdf_combined has %d rows; component_gdf has %d rows", len(self.master_gdf_all), len(component_gdf))
-    #     # Update #1 for the master list of components (this has duplicates)
-    #     self.master_gdf_all.update(component_gdf)
-    #     self.master_output_copy = self.master_output_copy.set_index("simulator_id")
-    #     # Update #2 for the master output file in geojson
-    #     self.master_output_copy.update(component_gdf)
-    #     self.master_output_copy = self.master_output_copy.reset_index()
-    #     self.master_gdf_all.reset_index(inplace=True)
-    #     logger.info("After update: master_gdf_combined has %d rows", len(self.master_gdf_all))
-    #     component_gdf.reset_index(inplace=True)   
-    #     # Saving the updated master_components as list of GeoDataFrames
-    #     self.master_components = [
-    #         gpd.GeoDataFrame(
-    #             group.sort_values("simulator_id"),  # sort within each group
-    #             geometry="geometry",
-    #             crs="EPSG:4326",
-    #         ).reset_index(drop=True)
-    #         for _, group in self.master_gdf_all.groupby("planner_time")
-    #     ]
-    #     # Writing the updated master geojson file
-    #     self.master_output_copy.to_file("outputs/master.geojson", driver="GeoJSON")
-    #     logger.info("Master geosjon file created")             
-    #     end_time = time.perf_counter()
-    #     logger.info("Time taken to update master_gdf_combined: %f seconds", end_time - start_time)
+            # logger.info("%s sent message. at %s", self.app.app_name, self.app.simulator.get_time())
 
     def on_simulator(self, ch, method, properties, body):
         """
@@ -466,15 +370,21 @@ class Environment(Observer):
             # This codes updates two files with daily simulator collected data, the output file saved as geojson and in the master_components list                
             self.master_gdf_all.set_index("simulator_id", inplace=True)
             component_gdf.set_index("simulator_id", inplace=True)
-            logger.info("Before update: master_gdf_combined has %d rows; component_gdf has %d rows", len(self.master_gdf_all), len(component_gdf))
+            # logger.info("Before update: master_gdf_combined has %d rows; component_gdf has %d rows", len(self.master_gdf_all), len(component_gdf))
             
             # Update #1 for the master list of components (this has duplicates)
             self.master_gdf_all.update(component_gdf)
-            self.master_output_copy = self.master_output_copy.set_index("simulator_id")
+            # The below geodataframe removes the duplicates after update
+            # This was done to capture the exceptional case where a observation
+            # is collected in the meantime between two runs and gets deleted
+            # during duplicate removal
+            master_output_copy = self.master_gdf_all.copy()
+            master_output_copy = self.remove_duplicates(master_output_copy)
+            # self.master_output_copy = self.master_output_copy.set_index("simulator_id")
             
             # Update #2 for the master output file in geojson
-            self.master_output_copy.update(component_gdf)
-            self.master_output_copy = self.master_output_copy.reset_index()
+            # self.master_output_copy.update(component_gdf)
+            # self.master_output_copy = self.master_output_copy.reset_index()
             self.master_gdf_all.reset_index(inplace=True)
             component_gdf.reset_index(inplace=True)
 
@@ -487,11 +397,11 @@ class Environment(Observer):
             ).reset_index(drop=True)
             for _, group in self.master_gdf_all.groupby("planner_time")
         ]
-        logger.info("Updated master_components with %d groups based on planner_time", len(self.master_components))
+        # logger.info("Updated master_components with %d groups based on planner_time", len(self.master_components))
 
         # Write master_output_copy once; fallback to empty GeoJSON if write fails
         try:
-            self.master_output_copy.to_file("outputs/master.geojson", driver="GeoJSON")
+            master_output_copy.to_file("outputs/master.geojson", driver="GeoJSON")
             logger.info("Master geojson file created (rows: %d)", len(self.master_output_copy))
         except Exception:
             logger.exception("Failed to write master_output_copy; writing empty fallback.")

@@ -123,12 +123,11 @@ class Collect_Observations(Entity):
     def tick(self, time_step: timedelta):  
         # logger.info("Entering tick time")
         super().tick(time_step)
-        # Set all the tick operations here
-        # logger.info("Simulation stop time is %s and type is %s", self.sim_stop_time, type(self.sim_stop_time))
         self.observation_collected = None
         # Converting simulation time and last observation time to naive datetime for comparison
         t1 = self.get_time().replace(tzinfo=None)
-        t2 = self.last_observation_time.replace(tzinfo=None) + timedelta(seconds=self.time_between_observations)       
+        t2 = self.last_observation_time.replace(tzinfo=None) + timedelta(seconds=self.time_between_observations)   
+        # logger.info("Current simulation time is %s, last observation time is %s, next possible observation time is %s", t1, self.last_observation_time, t2)    
 
         if t1 > t2:
 
@@ -157,9 +156,9 @@ class Collect_Observations(Entity):
                     ): 
 
                         self.observation_collected_flag = True
-                        # logger.info("Daily random value is %f", self.daily_random_value)
+                        logger.info("Daily random value is %f", self.daily_random_value)
                         # logger.info("Constellation capacity is %f", self.constellation_capacity)
-                        # logger.info("Observation collected") 
+                        logger.info("Observation collected") 
                         # Simulate a x% chance of collecting an observation
                         # Get the satellite that collected the observation
                         satellite = self.constellation[
@@ -237,17 +236,12 @@ class Collect_Observations(Entity):
             from .function import read_master_file
 
             logger.info("Starting master file processing in background thread,length of self.master_data is %d", len(self.master_data))
-
             processed_requests = process_master_file(new_requests,existing_completed_requests)
 
-            # logger.info("Master file read and processed with %d requests", len(processed_requests))
-
-            # Also compute incomplete requests and opportunities in background
             incomplete_requests = [
-                r["point"].id
-                for r in processed_requests
-                if r.get("simulator_simulation_status") is None
-                or pd.isna(r.get("simulator_simulation_status"))
+                request["point"].id
+                for request in processed_requests
+                if request.get("simulator_simulation_status") != "Completed"
             ]
 
             # Compute opportunities (this is also a heavy operation)
@@ -274,9 +268,6 @@ class Collect_Observations(Entity):
                 self.new_request_flag = False
 
             elapsed = _time.perf_counter() - _start
-            logger.info(
-                f"Master file processing (including opportunities) completed in background thread in {elapsed:.2f} seconds"
-            )
 
         except Exception as e:
             elapsed = _time.perf_counter() - _start
@@ -293,31 +284,25 @@ class Collect_Observations(Entity):
         # logger.info("entering tock time")
         super().tock()
 
-        # logger.info("Length of requests at tock: %d", len(self.requests) if self.requests is not None else 0)
-        # logger.info("Length of next_requests at tock: %d", len(self.next_requests) if self.next_requests is not None else 0)
-        # logger.info("Master file processing status at tock: %s", self.master_file_processing)
-        # logger.info("entering tock time")
         if self.observation_collected_flag:    
             # logger.info("Observation collected at tock: %s", self.observation_collected)    
             self.requests = self.next_requests
             self.observation_collected_flag = False  # Reset the flag after updating
             # logger.info("Updated requests from next_requests at tock after observation collected)")
-
-        # logger.info("Length of requests after updating from next_requests at tock: %d", len(self.requests) if self.requests is not None else 0)
         
         # Start background processing if new requests arrived and not already processing
         if self.new_request_flag and not self.master_file_processing:
             logger.info(
                 "Requests received. Starting background master file processing."
             )
-
             # Filtering the completed requests from self.request, this will be passed to the processing function to capture completed request by the time new requests arrive
-
             completed_requests = [
             r
             for r in self.requests
             if r.get("simulator_simulation_status") == "Completed"
             ]
+
+            logger.info("completed request is %s", completed_requests)
 
             # Capture current state for thread safety
             import copy

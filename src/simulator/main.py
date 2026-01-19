@@ -26,8 +26,8 @@ def main():
     # create the managed application
     app = ManagedApplication(app_name="simulator")   
 
-    logger.info("Simulation start time is %s", config.rc.simulation_configuration.execution_parameters.manager.sim_start_time) 
-    logger.info("Simulation stop time is %s", config.rc.simulation_configuration.execution_parameters.manager.sim_stop_time)
+    # logger.info("Simulation start time is %s", config.rc.simulation_configuration.execution_parameters.manager.sim_start_time) 
+    # logger.info("Simulation stop time is %s", config.rc.simulation_configuration.execution_parameters.manager.sim_stop_time)
 
     # s3 = AWSUtils().client
     # logger.info("s3 Connection %s",s3)

@@ -116,6 +116,7 @@ def compute_opportunity(
     """
     # Computation time of this function
     # start_time = _time.perf_counter()
+    logger.info("Computing observation opportunities")
     filtered_requests = requests
     time = time.replace(tzinfo=timezone.utc)
     end = (time + duration).replace(tzinfo=timezone.utc)
@@ -123,9 +124,15 @@ def compute_opportunity(
     filtered_requests = [
         request
         for request in requests
-        if request.get("simulator_simulation_status") is None
-        or pd.isna(request.get("simulator_simulation_status"))
+        if request.get("simulator_simulation_status") != "Completed"
     ]
+
+    # filtered_requests = [
+    #     request
+    #     for request in requests
+    #     if request.get("simulator_simulation_status") is None
+    #     or pd.isna(request.get("simulator_simulation_status"))
+    # ]
 
     if filtered_requests:
 
@@ -161,6 +168,8 @@ def compute_opportunity(
                 "point_id"
             ].map(id_to_eta)
 
+            logger.info("Computed observation results length is %d", len(observation_results))
+
             return observation_results
         return None
     else:
@@ -173,6 +182,7 @@ def compute_opportunity(
 def filter_and_sort_observations(df, sim_time, incomplete_ids, time_step_constr):
 
     df = df[df["point_id"].isin(incomplete_ids)]
+
     # Ensure sim_time is timezone-aware and same tz as df
     if df["epoch"].dt.tz is not None and sim_time.tzinfo is None:
         sim_time = sim_time.replace(tzinfo=df["epoch"].dt.tz)
@@ -215,10 +225,10 @@ def read_master_file(request_data=None) -> List[dict]:
     Returns:
         List[dict]: A list of dictionaries representing the master file data.
     """
-    logger.info("Reading master file")
+    logger.info("Reading master file")    
     # Computation time of this function
     start_time = _time.perf_counter()
-    if request_data is not None:
+    if request_data is not None and not request_data.empty:
         request_points = request_data.apply(
             lambda r: {
                 "point": Point(
@@ -247,9 +257,6 @@ def read_master_file(request_data=None) -> List[dict]:
 
     end_time = _time.perf_counter()
 
-    # Calculate the total time taken
-    computation_time = end_time - start_time
-    logger.info(f"Reading master file time: {computation_time:.2f} seconds")
     return request_points
 
 
@@ -262,7 +269,6 @@ def process_master_file(new_request,existing_completed_request) -> List[dict]:
         List[dict]: The updated list of requests.
     """
     logger.info("Processing master file")
-
     master = read_master_file(new_request)
 
     # Split into processed and unprocessed
@@ -270,29 +276,36 @@ def process_master_file(new_request,existing_completed_request) -> List[dict]:
         req for req in master
         if req.get("simulator_simulation_status") == "Completed"
     ]
+
+    # for proc in master_processed:
+    #     logger.info("Processed simulator_id is %s", proc.get("simulator_id"))
+
     master_unprocessed = [
         req for req in master
-        if req.get("simulator_simulation_status") is None
+        if req.get("simulator_simulation_status") != "Completed"
     ]
-
     # Build a quick lookup for existing requests by id
 
     by_id = {d["simulator_id"]: d for d in existing_completed_request if "simulator_id" in d}
 
-    for unp in master_unprocessed:
+    for unp in master_unprocessed:        
         match = by_id.get(unp.get("simulator_id"))
         if match:
-            unp.update(match)
-            
-    # existing_by_point = {req["point"]: req for req in master}
+            unp.update(match)    
+    
+    # Append existing completed requests that are not in master
+    master_ids = {
+        req.get("simulator_id")
+        for req in master
+        if req.get("simulator_id") is not None
+    }
+    # logger.info("Order of columns: %s", list(master[0].keys()))
+    missing_existing = [
+        req for req in existing_completed_request
+        if req.get("simulator_id") not in master_ids
+    ]
 
-    # # Update unprocessed requests in-place using the lookup
-    # for unprocessed in master_unprocessed:
-    #     match = existing_by_point.get(unprocessed["point"])
-    #     if match:
-    #         unprocessed.update(match)
-
-    return master_processed + master_unprocessed
+    return master_processed + master_unprocessed + missing_existing
 
 
 def convert_to_vector_layer_format(visual_requests):
@@ -324,24 +337,36 @@ def convert_to_vector_layer_format(visual_requests):
 
 
 def message_to_geojson(body):
-        """
-        Converts a message body to a GeoDataFrame.
+    """
+    Converts a message body to a GeoDataFrame.
 
-        Inputs:
-            body (bytes): The message body to convert.
+    Inputs:
+        body (bytes): The message body to convert.
 
-        Returns:
-            GeoDataFrame: The GeoDataFrame created from the message
-        """
-        logger.info("Converting message body to GeoDataFrame.")
-        body = body.decode("utf-8")
-        logger.info("Decoding body completed")
-        data = VectorLayer.model_validate_json(body)
-        logger.info("Validating body completed")
-        k = gpd.GeoDataFrame.from_features(
-            json.loads(data.vector_layer)["features"], crs="EPSG:4326"
+    Returns:
+        GeoDataFrame: The GeoDataFrame created from the message
+    """
+    logger.info("Converting message body to GeoDataFrame.")
+    body = body.decode("utf-8")
+    logger.info("Decoding body completed")
+    data = VectorLayer.model_validate_json(body)
+    logger.info("Validating body completed")
+    features = json.loads(data.vector_layer)["features"]
+
+    # --- FIX: handle zero-feature GeoJSON safely ---
+    if not features:
+        logger.warning("Received GeoJSON with zero features. Returning empty GeoDataFrame with geometry column.")
+        return gpd.GeoDataFrame(
+            {"geometry": gpd.GeoSeries([], dtype="geometry")},
+            geometry="geometry",
+            crs="EPSG:4326"
         )
-        return k
+            
+    # --- END FIX ---
+    k = gpd.GeoDataFrame.from_features(
+        json.loads(data.vector_layer)["features"], crs="EPSG:4326"
+    )
+    return k
 
 
 ##################################################################################################################################
@@ -414,7 +439,6 @@ def _write_back_to_appender_impl(thread_data):
 
     # Extract data from thread_data
     requests = thread_data["requests"]
-    # master_data = thread_data["master_data"]
     app_name = thread_data["app_name"]
     sim_time = thread_data["sim_time"]
     callback_time = thread_data["callback_time"]
@@ -424,7 +448,7 @@ def _write_back_to_appender_impl(thread_data):
     )  # Default to True for backward compatibility
 
     end_time_thread = _time.perf_counter()
-    logger.info(f"Thread unpacking time: {end_time_thread - start_time_thread:.2f} seconds.")
+    # logger.info(f"Thread unpacking time: {end_time_thread - start_time_thread:.2f} seconds.")
 
     logger.info(
         f"Background thread starting with {len(requests)} requests, app_name: {app_name}, sim_time: {sim_time}"
@@ -449,21 +473,10 @@ def _write_back_to_appender_impl(thread_data):
         logger.info("Reinitializing S3 client...")
         source.s3_bucket = AWSUtils().client
 
-    # logger.info(f"s3 head bucket {response}")
-    end_time_s3 = _time.perf_counter()
-    # logger.info(f"Contents of s3 variable {s3}")
-    logger.info("Computation time to establish s3 conenction %.2f seconds",end_time_s3-start_time_s3)
+
     output_directory = os.path.join("outputs", app_name)
-    start_time_utils = _time.perf_counter()
     data_utils = DataUtils()
     data_utils.create_directories([output_directory])
-    end_time_setup = _time.perf_counter()
-    logger.info("Utils setup time %.2f seconds",end_time_setup - start_time_utils)
-    logger.info(f"S3 connection and directory setup time: {end_time_setup - start_time_setup:.2f} seconds.")
-
-    logger.info(
-        f"Checking if appender function is reading the requests: {len(requests)}, type: {type(requests)}, callback_time: {callback_time}, sim_time: {sim_time}"
-    )
 
     try:
         # # Build DataFrame of updated master requests
@@ -514,16 +527,6 @@ def _write_back_to_appender_impl(thread_data):
                 crs="EPSG:4326"
             )
 
-        # selected_data = pd.DataFrame(requests)
-        # selected_data = selected_data.drop(columns=["point"], errors="ignore")
-        # # adding error handling if there are 0 records
-
-        # gdf = gpd.GeoDataFrame(
-        #     selected_data,
-        #     geometry="simulator_polygon_groundtrack",
-        #     crs="EPSG:4326"
-        # )
-
         date_sim_time = sim_time
         date_sim = sim_time.strftime("%Y%m%d")
 
@@ -556,13 +559,12 @@ def _write_back_to_appender_impl(thread_data):
         output_file = os.path.join(
             current_simulation_date, f"simulator_output_{date_sim}.geojson"
         )
-        daily_gdf_filtered.to_file(output_file, index=False)
-        logger.info(f"Wrote daily file: {output_file}")
-        end_time_gdf = _time.perf_counter()
-        logger.info(f"GeoDataFrame processing time: {end_time_gdf - start_time_gdf:.2f} seconds.")
 
-        # Computation time for upload
-        # start_time_upload = _time.perf_counter()
+        daily_gdf_filtered = daily_gdf_filtered.sort_values(by="simulator_id").reset_index(drop=True)
+        daily_gdf_filtered.to_file(output_file, index=False)
+
+        logger.info(f"Wrote daily file: {output_file}")
+        end_time_gdf = _time.perf_counter()       
 
         # Upload to S3 only if uploads are enabled
         if enable_uploads:
@@ -586,19 +588,6 @@ def _write_back_to_appender_impl(thread_data):
 
         # Computation time for appender message
         start_time_appender = _time.perf_counter()
-
-        # daily_gdf_filtered = daily_gdf_filtered[
-        # [
-        #     "simulator_id",
-        #     "simulator_simulation_status",
-        #     "simulator_completion_date",
-        #     "simulator_satellite",
-        #     "simulator_polygon_groundtrack"
-        # ]
-        # ]
-        # daily_gdf_filtered["simulator_completion_date"] = daily_gdf_filtered["simulator_completion_date"].astype(str)
-
-        # if not daily_gdf_filtered.empty:
             
         daily_gdf_filtered = daily_gdf_filtered[
         [
@@ -618,18 +607,11 @@ def _write_back_to_appender_impl(thread_data):
             VectorLayer(vector_layer=selected_json_data).model_dump_json()
         )            
         logger.info("Simulator sent message to appender")
-        # else:
-        #     logger.info("Sending empty list simulation date.")
-        #     source.app.send_message(
-        #         app_name,
-        #         "simulator_daily",  # ["master", "selected"],
-        #         "no-data"
-        #     )
 
         elapsed = _time.perf_counter() - _start
-        elapsed_appender = _time.perf_counter() - start_time_appender
-        logger.info(f"Total appender message time: {elapsed_appender:.2f} seconds.")        
-        logger.info(f"write_back_to_appender completed in {elapsed:.2f} seconds")
+        # elapsed_appender = _time.perf_counter() - start_time_appender
+        # logger.info(f"Total appender message time: {elapsed_appender:.2f} seconds.")        
+        # logger.info(f"write_back_to_appender completed in {elapsed:.2f} seconds")
 
     except Exception as e:
         elapsed = _time.perf_counter() - _start
