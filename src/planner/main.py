@@ -1149,12 +1149,12 @@ class Environment(Observer):
                     for prefix in page.get("CommonPrefixes", [])
                 ]
 
-                logger.info(f"Assimilation subdirs found: {subdirs}")
+                logger.debug(f"Assimilation subdirs found: {subdirs}")
 
                 if subdirs:
                     # Sort subdirectories in descending order (most recent first)
                     sorted_subdirs = sorted(subdirs, reverse=True)
-                    logger.info(f"Sorted assimilation subdirs: {sorted_subdirs}")
+                    logger.debug(f"Sorted assimilation subdirs: {sorted_subdirs}")
 
                     # Search through each subdirectory in order
                     for subdir in sorted_subdirs:
