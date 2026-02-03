@@ -868,7 +868,7 @@ class Environment(Observer):
         track_date = gcom_tracks["time"].min().date()
 
         filename = f"gcom_ground_tracks_{track_date}.geojson"
-        filepath = os.path.join(self.output_directory, filename)
+        filepath = os.path.join(self.current_simulation_date, filename)
 
         gcom_tracks.to_file(filepath, driver="GeoJSON")
         logger.info(f"GCOM tracks saved to: {filepath}")
