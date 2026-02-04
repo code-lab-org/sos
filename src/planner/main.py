@@ -113,6 +113,9 @@ class Environment(Observer):
         )
         self.parallel_compute = True
 
+        # Create a single reusable S3 client to avoid connection pool exhaustion
+        self.s3 = AWSUtils().client
+
     def interpolate_dataset(
         self, dataset, variables_to_interpolate, lat_coords, lon_coords, time_coords
     ):
@@ -1440,9 +1443,8 @@ class Environment(Observer):
             old_value_reformat = str(old_value.date()).replace("-", "")
             new_value_reformat = str(new_value.date()).replace("-", "")
 
-            # Establish connection to S3
-            s3 = AWSUtils().client
-            self.s3 = s3
+            # S3 client is already initialized in __init__, no need to recreate
+            # This prevents connection pool exhaustion warnings
 
             mo_basin = self.download_geojson(
                 key="inputs/vector/WBDHU2_4326.geojson",
