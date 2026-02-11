@@ -15,3 +15,4 @@ boto3==1.37.1
 s3fs==2025.3.0
 pulp==3.1.1
 h5netcdf==1.6.1
+spacetrack==1.4.0
