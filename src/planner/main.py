@@ -47,8 +47,7 @@ from src.sos_tools.data_utils import DataUtils
 
 from spacetrack import SpaceTrackClient
 import spacetrack.operators as op
-from io import StringIO
-from skyfield.api import load
+
 
 
 logging.basicConfig(level=logging.INFO)
@@ -857,7 +856,6 @@ class Environment(Observer):
         # orbit from https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle
         gcom_w = Satellite(
             name="GCOM-W",
-            # orbit=TwoLineElements(tle=self.fetch_tles_from_spacetrack()),
             orbit=TwoLineElements(tle=self.fetch_tles_from_spacetrack()),
             instruments=[amsr2],
         )
