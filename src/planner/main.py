@@ -137,15 +137,30 @@ class Environment(Observer):
             (lat_coords.size * lon_coords.size, 2)
         )
 
-        # Get coordinates once
-        lons = dataset.lon.values.flatten()
-        lats = dataset.lat.values.flatten()
+        # Get coordinates - handle both 1D and 2D coordinate arrays
+        lon_vals = dataset.lon.values
+        lat_vals = dataset.lat.values
+
+        if lon_vals.ndim == 1 and lat_vals.ndim == 1:
+            # 1D coordinates (regular lat/lon grid) - create meshgrid
+            lon_grid, lat_grid = np.meshgrid(lon_vals, lat_vals)
+            lons = lon_grid.flatten()
+            lats = lat_grid.flatten()
+        else:
+            # 2D coordinates (curvilinear grid like Lambert projection) - flatten directly
+            lons = lon_vals.flatten()
+            lats = lat_vals.flatten()
+
         points = list(zip(lons, lats))
 
         interpolated_vars = {}
 
         for var_name in variables_to_interpolate:
-            values = dataset[var_name].values.flatten()
+            var_values = dataset[var_name].values
+            if var_values.ndim == 3:  # (time, y, x)
+                values = var_values[0].flatten()  # Take first time step
+            else:
+                values = var_values.flatten()
 
             # Filter out NaN values to improve interpolation performance
             valid_mask = ~np.isnan(values)
