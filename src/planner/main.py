@@ -28,7 +28,7 @@ from rasterio.features import geometry_mask
 from scipy.interpolate import RegularGridInterpolator, griddata
 from shapely.geometry import Polygon, box
 from tatc import utils
-from tatc.analysis import compute_ground_track, collect_ground_track
+from tatc.analysis import collect_ground_track, compute_ground_track
 from tatc.schemas import (
     PointedInstrument,
     Satellite,
@@ -41,14 +41,10 @@ from tatc.utils import swath_width_to_field_of_regard, swath_width_to_field_of_v
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from scipy.special import expit
+from spacetrack import SpaceTrackClient
 
 from src.sos_tools.aws_utils import AWSUtils
 from src.sos_tools.data_utils import DataUtils
-
-from spacetrack import SpaceTrackClient
-import spacetrack.operators as op
-
-
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger()
@@ -86,7 +82,14 @@ class Environment(Observer):
     """
 
     def __init__(
-        self, app, budget: int = 50, enable_uploads=None, freeze_enabled: bool = True, norad_id=None, sim_start=None, sim_stop=None
+        self,
+        app,
+        budget: int = 50,
+        enable_uploads=None,
+        freeze_enabled: bool = True,
+        norad_id=None,
+        sim_start=None,
+        sim_stop=None,
     ):  # , planner_freeze):
         self.app = app
         # self.planner_freeze = planner_freeze
@@ -880,12 +883,12 @@ class Environment(Observer):
             ignore_index=True,
         )
         end_time = time.time()
-        
+
         snow_filename = f"snowglobe_ground_tracks_{start.date()}.geojson"
         snow_filepath = os.path.join(self.current_simulation_date, snow_filename)
 
         ground_tracks.to_file(snow_filepath, driver="GeoJSON")
-        
+
         # logger.info("Computing ground tracks (P1) successfully completed.")
         logger.info(
             f"Computing ground tracks (P1) successfully completed in {end_time - start_time:.2f} seconds."
@@ -933,7 +936,9 @@ class Environment(Observer):
             f"Computing ground tracks (P2) successfully completed in {end_time - start_time:.2f} seconds."
         )
         gcom_tracks["time"] = pd.to_datetime(gcom_tracks["time"]).dt.tz_localize(None)
-        gcom_tracks = gcom_tracks[gcom_tracks["valid_obs"] == True] #only descending/night obs
+        gcom_tracks = gcom_tracks[
+            gcom_tracks["valid_obs"] == True
+        ]  # only descending/night obs
 
         track_date = gcom_tracks["time"].min().date()
 
@@ -1375,7 +1380,6 @@ class Environment(Observer):
         dataset = gpd.read_file(filename)
         return dataset
 
-
     def fetch_tles_from_spacetrack(self):
 
         # use cached TLE if already fetched
@@ -1403,7 +1407,7 @@ class Environment(Observer):
 
         # if nothing found, use latest TLE
         if not tle_data or not tle_data.strip():
-            print("No TLE in range. Using latest.")
+            logger.info("No TLE in range. Using latest.")
             tle_data = st.gp_history(
                 norad_cat_id=self.norad_id,
                 orderby="TLE_LINE1 desc",
@@ -1423,8 +1427,7 @@ class Environment(Observer):
 
         # save to file
         tle_filename = os.path.join(
-            self.current_simulation_date,
-            f"tle_{self.norad_id}.txt"
+            self.current_simulation_date, f"tle_{self.norad_id}.txt"
         )
 
         with open(tle_filename, "w") as f:
@@ -1432,8 +1435,6 @@ class Environment(Observer):
                 f.write(line + "\n")
 
         return lines
-
-
 
     def upload_file(self, key, filename, bucket="snow-observing-systems"):
         """
