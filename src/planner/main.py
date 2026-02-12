@@ -6,7 +6,7 @@ import os
 import sys
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -25,7 +25,7 @@ from PIL import Image
 from pulp import LpMaximize, LpProblem, LpVariable, lpSum, value
 from rasterio.enums import Resampling
 from rasterio.features import geometry_mask
-from scipy.interpolate import griddata
+from scipy.interpolate import RegularGridInterpolator, griddata
 from shapely.geometry import Polygon, box
 from tatc import utils
 from tatc.analysis import compute_ground_track
@@ -132,52 +132,87 @@ class Environment(Observer):
         Returns:
             interpolated_dataset (xarray.Dataset): The interpolated dataset
         """
-        # Precompute meshgrid once
-        xi = np.stack(np.meshgrid(lon_coords, lat_coords), axis=2).reshape(
-            (lat_coords.size * lon_coords.size, 2)
-        )
-
-        # Get coordinates - handle both 1D and 2D coordinate arrays
+        # Get coordinates to detect grid type
         lon_vals = dataset.lon.values
         lat_vals = dataset.lat.values
 
-        if lon_vals.ndim == 1 and lat_vals.ndim == 1:
-            # 1D coordinates (regular lat/lon grid) - create meshgrid
-            lon_grid, lat_grid = np.meshgrid(lon_vals, lat_vals)
-            lons = lon_grid.flatten()
-            lats = lat_grid.flatten()
-        else:
-            # 2D coordinates (curvilinear grid like Lambert projection) - flatten directly
-            lons = lon_vals.flatten()
-            lats = lat_vals.flatten()
-
-        points = list(zip(lons, lats))
-
         interpolated_vars = {}
 
-        for var_name in variables_to_interpolate:
-            var_values = dataset[var_name].values
-            if var_values.ndim == 3:  # (time, y, x)
-                values = var_values[0].flatten()  # Take first time step
-            else:
-                values = var_values.flatten()
+        if lon_vals.ndim == 1 and lat_vals.ndim == 1:
+            # 1D coordinates (regular lat/lon grid) - use fast RegularGridInterpolator
+            target_grid = np.stack(
+                np.meshgrid(lat_coords, lon_coords, indexing="ij"), axis=-1
+            )
 
-            # Filter out NaN values to improve interpolation performance
-            valid_mask = ~np.isnan(values)
-            if not np.all(valid_mask):
-                valid_points = [points[i] for i in range(len(points)) if valid_mask[i]]
-                valid_values = values[valid_mask]
-                zi = griddata(
-                    valid_points, valid_values, xi, method="linear", fill_value=np.nan
+            for var_name in variables_to_interpolate:
+                var_values = dataset[var_name].values
+                if var_values.ndim == 3:
+                    data_2d = var_values[0]
+                else:
+                    data_2d = var_values
+
+                # Interpolate data (fill NaN with 0 for interpolation)
+                nan_mask = np.isnan(data_2d)
+                data_filled = np.where(nan_mask, 0.0, data_2d)
+
+                interp = RegularGridInterpolator(
+                    (lat_vals, lon_vals),
+                    data_filled,
+                    method="linear",
+                    bounds_error=False,
+                    fill_value=np.nan,
                 )
-            else:
-                zi = griddata(points, values, xi, method="linear")
+                zi = interp(target_grid)
 
-            interpolated_vars[var_name] = xr.DataArray(
-                np.reshape(zi, (1, len(lat_coords), len(lon_coords))),
-                coords={"time": time_coords, "y": lat_coords, "x": lon_coords},
-                dims=["time", "y", "x"],
-            ).rio.write_crs("EPSG:4326")
+                # Interpolate the valid-data mask to restore NaN regions
+                mask_interp = RegularGridInterpolator(
+                    (lat_vals, lon_vals),
+                    (~nan_mask).astype(float),
+                    method="linear",
+                    bounds_error=False,
+                    fill_value=0.0,
+                )
+                mask_result = mask_interp(target_grid)
+                zi[mask_result < 0.5] = np.nan
+
+                interpolated_vars[var_name] = xr.DataArray(
+                    np.reshape(zi, (1, len(lat_coords), len(lon_coords))),
+                    coords={"time": time_coords, "y": lat_coords, "x": lon_coords},
+                    dims=["time", "y", "x"],
+                ).rio.write_crs("EPSG:4326")
+        else:
+            # 2D coordinates (curvilinear grid like Lambert projection) - use griddata
+            xi = np.stack(np.meshgrid(lon_coords, lat_coords), axis=2).reshape(
+                (lat_coords.size * lon_coords.size, 2)
+            )
+            lons = lon_vals.flatten()
+            lats = lat_vals.flatten()
+            points = list(zip(lons, lats))
+
+            for var_name in variables_to_interpolate:
+                values = dataset[var_name].values.flatten()
+
+                valid_mask = ~np.isnan(values)
+                if not np.all(valid_mask):
+                    valid_points = [
+                        points[i] for i in range(len(points)) if valid_mask[i]
+                    ]
+                    valid_values = values[valid_mask]
+                    zi = griddata(
+                        valid_points,
+                        valid_values,
+                        xi,
+                        method="linear",
+                        fill_value=np.nan,
+                    )
+                else:
+                    zi = griddata(points, values, xi, method="linear")
+
+                interpolated_vars[var_name] = xr.DataArray(
+                    np.reshape(zi, (1, len(lat_coords), len(lon_coords))),
+                    coords={"time": time_coords, "y": lat_coords, "x": lon_coords},
+                    dims=["time", "y", "x"],
+                ).rio.write_crs("EPSG:4326")
 
         return xr.Dataset(interpolated_vars)
 
@@ -786,7 +821,7 @@ class Environment(Observer):
                 altitude=555e3,
                 equator_crossing_time="06:00:30",
                 equator_crossing_ascending=False,
-                epoch=datetime(2019, 3, 1, tzinfo=timezone.utc),
+                epoch=start.replace(tzinfo=timezone.utc),  # Use simulation start date
             ),
             number_planes=1,
             number_satellites=5,
