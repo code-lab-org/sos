@@ -1332,8 +1332,8 @@ class Environment(Observer):
         if self.cached_tles is not None:
             return self.cached_tles
 
-        username = os.environ.get("SPACETRACK_USER")
-        password = os.environ.get("SPACETRACK_PASS")
+        username = os.environ.get("SPACETRACK_USERNAME")
+        password = os.environ.get("SPACETRACK_PASSWORD")
 
         if not username or not password:
             raise ValueError("SpaceTrack credentials not set.")
