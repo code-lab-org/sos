@@ -115,6 +115,81 @@ class Environment(Observer):
 
         # Create a single reusable S3 client to avoid connection pool exhaustion
         self.s3 = AWSUtils().client
+        
+    def is_lambert_grid(self, dataset) -> bool:
+        proj = str(dataset.attrs.get("MAP_PROJECTION", "")).upper()
+        if "LAMBER" in proj:
+            return True
+
+        # fallback: check if lat/lon are 2D
+        if "lat" in dataset and getattr(dataset["lat"], "ndim", 1) == 2:
+            return True
+
+        return False
+    
+    def coarsen_to_50km(self, dataset, variables):
+        """
+        Coarsen regular lat/lon dataset (~0.01°) to approximately 50 km resolution.
+        Assumes 1D lat and lon coordinates.
+        """
+
+        dx = float(dataset.attrs.get("DX", 0.01))  # degrees
+        dy = float(dataset.attrs.get("DY", 0.01))
+
+        # representative latitude for longitude scaling
+        lat_mean = float(dataset["lat"].values.mean())
+
+        km_per_deg_lat = 111.0
+        km_per_deg_lon = 111.0 * np.cos(np.deg2rad(lat_mean))
+
+        factor_lat = int(round(50.0 / (dy * km_per_deg_lat)))
+        factor_lon = int(round(50.0 / (dx * km_per_deg_lon)))
+
+        factor_lat = max(1, factor_lat)
+        factor_lon = max(1, factor_lon)
+
+        logger.info(f"Coarsening factor lat: {factor_lat}, lon: {factor_lon}")
+
+        # Coarsen spatial dimensions
+        ds_coarse = dataset[variables].coarsen(
+            north_south=factor_lat,
+            east_west=factor_lon,
+            boundary="trim"
+        ).mean()
+
+        # Compute correct new coordinate centers
+
+        lat_vals = dataset["lat"].values
+        lon_vals = dataset["lon"].values
+
+        # reshape into blocks and compute block mean for centers
+        new_lat = lat_vals[: len(lat_vals) // factor_lat * factor_lat] \
+            .reshape(-1, factor_lat).mean(axis=1)
+
+        new_lon = lon_vals[: len(lon_vals) // factor_lon * factor_lon] \
+            .reshape(-1, factor_lon).mean(axis=1)
+
+        # assign proper coordinates
+        ds_coarse = ds_coarse.rename({
+            "north_south": "y",
+            "east_west": "x"
+        })
+
+        ds_coarse = ds_coarse.assign_coords({
+            "y": new_lat,
+            "x": new_lon
+        })
+
+        # ensure time dimension exists
+        if "time" not in ds_coarse.dims and "time" in dataset.dims:
+            ds_coarse = ds_coarse.expand_dims("time")
+
+        # attach CRS for downstream .rio operations
+        ds_coarse = ds_coarse.rio.write_crs("EPSG:4326", inplace=False)
+
+        return ds_coarse
+
+
 
     def interpolate_dataset(
         self, dataset, variables_to_interpolate, lat_coords, lon_coords, time_coords
@@ -200,6 +275,8 @@ class Environment(Observer):
             return output_file, clipped_dataset
 
         logger.info("Combining the two datasets.")
+        assert self.is_lambert_grid(dataset1) == self.is_lambert_grid(dataset2), \
+        "dataset1 and dataset2 have different projection types."
         start_time = time.time()
         time_coords_ds1 = np.array([dataset1.time[0].values])
         time_coords_ds2 = np.array([dataset2.time[0].values])
@@ -209,22 +286,43 @@ class Environment(Observer):
         lon_coords = np.linspace(-113.938141, -90.114221, 40)
         variables_to_interpolate = ["SWE_tavg", "AvgSurfT_tavg", "Snowcover_tavg"]
 
-        # Parallelize dataset interpolation
-        logger.debug("Starting parallel interpolation of datasets")
-        results = Parallel(
-            n_jobs=-1 if self.parallel_compute else 1, backend="threading"
-        )(
-            delayed(self.interpolate_dataset)(
-                ds, variables_to_interpolate, lat_coords, lon_coords, time_coords
-            )
-            for ds, time_coords in [
-                (dataset1, time_coords_ds1),
-                (dataset2, time_coords_ds2),
-            ]
-        )
+        if self.is_lambert_grid(dataset1):
+            logger.info("Detected Lambert grid → using interpolation.")
 
-        new_ds1, new_ds2 = results
-        logger.debug("Parallel interpolation completed")
+            lat_coords = np.linspace(37.024602, 49.739086, 29)
+            lon_coords = np.linspace(-113.938141, -90.114221, 40)
+
+            results = Parallel(
+                n_jobs=-1 if self.parallel_compute else 1,
+                backend="threading"
+            )(
+                delayed(self.interpolate_dataset)(
+                    ds, variables_to_interpolate, lat_coords, lon_coords, time_coords
+                )
+                for ds, time_coords in [
+                    (dataset1, time_coords_ds1),
+                    (dataset2, time_coords_ds2),
+                ]
+            )
+
+            new_ds1, new_ds2 = results
+
+        else:
+            logger.info("Detected regular lat/lon grid → using 50km coarsening.")
+
+            new_ds1 = self.coarsen_to_50km(dataset1, variables_to_interpolate)
+            new_ds2 = self.coarsen_to_50km(dataset2, variables_to_interpolate)
+
+            # Expand time dimension if needed
+            if "time" not in new_ds1.dims:
+                new_ds1 = new_ds1.expand_dims(time=time_coords_ds1)
+            else:
+                new_ds1 = new_ds1.assign_coords(time=time_coords_ds1)
+
+            if "time" not in new_ds2.dims:
+                new_ds2 = new_ds2.expand_dims(time=time_coords_ds1)
+            else:
+                new_ds2 = new_ds2.assign_coords(time=time_coords_ds1)
 
         # Combine datasets and clip to Missouri Basin
         combined_dataset = xr.concat([new_ds1, new_ds2], dim="time")
@@ -288,6 +386,8 @@ class Environment(Observer):
             return output_file, clipped_dataset
 
         logger.info("Combining the two datasets.")
+        assert self.is_lambert_grid(dataset1) == self.is_lambert_grid(dataset2), \
+        "dataset1 and dataset2 have different projection types."
         start_time = time.time()
         time_coords_ds1 = np.array([dataset1.time[0].values])
         time_coords_ds2 = np.array([dataset2.time[0].values])
@@ -303,22 +403,54 @@ class Environment(Observer):
         )
         variables_to_interpolate = ["SWE_tavg"]
 
-        # Parallelize dataset interpolation
-        logger.debug("Starting parallel interpolation of datasets")
-        results = Parallel(
-            n_jobs=-1 if self.parallel_compute else 1, backend="threading"
-        )(
-            delayed(self.interpolate_dataset)(
-                ds, variables_to_interpolate, lat_coords, lon_coords, time_coords
-            )
-            for ds, time_coords in [
-                (dataset1, time_coords_ds1),
-                (dataset2, time_coords_ds2),
-            ]
-        )
+        if self.is_lambert_grid(dataset1):
+            logger.info("Lambert grid detected → interpolating to ~1km lat/lon grid.")
 
-        new_ds1, new_ds2 = results
-        logger.debug("Parallel interpolation for resolution completed")
+            lat_res = 0.009
+            lon_res = 0.011
+
+            lat_coords = np.arange(
+                dataset1["lat"].values.min(),
+                dataset1["lat"].values.max(),
+                lat_res
+            )
+            lon_coords = np.arange(
+                dataset1["lon"].values.min(),
+                dataset1["lon"].values.max(),
+                lon_res
+            )
+
+            results = Parallel(
+                n_jobs=-1 if self.parallel_compute else 1,
+                backend="threading"
+            )(
+                delayed(self.interpolate_dataset)(
+                    ds, variables_to_interpolate, lat_coords, lon_coords, time_coords
+                )
+                for ds, time_coords in [
+                    (dataset1, time_coords_ds1),
+                    (dataset2, time_coords_ds2),
+                ]
+            )
+
+            new_ds1, new_ds2 = results
+
+        else:
+            logger.info("Regular lat/lon grid detected → using original 1km data.")
+
+            # Just rename dims to y/x to match rest of pipeline
+            new_ds1 = dataset1[variables_to_interpolate].rename({
+                "north_south": "y",
+                "east_west": "x"
+            }).expand_dims(time=time_coords_ds1)
+
+            new_ds2 = dataset2[variables_to_interpolate].rename({
+                "north_south": "y",
+                "east_west": "x"
+            }).expand_dims(time=time_coords_ds2)
+
+            new_ds1 = new_ds1.rio.write_crs("EPSG:4326")
+            new_ds2 = new_ds2.rio.write_crs("EPSG:4326")
 
         # Combine datasets and clip to Missouri Basin
         combined_dataset = xr.concat([new_ds1, new_ds2], dim="time")
@@ -718,11 +850,11 @@ class Environment(Observer):
         eta2 = eta2_ds["eta2"]
         eta_sc = eta_sc_ds
         eta_res = eta_res_ds["SWE_tavg"]
-        weighted_eta5 = eta5 * weights["eta5"]
-        weighted_eta0 = eta0 * weights["eta0"]
-        weighted_eta2 = eta2 * weights["eta2"]
-        weighted_eta_sc = eta_sc * weights["eta_sc"]
-        weighted_eta_res = eta_res * weights["eta_res"]
+        weighted_eta5 = eta5 ** weights["eta5"]
+        weighted_eta0 = eta0 ** weights["eta0"]
+        weighted_eta2 = eta2 ** weights["eta2"]
+        weighted_eta_sc = eta_sc ** weights["eta_sc"]
+        weighted_eta_res = eta_res ** weights["eta_res"]
         combined_values = (
             weighted_eta5
             * weighted_eta0
