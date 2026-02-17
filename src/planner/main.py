@@ -730,11 +730,11 @@ class Environment(Observer):
         eta2 = eta2_ds["eta2"]
         eta_sc = eta_sc_ds
         eta_res = eta_res_ds["SWE_tavg"]
-        weighted_eta5 = eta5 * weights["eta5"]
-        weighted_eta0 = eta0 * weights["eta0"]
-        weighted_eta2 = eta2 * weights["eta2"]
-        weighted_eta_sc = eta_sc * weights["eta_sc"]
-        weighted_eta_res = eta_res * weights["eta_res"]
+        weighted_eta5 = eta5 ** weights["eta5"]
+        weighted_eta0 = eta0 ** weights["eta0"]
+        weighted_eta2 = eta2 ** weights["eta2"]
+        weighted_eta_sc = eta_sc ** weights["eta_sc"]
+        weighted_eta_res = eta_res ** weights["eta_res"]
         combined_values = (
             weighted_eta5
             * weighted_eta0
@@ -771,6 +771,7 @@ class Environment(Observer):
             final_eta_gdf (gpd.GeoDataFrame): The final efficiency GeoDataFrame.
         """
         logger.info("Generating final efficiency dataset.")
+        domain = box(-114, 37, -90, 50)
         duration = timedelta(days=1)
         frame_duration = timedelta(days=1)
         # num_frames = int(1 + (end - start) / duration)
@@ -825,7 +826,7 @@ class Environment(Observer):
                 delayed(compute_ground_track)(
                     satellite=satellite,
                     times=sim_times,
-                    # mask=self.polygons[0],
+                    mask=domain,
                     crs="spice",
                 )
                 for satellite in constellation.generate_members()
@@ -833,17 +834,18 @@ class Environment(Observer):
             ignore_index=True,
         )
         end_time = time.time()
+        
+        simulation_date = os.path.basename(self.current_simulation_date)
 
-        snow_filename = f"snowglobe_ground_tracks_{start.date()}.geojson"
+        snow_filename = f"snowglobe_ground_tracks_{simulation_date}.geojson"
         snow_filepath = os.path.join(self.current_simulation_date, snow_filename)
-
         ground_tracks.to_file(snow_filepath, driver="GeoJSON")
 
         # logger.info("Computing ground tracks (P1) successfully completed.")
         logger.info(
             f"Computing ground tracks (P1) successfully completed in {end_time - start_time:.2f} seconds."
         )
-        domain = box(-114, 37, -90, 50)
+
         amsr2 = PointedInstrument(
             name="AMSR2",
             cross_track_field_of_view=utils.swath_width_to_field_of_regard(
@@ -890,9 +892,9 @@ class Environment(Observer):
             gcom_tracks["valid_obs"] == True
         ]  # only descending/night obs
 
-        track_date = gcom_tracks["time"].min().date()
+        # track_date = gcom_tracks["time"].min().date()
 
-        filename = f"gcom_ground_tracks_{track_date}.geojson"
+        filename = f"gcom_ground_tracks_{simulation_date}.geojson"
         filepath = os.path.join(self.current_simulation_date, filename)
 
         gcom_tracks.to_file(filepath, driver="GeoJSON")
