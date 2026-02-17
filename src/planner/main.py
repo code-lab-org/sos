@@ -6,7 +6,7 @@ import os
 import sys
 import threading
 import time
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -28,7 +28,7 @@ from rasterio.features import geometry_mask
 from scipy.interpolate import griddata
 from shapely.geometry import Polygon, box
 from tatc import utils
-from tatc.analysis import compute_ground_track
+from tatc.analysis import collect_ground_track, compute_ground_track
 from tatc.schemas import (
     PointedInstrument,
     Satellite,
@@ -41,6 +41,7 @@ from tatc.utils import swath_width_to_field_of_regard, swath_width_to_field_of_v
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from scipy.special import expit
+from spacetrack import SpaceTrackClient
 
 from src.sos_tools.aws_utils import AWSUtils
 from src.sos_tools.data_utils import DataUtils
@@ -81,14 +82,25 @@ class Environment(Observer):
     """
 
     def __init__(
-        self, app, budget: int = 50, enable_uploads=None, freeze_enabled: bool = True
+        self,
+        app,
+        budget: int = 50,
+        enable_uploads=None,
+        freeze_enabled: bool = True,
+        norad_id=None,
+        sim_start=None,
+        sim_stop=None,
     ):  # , planner_freeze):
         self.app = app
         # self.planner_freeze = planner_freeze
         self.budget = budget
         self.freeze_enabled = freeze_enabled
-        self.visualize_swe_change = True
+        self.visualize_swe_change = False
         self.visualize_all_layers = False
+        self.norad_id = norad_id
+        self.sim_start = pd.to_datetime(sim_start)
+        self.sim_stop = pd.to_datetime(sim_stop)
+        self.cached_tles = None
 
         # Flag to control S3 uploads - check environment variable if not explicitly set
         if enable_uploads is None:
@@ -895,7 +907,8 @@ class Environment(Observer):
         logger.info("Generating final efficiency dataset.")
         duration = timedelta(days=1)
         frame_duration = timedelta(days=1)
-        num_frames = int(1 + (end - start) / duration)
+        # num_frames = int(1 + (end - start) / duration)
+        num_frames = 1
         roll_angle = (30 + 33.5) / 2
         roll_range = 33.5 - 30
         logger.info("Specifying constellation.")
@@ -905,7 +918,7 @@ class Environment(Observer):
                 altitude=555e3,
                 equator_crossing_time="06:00:30",
                 equator_crossing_ascending=False,
-                epoch=datetime(2019, 3, 1, tzinfo=timezone.utc),
+                epoch=start.replace(tzinfo=timezone.utc),
             ),
             number_planes=1,
             number_satellites=5,
@@ -954,6 +967,12 @@ class Environment(Observer):
             ignore_index=True,
         )
         end_time = time.time()
+
+        snow_filename = f"snowglobe_ground_tracks_{start.date()}.geojson"
+        snow_filepath = os.path.join(self.current_simulation_date, snow_filename)
+
+        ground_tracks.to_file(snow_filepath, driver="GeoJSON")
+
         # logger.info("Computing ground tracks (P1) successfully completed.")
         logger.info(
             f"Computing ground tracks (P1) successfully completed in {end_time - start_time:.2f} seconds."
@@ -974,14 +993,14 @@ class Environment(Observer):
         # orbit from https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle
         gcom_w = Satellite(
             name="GCOM-W",
-            orbit=TwoLineElements(tle=self.fetch_tle_lines_from_s3()),
+            orbit=TwoLineElements(tle=self.fetch_tles_from_spacetrack()),
             instruments=[amsr2],
         )
         logger.info("Computing ground tracks (P2).")
         start_time = time.time()
         gcom_tracks = pd.concat(
             Parallel(n_jobs=-1 if self.parallel_compute else 1)(
-                delayed(compute_ground_track)(
+                delayed(collect_ground_track)(
                     gcom_w,
                     pd.date_range(
                         start + frame * frame_duration,
@@ -1001,6 +1020,9 @@ class Environment(Observer):
             f"Computing ground tracks (P2) successfully completed in {end_time - start_time:.2f} seconds."
         )
         gcom_tracks["time"] = pd.to_datetime(gcom_tracks["time"]).dt.tz_localize(None)
+        gcom_tracks = gcom_tracks[
+            gcom_tracks["valid_obs"] == True
+        ]  # only descending/night obs
 
         track_date = gcom_tracks["time"].min().date()
 
@@ -1442,44 +1464,61 @@ class Environment(Observer):
         dataset = gpd.read_file(filename)
         return dataset
 
-    def fetch_tle_lines_from_s3(
-        self,
-        bucket="snow-observing-systems",
-        key="inputs/satellite/sat000038337.txt",
-        local_filename="sat000038337.txt",
-    ):
+    def fetch_tles_from_spacetrack(self):
 
-        local_path = os.path.join(self.input_directory, local_filename)
+        # use cached TLE if already fetched
+        if self.cached_tles is not None:
+            return self.cached_tles
 
-        # Download only if the file doesn't already exist
-        if not os.path.exists(local_path):
-            self.s3.download_file(bucket, key, local_path)
-            logger.info("Downloafing TLE file.")
+        username = os.environ.get("SPACETRACK_USERNAME")
+        password = os.environ.get("SPACETRACK_PASSWORD")
 
-        # Read from local file
-        with open(local_path, "r") as f:
-            lines = [line.strip() for line in f if line.strip()]
+        if not username or not password:
+            raise ValueError("SpaceTrack credentials not set.")
 
-        # Parse valid TLE line pairs
-        tle_lines = []
-        i = 0
-        while i < len(lines) - 2:
-            if lines[i].startswith("1 ") and lines[i + 1].startswith("2 "):
-                tle_lines.append(lines[i])
-                tle_lines.append(lines[i + 1])
-                i += 2
-            elif (
-                lines[i].startswith("GCOM")
-                and lines[i + 1].startswith("1 ")
-                and lines[i + 2].startswith("2 ")
-            ):
-                tle_lines.append(lines[i + 1])
-                tle_lines.append(lines[i + 2])
-                i += 3
-            else:
-                i += 1
+        st = SpaceTrackClient(identity=username, password=password)
 
-        return tle_lines
+        start_str = self.sim_start.strftime("%Y-%m-%d")
+        end_str = self.sim_stop.strftime("%Y-%m-%d")
+
+        # try historical range first
+        tle_data = st.gp_history(
+            norad_cat_id=self.norad_id,
+            epoch=f"{start_str}--{end_str}",
+            orderby="TLE_LINE1 asc",
+            format="tle",
+        )
+
+        # if nothing found, use latest TLE
+        if not tle_data or not tle_data.strip():
+            print("No TLE in range. Using latest.")
+            tle_data = st.gp_history(
+                norad_cat_id=self.norad_id,
+                orderby="TLE_LINE1 desc",
+                limit=1,
+                format="tle",
+            )
+
+        if not tle_data or not tle_data.strip():
+            raise ValueError("No TLE available.")
+
+        lines = [line.strip() for line in tle_data.splitlines() if line.strip()]
+
+        if len(lines) % 2 != 0:
+            raise ValueError("Invalid TLE format.")
+
+        self.cached_tles = lines
+
+        # save to file
+        tle_filename = os.path.join(
+            self.current_simulation_date, f"tle_{self.norad_id}.txt"
+        )
+
+        with open(tle_filename, "w") as f:
+            for line in lines:
+                f.write(line + "\n")
+
+        return lines
 
     def upload_file(self, key, filename, bucket="snow-observing-systems"):
         """
@@ -2206,6 +2245,9 @@ def main():
             app,
             budget=config.rc.application_configuration["budget"],
             freeze_enabled=freeze_enabled,
+            norad_id=config.rc.application_configuration["norad_id"],
+            sim_start=config.rc.simulation_configuration.execution_parameters.manager.sim_start_time,
+            sim_stop=config.rc.simulation_configuration.execution_parameters.manager.sim_stop_time,
         )
     )
 
