@@ -512,18 +512,18 @@ class Environment(Observer):
 
         return output_file, sensor_gcom_dataset
 
-    def generate_sensor_capella(self, ds):
+    def generate_sensor_taskable(self, ds):
         """
-        Generate the Capella efficiency dataset.
+        Generate the taskable efficiency dataset.
 
         Args:
             ds (xarray.Dataset): The dataset containing the SWE values
 
         Returns:
             output_file (str): The output file name
-            sensor_capella_dataset (xarray.Dataset): The new dataset
+            sensor_taskable_dataset (xarray.Dataset): The new dataset
         """
-        logger.info("Generating Capella efficiency dataset.")
+        logger.info("Generating taskable efficiency dataset.")
         swe = ds["SWE_tavg"]
         T = 150
         k = -0.03
@@ -548,21 +548,21 @@ class Environment(Observer):
             dims=["time", "y", "x"],
             name="eta2",
         )
-        sensor_capella_dataset = xr.Dataset({"eta2": eta2_da}).transpose(
+        sensor_taskable_dataset = xr.Dataset({"eta2": eta2_da}).transpose(
             "time", "y", "x"
         )
-        for var in sensor_capella_dataset.variables:
-            if "grid_mapping" in sensor_capella_dataset[var].attrs:
-                del sensor_capella_dataset[var].attrs["grid_mapping"]
+        for var in sensor_taskable_dataset.variables:
+            if "grid_mapping" in sensor_taskable_dataset[var].attrs:
+                del sensor_taskable_dataset[var].attrs["grid_mapping"]
         last_date = str(swe["time"][-1].values)[:10].replace("-", "")
 
         output_file = os.path.join(
-            self.current_simulation_date, f"Efficiency_Sensor_Capella_{last_date}.nc"
+            self.current_simulation_date, f"Efficiency_Sensor_taskable_{last_date}.nc"
         )
-        sensor_capella_dataset.to_netcdf(output_file)
-        logger.info("Generating Capella efficiency dataset successfully completed.")
+        sensor_taskable_dataset.to_netcdf(output_file)
+        logger.info("Generating taskable efficiency dataset successfully completed.")
 
-        return output_file, sensor_capella_dataset
+        return output_file, sensor_taskable_dataset
 
     # MODIFIED BY DIVYA
 
@@ -785,7 +785,8 @@ class Environment(Observer):
                 altitude=555e3,
                 equator_crossing_time="06:00:30",
                 equator_crossing_ascending=False,
-                epoch=start.replace(tzinfo=timezone.utc),
+                epoch=start.replace(tzinfo=timezone.utc)
+                # epoch=pd.to_datetime(self.sim_start, utc=True),
             ),
             number_planes=1,
             number_satellites=5,
@@ -1698,21 +1699,21 @@ class Environment(Observer):
                 logger.info("Publishing message successfully completed.")
                 _time.sleep(15)
 
-            # ETA2 Capella dataset
-            # Generate the sensor capella dataset
-            sensor_capella_output_file, eta2_file_Capella = (
-                self.generate_sensor_capella(ds=combined_dataset)
+            # ETA2 taskable dataset
+            # Generate the sensor taskable dataset
+            sensor_taskable_output_file, eta2_file_taskable = (
+                self.generate_sensor_taskable(ds=combined_dataset)
             )
             # Upload dataset to S3
             self.upload_file(
-                key=sensor_capella_output_file, filename=sensor_capella_output_file
+                key=sensor_taskable_output_file, filename=sensor_taskable_output_file
             )
             # Select the eta2 variable for a specific time step (e.g., first time step)
-            eta2_data_Capella = eta2_file_Capella["eta2"].isel(time=1)
-            eta2_capella_layer_encoded, _, _, _, _ = self.encode(
-                dataset=eta2_file_Capella,
+            eta2_data_taskable = eta2_file_taskable["eta2"].isel(time=1)
+            eta2_taskable_layer_encoded, _, _, _, _ = self.encode(
+                dataset=eta2_file_taskable,
                 variable="eta2",
-                output_path=f"eta2_capella_data_{new_value_reformat}.png",
+                output_path=f"eta2_taskable_data_{new_value_reformat}.png",
                 time_step=1,
                 scale="time",
                 geojson_path="WBD_10_HU2_4326.geojson",
@@ -1723,7 +1724,7 @@ class Environment(Observer):
                     app.app_name,
                     "layer",
                     SWEChangeLayer(
-                        swe_change_layer=eta2_capella_layer_encoded,
+                        swe_change_layer=eta2_taskable_layer_encoded,
                         top_left=top_left,
                         top_right=top_right,
                         bottom_left=bottom_left,
@@ -1789,29 +1790,29 @@ class Environment(Observer):
                 logger.info("Publishing message successfully completed.")
                 _time.sleep(15)
 
-            # Capella Final ETA
-            # Process Capella datasets
-            capella_combine_multiply_output_file, capella_dataset = (
+            # taskable Final ETA
+            # Process taskable datasets
+            taskable_combine_multiply_output_file, taskable_dataset = (
                 self.combine_and_multiply_datasets(
                     ds=combined_dataset,
                     eta5_file=eta5_file,
                     eta0_file=eta0_file,
-                    eta2_file=eta2_file_Capella,
+                    eta2_file=eta2_file_taskable,
                     eta_sc_file=eta_sc_values,
                     eta_res_file=resolution_dataset_taskable_eta,
                     weights=weights,
-                    output_file="Combined_Efficiency_Weighted_Product_Capella",
+                    output_file="Combined_Efficiency_Weighted_Product_taskable",
                 )
             )
             # Upload dataset to S3
             self.upload_file(
-                key=capella_combine_multiply_output_file,
-                filename=capella_combine_multiply_output_file,
+                key=taskable_combine_multiply_output_file,
+                filename=taskable_combine_multiply_output_file,
             )
-            capella_eta_layer_encoded, _, _, _, _ = self.encode(
-                dataset=capella_dataset,
+            taskable_eta_layer_encoded, _, _, _, _ = self.encode(
+                dataset=taskable_dataset,
                 variable="combined_eta",
-                output_path=f"capella_eta_combined_data_{new_value_reformat}.png",
+                output_path=f"taskable_eta_combined_data_{new_value_reformat}.png",
                 time_step=1,
                 scale="time",
                 geojson_path="WBD_10_HU2_4326.geojson",
@@ -1822,7 +1823,7 @@ class Environment(Observer):
                     app.app_name,
                     "layer",
                     SWEChangeLayer(
-                        swe_change_layer=capella_eta_layer_encoded,
+                        swe_change_layer=taskable_eta_layer_encoded,
                         top_left=top_left,
                         top_right=top_right,
                         bottom_left=bottom_left,
@@ -1835,7 +1836,7 @@ class Environment(Observer):
             # Reward
             final_eta_output_file, final_eta_gdf = self.process(
                 gcom_ds=gcom_dataset,
-                snowglobe_ds=capella_dataset,
+                snowglobe_ds=taskable_dataset,
                 mo_basin=mo_basin,
                 start=old_value,
                 end=new_value,
