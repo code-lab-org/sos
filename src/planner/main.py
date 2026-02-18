@@ -785,8 +785,7 @@ class Environment(Observer):
                 altitude=555e3,
                 equator_crossing_time="06:00:30",
                 equator_crossing_ascending=False,
-                epoch=start.replace(tzinfo=timezone.utc)
-                # epoch=pd.to_datetime(self.sim_start, utc=True),
+                epoch=pd.to_datetime(self.sim_start, utc=True),
             ),
             number_planes=1,
             number_satellites=5,
