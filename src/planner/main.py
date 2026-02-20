@@ -3,10 +3,11 @@ import copy
 import io
 import logging
 import os
+import signal
 import sys
 import threading
 import time
-from datetime import timedelta, timezone
+from datetime import timedelta
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -152,7 +153,7 @@ class Environment(Observer):
         # Get coordinates once
         lons = dataset.lon.values.flatten()
         lats = dataset.lat.values.flatten()
-        points = list(zip(lons, lats))
+        points = np.column_stack((lons, lats))
 
         interpolated_vars = {}
 
@@ -162,7 +163,7 @@ class Environment(Observer):
             # Filter out NaN values to improve interpolation performance
             valid_mask = ~np.isnan(values)
             if not np.all(valid_mask):
-                valid_points = [points[i] for i in range(len(points)) if valid_mask[i]]
+                valid_points = points[valid_mask]
                 valid_values = values[valid_mask]
                 zi = griddata(
                     valid_points, valid_values, xi, method="linear", fill_value=np.nan
@@ -366,7 +367,7 @@ class Environment(Observer):
             np.ndarray: The efficiency values
         """
         # Apply logistic function directly, keeping zeros
-        return 1 / (1 + np.exp(-k_value * (swe_change - threshold)))
+        return expit(k_value * (swe_change - threshold))
 
     def generate_swe_difference(self, ds):
         """
@@ -834,7 +835,7 @@ class Environment(Observer):
             ignore_index=True,
         )
         end_time = time.time()
-        
+
         simulation_date = os.path.basename(self.current_simulation_date)
 
         snow_filename = f"snowglobe_ground_tracks_{simulation_date}.geojson"
@@ -888,9 +889,7 @@ class Environment(Observer):
             f"Computing ground tracks (P2) successfully completed in {end_time - start_time:.2f} seconds."
         )
         gcom_tracks["time"] = pd.to_datetime(gcom_tracks["time"]).dt.tz_localize(None)
-        gcom_tracks = gcom_tracks[
-            gcom_tracks["valid_obs"] == True
-        ]  # only descending/night obs
+        gcom_tracks = gcom_tracks[gcom_tracks["valid_obs"]]  # only descending/night obs
 
         # track_date = gcom_tracks["time"].min().date()
 
@@ -944,14 +943,13 @@ class Environment(Observer):
         x_res = abs(final_eta["x"].diff(dim="x").mean().values)
         y_res = abs(final_eta["y"].diff(dim="y").mean().values)
 
-        polygons = []
-        for row in final_eta_df.itertuples():
-            x_center, y_center = row.x, row.y
-            left = x_center - x_res / 2
-            right = x_center + x_res / 2
-            bottom = y_center - y_res / 2
-            top = y_center + y_res / 2
-            polygons.append(box(left, bottom, right, top))
+        half_x = x_res / 2
+        half_y = y_res / 2
+        xs = final_eta_df["x"].values
+        ys = final_eta_df["y"].values
+        polygons = [
+            box(x - half_x, y - half_y, x + half_x, y + half_y) for x, y in zip(xs, ys)
+        ]
         final_eta_gdf = gpd.GeoDataFrame(
             final_eta_df,
             geometry=polygons,
@@ -1294,9 +1292,7 @@ class Environment(Observer):
 
         if not os.path.exists(local_filename):
             logger.info(f"Downloading {file_key} to {local_filename}...")
-            config = TransferConfig(
-                use_threads=True if self.parallel_compute else False
-            )
+            config = TransferConfig(use_threads=self.parallel_compute)
             self.s3.download_file(
                 Bucket=bucket_name, Key=file_key, Filename=local_filename, Config=config
             )
@@ -1320,9 +1316,7 @@ class Environment(Observer):
         """
         if not os.path.isfile(filename):
             logger.info(f"Downloading file from S3: {filename}")
-            config = TransferConfig(
-                use_threads=True if self.parallel_compute else False
-            )
+            config = TransferConfig(use_threads=self.parallel_compute)
             self.s3.download_file(
                 Bucket=bucket, Key=key, Filename=filename, Config=config
             )
@@ -1403,7 +1397,7 @@ class Environment(Observer):
             return
 
         logger.info(f"Uploading file to S3.")
-        config = TransferConfig(use_threads=True if self.parallel_compute else False)
+        config = TransferConfig(use_threads=self.parallel_compute)
         self.s3.upload_file(Filename=filename, Bucket=bucket, Key=key, Config=config)
         logger.info(f"Uploading file to S3 successfully completed.")
 
@@ -1541,8 +1535,7 @@ class Environment(Observer):
                 filename=combined_output_file_resolution,
             )
 
-            # Select the SWE_tavg variable for a specific time step (e.g., first time step)
-            swe_data = combined_dataset["SWE_tavg"].isel(time=1)  # SEND AS MESSAGE
+            # Encode the SWE_tavg variable for visualization
             swe_layer_encoded, top_left, top_right, bottom_left, bottom_right = (
                 self.encode(
                     dataset=combined_dataset,
@@ -1576,8 +1569,6 @@ class Environment(Observer):
             )
             # Upload dataset to S3
             self.upload_file(key=swe_output_file, filename=swe_output_file)
-            # Select the eta5 variable for a specific time step (e.g., first time step)
-            eta5_data = eta5_file["eta5"].isel(time=1)
             eta5_layer_encoded, _, _, _, _ = self.encode(
                 dataset=eta5_file,
                 variable="eta5",
@@ -1637,8 +1628,6 @@ class Environment(Observer):
             # COMMENT BY DIVYA - will add layer- encoding if required later
             # Use snow_cover_eta_file , resolution_dataset_nontaskable_eta, resolution_dataset_taskable_eta for further steps
 
-            # Select the eta0 variable for a specific time step (e.g., first time step)
-            eta0_data = eta0_file["eta0"].isel(time=1)
             eta0_layer_encoded, _, _, _, _ = self.encode(
                 dataset=eta0_file,
                 variable="eta0",
@@ -1672,8 +1661,6 @@ class Environment(Observer):
             self.upload_file(
                 key=sensor_gcom_output_file, filename=sensor_gcom_output_file
             )
-            # Select the eta2 variable for a specific time step (e.g., first time step)
-            eta2_data_GCOM = eta2_file_GCOM["eta2"].isel(time=1)
             eta2_gcom_layer_encoded, _, _, _, _ = self.encode(
                 dataset=eta2_file_GCOM,
                 variable="eta2",
@@ -1707,8 +1694,6 @@ class Environment(Observer):
             self.upload_file(
                 key=sensor_taskable_output_file, filename=sensor_taskable_output_file
             )
-            # Select the eta2 variable for a specific time step (e.g., first time step)
-            eta2_data_taskable = eta2_file_taskable["eta2"].isel(time=1)
             eta2_taskable_layer_encoded, _, _, _, _ = self.encode(
                 dataset=eta2_file_taskable,
                 variable="eta2",
@@ -1762,9 +1747,6 @@ class Environment(Observer):
                 key=gcom_combine_multiply_output_file,
                 filename=gcom_combine_multiply_output_file,
             )
-            # Select the combined_eta variable for a specific time step (e.g., first time step)
-            gcom_eta = gcom_dataset["combined_eta"].isel(time=1)
-
             gcom_eta_layer_encoded, _, _, _, _ = self.encode(
                 dataset=gcom_dataset,
                 variable="combined_eta",
@@ -2129,8 +2111,7 @@ def main():
         True,
     )
 
-    while True:
-        pass
+    signal.pause()
 
 
 if __name__ == "__main__":
