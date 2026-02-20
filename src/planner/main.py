@@ -308,11 +308,13 @@ class Environment(Observer):
         # Defining latitude and longitude coordinates for 1km resolution
         lat_res = 0.009  # ~1 km
         lon_res = 0.011  # ~1 km
+        lat_vals = dataset1["lat"].values
+        lon_vals = dataset1["lon"].values
         lat_coords = np.arange(
-            dataset1["lat"].values.min(), dataset1["lat"].values.max(), lat_res
+            np.nanmin(lat_vals), np.nanmax(lat_vals), lat_res
         )
         lon_coords = np.arange(
-            dataset1["lon"].values.min(), dataset1["lon"].values.max(), lon_res
+            np.nanmin(lon_vals), np.nanmax(lon_vals), lon_res
         )
         variables_to_interpolate = ["SWE_tavg"]
 
