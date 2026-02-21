@@ -217,9 +217,11 @@ class Environment(Observer):
         time_coords_ds1 = np.array([dataset1.time[0].values])
         time_coords_ds2 = np.array([dataset2.time[0].values])
 
-        # Use fewer grid points if resolution can be reduced
-        lat_coords = np.linspace(37.024602, 49.739086, 29)
-        lon_coords = np.linspace(-113.938141, -90.114221, 40)
+        # Derive grid bounds from input data, using nanmin/nanmax to handle NaN values
+        lat_vals = dataset1["lat"].values
+        lon_vals = dataset1["lon"].values
+        lat_coords = np.linspace(np.nanmin(lat_vals), np.nanmax(lat_vals), 29)
+        lon_coords = np.linspace(np.nanmin(lon_vals), np.nanmax(lon_vals), 40)
         variables_to_interpolate = ["SWE_tavg", "AvgSurfT_tavg", "Snowcover_tavg"]
 
         # Parallelize dataset interpolation
