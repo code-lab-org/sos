@@ -88,6 +88,7 @@ class Environment(Observer):
         budget: int = 50,
         enable_uploads=None,
         freeze_enabled: bool = True,
+        first_day_trigger: bool = False,
         norad_id=None,
         sim_start=None,
         sim_stop=None,
@@ -96,6 +97,7 @@ class Environment(Observer):
         # self.planner_freeze = planner_freeze
         self.budget = budget
         self.freeze_enabled = freeze_enabled
+        self.first_day_trigger = first_day_trigger
         self.visualize_swe_change = False
         self.visualize_all_layers = False
         self.norad_id = norad_id
@@ -125,6 +127,7 @@ class Environment(Observer):
             ]
         )
         self.parallel_compute = True
+        self._first_day_triggered = False
 
         # Create a single reusable S3 client to avoid connection pool exhaustion
         self.s3 = AWSUtils().client
@@ -312,12 +315,8 @@ class Environment(Observer):
         lon_res = 0.011  # ~1 km
         lat_vals = dataset1["lat"].values
         lon_vals = dataset1["lon"].values
-        lat_coords = np.arange(
-            np.nanmin(lat_vals), np.nanmax(lat_vals), lat_res
-        )
-        lon_coords = np.arange(
-            np.nanmin(lon_vals), np.nanmax(lon_vals), lon_res
-        )
+        lat_coords = np.arange(np.nanmin(lat_vals), np.nanmax(lat_vals), lat_res)
+        lon_coords = np.arange(np.nanmin(lon_vals), np.nanmax(lon_vals), lon_res)
         variables_to_interpolate = ["SWE_tavg"]
 
         # Parallelize dataset interpolation
@@ -1968,6 +1967,39 @@ class Environment(Observer):
             # Return immediately - don't wait for the thread to complete
             # This allows the simulation to continue without blocking
 
+        # Trigger on first time tick when first_day_trigger is enabled
+        elif (
+            self.first_day_trigger
+            and not self._first_day_triggered
+            and property_name == Simulator.PROPERTY_TIME
+            and source.get_mode() == Mode.EXECUTING
+            and new_value is not None
+        ):
+            self._first_day_triggered = True
+            logger.info(
+                "First day of simulation detected (no freeze mode, no day change yet)."
+            )
+
+            thread_data = {
+                "old_value": copy.deepcopy(old_value),
+                "new_value": copy.deepcopy(new_value),
+                "source": source,
+                "property_name": property_name,
+                "app": self.app,
+            }
+
+            thread = threading.Thread(
+                target=self._on_change_impl,
+                args=(thread_data,),
+                daemon=True,
+                name="planner_on_change-first_day",
+            )
+
+            logger.info(
+                "Starting planner on_change processing in background thread (first day)."
+            )
+            thread.start()
+
 
 class DailyFreeze(Observer):
     """
@@ -2099,6 +2131,7 @@ def main():
             app,
             budget=config.rc.application_configuration["budget"],
             freeze_enabled=freeze_enabled,
+            first_day_trigger=config.rc.application_configuration.get("first_day_trigger", False),
             norad_id=config.rc.application_configuration["norad_id"],
             sim_start=config.rc.simulation_configuration.execution_parameters.manager.sim_start_time,
             sim_stop=config.rc.simulation_configuration.execution_parameters.manager.sim_stop_time,
