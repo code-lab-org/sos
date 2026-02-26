@@ -8,10 +8,12 @@ import threading
 import time as _time
 from datetime import datetime, timedelta, timezone
 from typing import List
+
 import geopandas as gpd
 import numpy as np
 import pandas as pd
 from boto3.s3.transfer import TransferConfig
+from joblib import Parallel, delayed
 from shapely import Geometry, wkt
 from tatc.analysis import collect_ground_track, collect_multi_observations
 from tatc.schemas import (
@@ -21,7 +23,6 @@ from tatc.schemas import (
     SunSynchronousOrbit,
     WalkerConstellation,
 )
-from joblib import Parallel, delayed
 from tatc.utils import swath_width_to_field_of_regard, swath_width_to_field_of_view
 
 logger = logging.getLogger(__name__)
@@ -459,19 +460,19 @@ def _write_back_to_appender_impl(thread_data):
 
     # Establish connection to S3
     start_time_s3 = _time.perf_counter()
-    # s3 = AWSUtils().client
-    s3 = source.s3_bucket  
-    try:  
-        response = s3.head_bucket(Bucket='snow-observing-systems')
+    s3 = AWSUtils().client
+    # s3 = source.s3_bucket  
+    # try:  
+    #     response = s3.head_bucket(Bucket='snow-observing-systems')
 
-        if response["ResponseMetadata"]["HTTPStatusCode"] == 200:
-            logger.info("Connection is live")
-        else:
-            s3 = AWSUtils().client
-            source.s3_bucket = s3
-    except Exception as e:
-        logger.info("Reinitializing S3 client...")
-        source.s3_bucket = AWSUtils().client
+    #     if response["ResponseMetadata"]["HTTPStatusCode"] == 200:
+    #         logger.info("Connection is live")
+    #     else:
+    #         s3 = AWSUtils().client
+    #         source.s3_bucket = s3
+    # except Exception as e:
+    #     logger.info("Reinitializing S3 client...")
+    #     source.s3_bucket = AWSUtils().client
 
 
     output_directory = os.path.join("outputs", app_name)
