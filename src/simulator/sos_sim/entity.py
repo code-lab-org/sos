@@ -302,7 +302,7 @@ class Collect_Observations(Entity):
             if r.get("simulator_simulation_status") == "Completed"
             ]
 
-            logger.info("completed request is %s", completed_requests)
+            # logger.info("completed request is %s", completed_requests)
 
             # Capture current state for thread safety
             import copy
