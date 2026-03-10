@@ -486,7 +486,11 @@ In the `sos` directory, create a `.env` file with the following content specific
 ```sh
 USERNAME="admin"
 PASSWORD="admin"
+SPACETRACK_USERNAME="<Your Space-Track.org Username>"
+SPACETRACK_PASSWORD="<Your Space-Track.org Password>"
 ```
+
+> **Note:** SpaceTrack credentials are required for fetching satellite Two-Line Element (TLE) data. Create a free account at [Space-Track.org](https://www.space-track.org/auth/createAccount) to obtain your credentials.
 
 #### Cloud-Hosted
 
@@ -497,6 +501,8 @@ In the `sos` directory, create a `.env` file with the following content to acces
   ```sh
   CLIENT_ID="<Request from NOS-T Operator>"
   CLIENT_SECRET_KEY="<Request from NOS-T Operator>"
+  SPACETRACK_USERNAME="<Your Space-Track.org Username>"
+  SPACETRACK_PASSWORD="<Your Space-Track.org Password>"
   ```
 
 - User Account:
@@ -506,6 +512,8 @@ In the `sos` directory, create a `.env` file with the following content to acces
   PASSWORD="<Keycloak Password>"
   CLIENT_ID="<Request from NOS-T Operator>"
   CLIENT_SECRET_KEY="<Request from NOS-T Operator>"
+  SPACETRACK_USERNAME="<Your Space-Track.org Username>"
+  SPACETRACK_PASSWORD="<Your Space-Track.org Password>"
   ```
 
 
