@@ -3,11 +3,10 @@ import copy
 import io
 import logging
 import os
-import signal
 import sys
 import threading
 import time
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import geopandas as gpd
 import matplotlib.pyplot as plt
@@ -29,7 +28,7 @@ from rasterio.features import geometry_mask
 from scipy.interpolate import griddata
 from shapely.geometry import Polygon, box
 from tatc import utils
-from tatc.analysis import collect_ground_track, compute_ground_track
+from tatc.analysis import compute_ground_track
 from tatc.schemas import (
     PointedInstrument,
     Satellite,
@@ -42,7 +41,6 @@ from tatc.utils import swath_width_to_field_of_regard, swath_width_to_field_of_v
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../..")))
 
 from scipy.special import expit
-from spacetrack import SpaceTrackClient
 
 from src.sos_tools.aws_utils import AWSUtils
 from src.sos_tools.data_utils import DataUtils
@@ -83,27 +81,14 @@ class Environment(Observer):
     """
 
     def __init__(
-        self,
-        app,
-        budget: int = 50,
-        enable_uploads=None,
-        freeze_enabled: bool = True,
-        first_day_trigger: bool = False,
-        norad_id=None,
-        sim_start=None,
-        sim_stop=None,
+        self, app, budget: int = 50, enable_uploads=None, freeze_enabled: bool = True
     ):  # , planner_freeze):
         self.app = app
         # self.planner_freeze = planner_freeze
         self.budget = budget
         self.freeze_enabled = freeze_enabled
-        self.first_day_trigger = first_day_trigger
-        self.visualize_swe_change = False
+        self.visualize_swe_change = True
         self.visualize_all_layers = False
-        self.norad_id = norad_id
-        self.sim_start = pd.to_datetime(sim_start)
-        self.sim_stop = pd.to_datetime(sim_stop)
-        self.cached_tles = None
 
         # Flag to control S3 uploads - check environment variable if not explicitly set
         if enable_uploads is None:
@@ -127,7 +112,6 @@ class Environment(Observer):
             ]
         )
         self.parallel_compute = True
-        self._first_day_triggered = False
 
     def interpolate_dataset(
         self, dataset, variables_to_interpolate, lat_coords, lon_coords, time_coords
@@ -153,7 +137,7 @@ class Environment(Observer):
         # Get coordinates once
         lons = dataset.lon.values.flatten()
         lats = dataset.lat.values.flatten()
-        points = np.column_stack((lons, lats))
+        points = list(zip(lons, lats))
 
         interpolated_vars = {}
 
@@ -163,7 +147,7 @@ class Environment(Observer):
             # Filter out NaN values to improve interpolation performance
             valid_mask = ~np.isnan(values)
             if not np.all(valid_mask):
-                valid_points = points[valid_mask]
+                valid_points = [points[i] for i in range(len(points)) if valid_mask[i]]
                 valid_values = values[valid_mask]
                 zi = griddata(
                     valid_points, valid_values, xi, method="linear", fill_value=np.nan
@@ -217,11 +201,9 @@ class Environment(Observer):
         time_coords_ds1 = np.array([dataset1.time[0].values])
         time_coords_ds2 = np.array([dataset2.time[0].values])
 
-        # Derive grid bounds from input data, using nanmin/nanmax to handle NaN values
-        lat_vals = dataset1["lat"].values
-        lon_vals = dataset1["lon"].values
-        lat_coords = np.linspace(np.nanmin(lat_vals), np.nanmax(lat_vals), 29)
-        lon_coords = np.linspace(np.nanmin(lon_vals), np.nanmax(lon_vals), 40)
+        # Use fewer grid points if resolution can be reduced
+        lat_coords = np.linspace(37.024602, 49.739086, 29)
+        lon_coords = np.linspace(-113.938141, -90.114221, 40)
         variables_to_interpolate = ["SWE_tavg", "AvgSurfT_tavg", "Snowcover_tavg"]
 
         # Parallelize dataset interpolation
@@ -310,10 +292,12 @@ class Environment(Observer):
         # Defining latitude and longitude coordinates for 1km resolution
         lat_res = 0.009  # ~1 km
         lon_res = 0.011  # ~1 km
-        lat_vals = dataset1["lat"].values
-        lon_vals = dataset1["lon"].values
-        lat_coords = np.arange(np.nanmin(lat_vals), np.nanmax(lat_vals), lat_res)
-        lon_coords = np.arange(np.nanmin(lon_vals), np.nanmax(lon_vals), lon_res)
+        lat_coords = np.arange(
+            dataset1["lat"].values.min(), dataset1["lat"].values.max(), lat_res
+        )
+        lon_coords = np.arange(
+            dataset1["lon"].values.min(), dataset1["lon"].values.max(), lon_res
+        )
         variables_to_interpolate = ["SWE_tavg"]
 
         # Parallelize dataset interpolation
@@ -367,7 +351,7 @@ class Environment(Observer):
             np.ndarray: The efficiency values
         """
         # Apply logistic function directly, keeping zeros
-        return expit(k_value * (swe_change - threshold))
+        return 1 / (1 + np.exp(-k_value * (swe_change - threshold)))
 
     def generate_swe_difference(self, ds):
         """
@@ -513,18 +497,18 @@ class Environment(Observer):
 
         return output_file, sensor_gcom_dataset
 
-    def generate_sensor_taskable(self, ds):
+    def generate_sensor_capella(self, ds):
         """
-        Generate the taskable efficiency dataset.
+        Generate the Capella efficiency dataset.
 
         Args:
             ds (xarray.Dataset): The dataset containing the SWE values
 
         Returns:
             output_file (str): The output file name
-            sensor_taskable_dataset (xarray.Dataset): The new dataset
+            sensor_capella_dataset (xarray.Dataset): The new dataset
         """
-        logger.info("Generating taskable efficiency dataset.")
+        logger.info("Generating Capella efficiency dataset.")
         swe = ds["SWE_tavg"]
         T = 150
         k = -0.03
@@ -549,21 +533,21 @@ class Environment(Observer):
             dims=["time", "y", "x"],
             name="eta2",
         )
-        sensor_taskable_dataset = xr.Dataset({"eta2": eta2_da}).transpose(
+        sensor_capella_dataset = xr.Dataset({"eta2": eta2_da}).transpose(
             "time", "y", "x"
         )
-        for var in sensor_taskable_dataset.variables:
-            if "grid_mapping" in sensor_taskable_dataset[var].attrs:
-                del sensor_taskable_dataset[var].attrs["grid_mapping"]
+        for var in sensor_capella_dataset.variables:
+            if "grid_mapping" in sensor_capella_dataset[var].attrs:
+                del sensor_capella_dataset[var].attrs["grid_mapping"]
         last_date = str(swe["time"][-1].values)[:10].replace("-", "")
 
         output_file = os.path.join(
-            self.current_simulation_date, f"Efficiency_Sensor_taskable_{last_date}.nc"
+            self.current_simulation_date, f"Efficiency_Sensor_Capella_{last_date}.nc"
         )
-        sensor_taskable_dataset.to_netcdf(output_file)
-        logger.info("Generating taskable efficiency dataset successfully completed.")
+        sensor_capella_dataset.to_netcdf(output_file)
+        logger.info("Generating Capella efficiency dataset successfully completed.")
 
-        return output_file, sensor_taskable_dataset
+        return output_file, sensor_capella_dataset
 
     # MODIFIED BY DIVYA
 
@@ -731,11 +715,11 @@ class Environment(Observer):
         eta2 = eta2_ds["eta2"]
         eta_sc = eta_sc_ds
         eta_res = eta_res_ds["SWE_tavg"]
-        weighted_eta5 = eta5 ** weights["eta5"]
-        weighted_eta0 = eta0 ** weights["eta0"]
-        weighted_eta2 = eta2 ** weights["eta2"]
-        weighted_eta_sc = eta_sc ** weights["eta_sc"]
-        weighted_eta_res = eta_res ** weights["eta_res"]
+        weighted_eta5 = eta5 * weights["eta5"]
+        weighted_eta0 = eta0 * weights["eta0"]
+        weighted_eta2 = eta2 * weights["eta2"]
+        weighted_eta_sc = eta_sc * weights["eta_sc"]
+        weighted_eta_res = eta_res * weights["eta_res"]
         combined_values = (
             weighted_eta5
             * weighted_eta0
@@ -772,11 +756,9 @@ class Environment(Observer):
             final_eta_gdf (gpd.GeoDataFrame): The final efficiency GeoDataFrame.
         """
         logger.info("Generating final efficiency dataset.")
-        domain = box(-114, 37, -90, 50)
         duration = timedelta(days=1)
         frame_duration = timedelta(days=1)
-        # num_frames = int(1 + (end - start) / duration)
-        num_frames = 1
+        num_frames = int(1 + (end - start) / duration)
         roll_angle = (30 + 33.5) / 2
         roll_range = 33.5 - 30
         logger.info("Specifying constellation.")
@@ -786,7 +768,7 @@ class Environment(Observer):
                 altitude=555e3,
                 equator_crossing_time="06:00:30",
                 equator_crossing_ascending=False,
-                epoch=pd.to_datetime(self.sim_start, utc=True),
+                epoch=datetime(2019, 3, 1, tzinfo=timezone.utc),
             ),
             number_planes=1,
             number_satellites=5,
@@ -827,7 +809,7 @@ class Environment(Observer):
                 delayed(compute_ground_track)(
                     satellite=satellite,
                     times=sim_times,
-                    mask=domain,
+                    # mask=self.polygons[0],
                     crs="spice",
                 )
                 for satellite in constellation.generate_members()
@@ -835,18 +817,11 @@ class Environment(Observer):
             ignore_index=True,
         )
         end_time = time.time()
-
-        simulation_date = os.path.basename(self.current_simulation_date)
-
-        snow_filename = f"snowglobe_ground_tracks_{simulation_date}.geojson"
-        snow_filepath = os.path.join(self.current_simulation_date, snow_filename)
-        ground_tracks.to_file(snow_filepath, driver="GeoJSON")
-
         # logger.info("Computing ground tracks (P1) successfully completed.")
         logger.info(
             f"Computing ground tracks (P1) successfully completed in {end_time - start_time:.2f} seconds."
         )
-
+        domain = box(-114, 37, -90, 50)
         amsr2 = PointedInstrument(
             name="AMSR2",
             cross_track_field_of_view=utils.swath_width_to_field_of_regard(
@@ -862,14 +837,14 @@ class Environment(Observer):
         # orbit from https://celestrak.org/NORAD/elements/gp.php?GROUP=active&FORMAT=tle
         gcom_w = Satellite(
             name="GCOM-W",
-            orbit=TwoLineElements(tle=self.fetch_tles_from_spacetrack()),
+            orbit=TwoLineElements(tle=self.fetch_tle_lines_from_s3()),
             instruments=[amsr2],
         )
         logger.info("Computing ground tracks (P2).")
         start_time = time.time()
         gcom_tracks = pd.concat(
             Parallel(n_jobs=-1 if self.parallel_compute else 1)(
-                delayed(collect_ground_track)(
+                delayed(compute_ground_track)(
                     gcom_w,
                     pd.date_range(
                         start + frame * frame_duration,
@@ -889,12 +864,11 @@ class Environment(Observer):
             f"Computing ground tracks (P2) successfully completed in {end_time - start_time:.2f} seconds."
         )
         gcom_tracks["time"] = pd.to_datetime(gcom_tracks["time"]).dt.tz_localize(None)
-        gcom_tracks = gcom_tracks[gcom_tracks["valid_obs"]]  # only descending/night obs
 
-        # track_date = gcom_tracks["time"].min().date()
+        track_date = gcom_tracks["time"].min().date()
 
-        filename = f"gcom_ground_tracks_{simulation_date}.geojson"
-        filepath = os.path.join(self.current_simulation_date, filename)
+        filename = f"gcom_ground_tracks_{track_date}.geojson"
+        filepath = os.path.join(self.output_directory, filename)
 
         gcom_tracks.to_file(filepath, driver="GeoJSON")
         logger.info(f"GCOM tracks saved to: {filepath}")
@@ -943,13 +917,14 @@ class Environment(Observer):
         x_res = abs(final_eta["x"].diff(dim="x").mean().values)
         y_res = abs(final_eta["y"].diff(dim="y").mean().values)
 
-        half_x = x_res / 2
-        half_y = y_res / 2
-        xs = final_eta_df["x"].values
-        ys = final_eta_df["y"].values
-        polygons = [
-            box(x - half_x, y - half_y, x + half_x, y + half_y) for x, y in zip(xs, ys)
-        ]
+        polygons = []
+        for row in final_eta_df.itertuples():
+            x_center, y_center = row.x, row.y
+            left = x_center - x_res / 2
+            right = x_center + x_res / 2
+            bottom = y_center - y_res / 2
+            top = y_center + y_res / 2
+            polygons.append(box(left, bottom, right, top))
         final_eta_gdf = gpd.GeoDataFrame(
             final_eta_df,
             geometry=polygons,
@@ -1174,12 +1149,12 @@ class Environment(Observer):
                     for prefix in page.get("CommonPrefixes", [])
                 ]
 
-                logger.debug(f"Assimilation subdirs found: {subdirs}")
+                logger.info(f"Assimilation subdirs found: {subdirs}")
 
                 if subdirs:
                     # Sort subdirectories in descending order (most recent first)
                     sorted_subdirs = sorted(subdirs, reverse=True)
-                    logger.debug(f"Sorted assimilation subdirs: {sorted_subdirs}")
+                    logger.info(f"Sorted assimilation subdirs: {sorted_subdirs}")
 
                     # Search through each subdirectory in order
                     for subdir in sorted_subdirs:
@@ -1292,7 +1267,9 @@ class Environment(Observer):
 
         if not os.path.exists(local_filename):
             logger.info(f"Downloading {file_key} to {local_filename}...")
-            config = TransferConfig(use_threads=self.parallel_compute)
+            config = TransferConfig(
+                use_threads=True if self.parallel_compute else False
+            )
             self.s3.download_file(
                 Bucket=bucket_name, Key=file_key, Filename=local_filename, Config=config
             )
@@ -1316,7 +1293,9 @@ class Environment(Observer):
         """
         if not os.path.isfile(filename):
             logger.info(f"Downloading file from S3: {filename}")
-            config = TransferConfig(use_threads=self.parallel_compute)
+            config = TransferConfig(
+                use_threads=True if self.parallel_compute else False
+            )
             self.s3.download_file(
                 Bucket=bucket, Key=key, Filename=filename, Config=config
             )
@@ -1326,61 +1305,44 @@ class Environment(Observer):
         dataset = gpd.read_file(filename)
         return dataset
 
-    def fetch_tles_from_spacetrack(self):
+    def fetch_tle_lines_from_s3(
+        self,
+        bucket="snow-observing-systems",
+        key="inputs/satellite/sat000038337.txt",
+        local_filename="sat000038337.txt",
+    ):
 
-        # use cached TLE if already fetched
-        if self.cached_tles is not None:
-            return self.cached_tles
+        local_path = os.path.join(self.input_directory, local_filename)
 
-        username = os.environ.get("SPACETRACK_USERNAME")
-        password = os.environ.get("SPACETRACK_PASSWORD")
+        # Download only if the file doesn't already exist
+        if not os.path.exists(local_path):
+            self.s3.download_file(bucket, key, local_path)
+            logger.info("Downloafing TLE file.")
 
-        if not username or not password:
-            raise ValueError("SpaceTrack credentials not set.")
+        # Read from local file
+        with open(local_path, "r") as f:
+            lines = [line.strip() for line in f if line.strip()]
 
-        st = SpaceTrackClient(identity=username, password=password)
+        # Parse valid TLE line pairs
+        tle_lines = []
+        i = 0
+        while i < len(lines) - 2:
+            if lines[i].startswith("1 ") and lines[i + 1].startswith("2 "):
+                tle_lines.append(lines[i])
+                tle_lines.append(lines[i + 1])
+                i += 2
+            elif (
+                lines[i].startswith("GCOM")
+                and lines[i + 1].startswith("1 ")
+                and lines[i + 2].startswith("2 ")
+            ):
+                tle_lines.append(lines[i + 1])
+                tle_lines.append(lines[i + 2])
+                i += 3
+            else:
+                i += 1
 
-        start_str = self.sim_start.strftime("%Y-%m-%d")
-        end_str = self.sim_stop.strftime("%Y-%m-%d")
-
-        # try historical range first
-        tle_data = st.gp_history(
-            norad_cat_id=self.norad_id,
-            epoch=f"{start_str}--{end_str}",
-            orderby="TLE_LINE1 asc",
-            format="tle",
-        )
-
-        # if nothing found, use latest TLE
-        if not tle_data or not tle_data.strip():
-            print("No TLE in range. Using latest.")
-            tle_data = st.gp_history(
-                norad_cat_id=self.norad_id,
-                orderby="TLE_LINE1 desc",
-                limit=1,
-                format="tle",
-            )
-
-        if not tle_data or not tle_data.strip():
-            raise ValueError("No TLE available.")
-
-        lines = [line.strip() for line in tle_data.splitlines() if line.strip()]
-
-        if len(lines) % 2 != 0:
-            raise ValueError("Invalid TLE format.")
-
-        self.cached_tles = lines
-
-        # save to file
-        tle_filename = os.path.join(
-            self.current_simulation_date, f"tle_{self.norad_id}.txt"
-        )
-
-        with open(tle_filename, "w") as f:
-            for line in lines:
-                f.write(line + "\n")
-
-        return lines
+        return tle_lines
 
     def upload_file(self, key, filename, bucket="snow-observing-systems"):
         """
@@ -1397,7 +1359,7 @@ class Environment(Observer):
             return
 
         logger.info(f"Uploading file to S3.")
-        config = TransferConfig(use_threads=self.parallel_compute)
+        config = TransferConfig(use_threads=True if self.parallel_compute else False)
         self.s3.upload_file(Filename=filename, Bucket=bucket, Key=key, Config=config)
         logger.info(f"Uploading file to S3 successfully completed.")
 
@@ -1536,7 +1498,8 @@ class Environment(Observer):
                 filename=combined_output_file_resolution,
             )
 
-            # Encode the SWE_tavg variable for visualization
+            # Select the SWE_tavg variable for a specific time step (e.g., first time step)
+            swe_data = combined_dataset["SWE_tavg"].isel(time=1)  # SEND AS MESSAGE
             swe_layer_encoded, top_left, top_right, bottom_left, bottom_right = (
                 self.encode(
                     dataset=combined_dataset,
@@ -1570,6 +1533,8 @@ class Environment(Observer):
             )
             # Upload dataset to S3
             self.upload_file(key=swe_output_file, filename=swe_output_file)
+            # Select the eta5 variable for a specific time step (e.g., first time step)
+            eta5_data = eta5_file["eta5"].isel(time=1)
             eta5_layer_encoded, _, _, _, _ = self.encode(
                 dataset=eta5_file,
                 variable="eta5",
@@ -1629,6 +1594,8 @@ class Environment(Observer):
             # COMMENT BY DIVYA - will add layer- encoding if required later
             # Use snow_cover_eta_file , resolution_dataset_nontaskable_eta, resolution_dataset_taskable_eta for further steps
 
+            # Select the eta0 variable for a specific time step (e.g., first time step)
+            eta0_data = eta0_file["eta0"].isel(time=1)
             eta0_layer_encoded, _, _, _, _ = self.encode(
                 dataset=eta0_file,
                 variable="eta0",
@@ -1662,6 +1629,8 @@ class Environment(Observer):
             self.upload_file(
                 key=sensor_gcom_output_file, filename=sensor_gcom_output_file
             )
+            # Select the eta2 variable for a specific time step (e.g., first time step)
+            eta2_data_GCOM = eta2_file_GCOM["eta2"].isel(time=1)
             eta2_gcom_layer_encoded, _, _, _, _ = self.encode(
                 dataset=eta2_file_GCOM,
                 variable="eta2",
@@ -1686,19 +1655,21 @@ class Environment(Observer):
                 logger.info("Publishing message successfully completed.")
                 _time.sleep(15)
 
-            # ETA2 taskable dataset
-            # Generate the sensor taskable dataset
-            sensor_taskable_output_file, eta2_file_taskable = (
-                self.generate_sensor_taskable(ds=combined_dataset)
+            # ETA2 Capella dataset
+            # Generate the sensor capella dataset
+            sensor_capella_output_file, eta2_file_Capella = (
+                self.generate_sensor_capella(ds=combined_dataset)
             )
             # Upload dataset to S3
             self.upload_file(
-                key=sensor_taskable_output_file, filename=sensor_taskable_output_file
+                key=sensor_capella_output_file, filename=sensor_capella_output_file
             )
-            eta2_taskable_layer_encoded, _, _, _, _ = self.encode(
-                dataset=eta2_file_taskable,
+            # Select the eta2 variable for a specific time step (e.g., first time step)
+            eta2_data_Capella = eta2_file_Capella["eta2"].isel(time=1)
+            eta2_capella_layer_encoded, _, _, _, _ = self.encode(
+                dataset=eta2_file_Capella,
                 variable="eta2",
-                output_path=f"eta2_taskable_data_{new_value_reformat}.png",
+                output_path=f"eta2_capella_data_{new_value_reformat}.png",
                 time_step=1,
                 scale="time",
                 geojson_path="WBD_10_HU2_4326.geojson",
@@ -1709,7 +1680,7 @@ class Environment(Observer):
                     app.app_name,
                     "layer",
                     SWEChangeLayer(
-                        swe_change_layer=eta2_taskable_layer_encoded,
+                        swe_change_layer=eta2_capella_layer_encoded,
                         top_left=top_left,
                         top_right=top_right,
                         bottom_left=bottom_left,
@@ -1748,6 +1719,9 @@ class Environment(Observer):
                 key=gcom_combine_multiply_output_file,
                 filename=gcom_combine_multiply_output_file,
             )
+            # Select the combined_eta variable for a specific time step (e.g., first time step)
+            gcom_eta = gcom_dataset["combined_eta"].isel(time=1)
+
             gcom_eta_layer_encoded, _, _, _, _ = self.encode(
                 dataset=gcom_dataset,
                 variable="combined_eta",
@@ -1772,29 +1746,29 @@ class Environment(Observer):
                 logger.info("Publishing message successfully completed.")
                 _time.sleep(15)
 
-            # taskable Final ETA
-            # Process taskable datasets
-            taskable_combine_multiply_output_file, taskable_dataset = (
+            # Capella Final ETA
+            # Process Capella datasets
+            capella_combine_multiply_output_file, capella_dataset = (
                 self.combine_and_multiply_datasets(
                     ds=combined_dataset,
                     eta5_file=eta5_file,
                     eta0_file=eta0_file,
-                    eta2_file=eta2_file_taskable,
+                    eta2_file=eta2_file_Capella,
                     eta_sc_file=eta_sc_values,
                     eta_res_file=resolution_dataset_taskable_eta,
                     weights=weights,
-                    output_file="Combined_Efficiency_Weighted_Product_taskable",
+                    output_file="Combined_Efficiency_Weighted_Product_Capella",
                 )
             )
             # Upload dataset to S3
             self.upload_file(
-                key=taskable_combine_multiply_output_file,
-                filename=taskable_combine_multiply_output_file,
+                key=capella_combine_multiply_output_file,
+                filename=capella_combine_multiply_output_file,
             )
-            taskable_eta_layer_encoded, _, _, _, _ = self.encode(
-                dataset=taskable_dataset,
+            capella_eta_layer_encoded, _, _, _, _ = self.encode(
+                dataset=capella_dataset,
                 variable="combined_eta",
-                output_path=f"taskable_eta_combined_data_{new_value_reformat}.png",
+                output_path=f"capella_eta_combined_data_{new_value_reformat}.png",
                 time_step=1,
                 scale="time",
                 geojson_path="WBD_10_HU2_4326.geojson",
@@ -1805,7 +1779,7 @@ class Environment(Observer):
                     app.app_name,
                     "layer",
                     SWEChangeLayer(
-                        swe_change_layer=taskable_eta_layer_encoded,
+                        swe_change_layer=capella_eta_layer_encoded,
                         top_left=top_left,
                         top_right=top_right,
                         bottom_left=bottom_left,
@@ -1818,7 +1792,7 @@ class Environment(Observer):
             # Reward
             final_eta_output_file, final_eta_gdf = self.process(
                 gcom_ds=gcom_dataset,
-                snowglobe_ds=taskable_dataset,
+                snowglobe_ds=capella_dataset,
                 mo_basin=mo_basin,
                 start=old_value,
                 end=new_value,
@@ -1965,39 +1939,6 @@ class Environment(Observer):
             # Return immediately - don't wait for the thread to complete
             # This allows the simulation to continue without blocking
 
-        # Trigger on first time tick when first_day_trigger is enabled
-        elif (
-            self.first_day_trigger
-            and not self._first_day_triggered
-            and property_name == Simulator.PROPERTY_TIME
-            and source.get_mode() == Mode.EXECUTING
-            and new_value is not None
-        ):
-            self._first_day_triggered = True
-            logger.info(
-                "First day of simulation detected (no freeze mode, no day change yet)."
-            )
-
-            thread_data = {
-                "old_value": copy.deepcopy(old_value),
-                "new_value": copy.deepcopy(new_value),
-                "source": source,
-                "property_name": property_name,
-                "app": self.app,
-            }
-
-            thread = threading.Thread(
-                target=self._on_change_impl,
-                args=(thread_data,),
-                daemon=True,
-                name="planner_on_change-first_day",
-            )
-
-            logger.info(
-                "Starting planner on_change processing in background thread (first day)."
-            )
-            thread.start()
-
 
 class DailyFreeze(Observer):
     """
@@ -2127,10 +2068,6 @@ def main():
             app,
             budget=config.rc.application_configuration["budget"],
             freeze_enabled=freeze_enabled,
-            first_day_trigger=config.rc.application_configuration.get("first_day_trigger", False),
-            norad_id=config.rc.application_configuration["norad_id"],
-            sim_start=config.rc.simulation_configuration.execution_parameters.manager.sim_start_time,
-            sim_stop=config.rc.simulation_configuration.execution_parameters.manager.sim_stop_time,
         )
     )
 
@@ -2144,7 +2081,8 @@ def main():
         True,
     )
 
-    signal.pause()
+    while True:
+        pass
 
 
 if __name__ == "__main__":
