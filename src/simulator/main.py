@@ -2,11 +2,14 @@
 # Author: Divya Ramachandran
 
 import logging
+import os
+import sys
+<<<<<<< HEAD
+import os
+import sys
+=======
 from datetime import timedelta
-import os
-import sys
-import os
-import sys
+>>>>>>> main
 
 from nost_tools.application_utils import ShutDownObserver
 from nost_tools.configuration import ConnectionConfig
@@ -14,10 +17,14 @@ from nost_tools.managed_application import ManagedApplication
 from nost_tools.observer import ScenarioTimeIntervalCallback
 from sos_sim.entity import Collect_Observations, RandomValueGenerator
 from sos_sim.function import Snowglobe_constellation, write_back_to_appender
+
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
+<<<<<<< HEAD
 from src.sos_tools.aws_utils import AWSUtils
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "../../..")))
 from src.sos_tools.aws_utils import AWSUtils
+=======
+>>>>>>> main
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,13 +32,13 @@ logger = logging.getLogger(__name__)
 
 def main():
     #  Load config
-    config = ConnectionConfig(yaml_file="sos.yaml",app_name="simulator")
+    config = ConnectionConfig(yaml_file="sos.yaml", app_name="simulator")
 
     # create the managed application
-    app = ManagedApplication(app_name="simulator")   
+    app = ManagedApplication(app_name="simulator")
 
-    logger.info("Simulation start time is %s", config.rc.simulation_configuration.execution_parameters.manager.sim_start_time) 
-    logger.info("Simulation stop time is %s", config.rc.simulation_configuration.execution_parameters.manager.sim_stop_time)
+    # logger.info("Simulation start time is %s", config.rc.simulation_configuration.execution_parameters.manager.sim_start_time)
+    # logger.info("Simulation stop time is %s", config.rc.simulation_configuration.execution_parameters.manager.sim_stop_time)
 
     # s3 = AWSUtils().client
     # logger.info("s3 Connection %s",s3)
@@ -42,23 +49,41 @@ def main():
             config.rc.simulation_configuration.execution_parameters.manager.sim_start_time
         ),
         requests=[],
+<<<<<<< HEAD
         application=app,        
         const_capacity=float(config.rc.application_configuration["constellation_capacity"][0]),
         time_interval=int(config.rc.application_configuration["observation_interval"][0]),
+=======
+        application=app,
+        const_capacity=float(
+            config.rc.application_configuration["constellation_capacity"][0]
+        ),
+        time_interval=int(
+            config.rc.application_configuration["observation_interval"][0]
+        ),
+>>>>>>> main
         s3_variable=s3,
         # sim_stop_time=config.rc.simulation_configuration.execution_parameters.manager.sim_stop_time,
         # s3_variable=s3,
         # sim_stop_time=config.rc.simulation_configuration.execution_parameters.manager.sim_stop_time,
         enable_uploads=None,  # Will check ENABLE_UPLOADS environment variable
-    )    
+    )
 
     # Add observer classes to constellation's object class
+<<<<<<< HEAD
     entity.add_observer(RandomValueGenerator(app))   
     entity.add_observer(RandomValueGenerator(app))   
+=======
+    entity.add_observer(RandomValueGenerator(app))
+>>>>>>> main
 
     # Add a ScenarioTimeIntervalCallback to write back to the appender every day
     entity.add_observer(
-        ScenarioTimeIntervalCallback(write_back_to_appender, timedelta(days=1))
+        ScenarioTimeIntervalCallback(
+            write_back_to_appender,
+            timedelta(days=1),                              # repeat every 24 hours
+            time_init=timedelta(hours=23, minutes=55),      # first fire at 23:55
+        )
     )
 
     app.simulator.add_entity(entity)

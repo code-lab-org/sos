@@ -1,5 +1,6 @@
 import boto3
 from boto3.s3.transfer import TransferConfig
+from botocore.config import Config
 
 
 class AWSUtils(object):
@@ -65,17 +66,26 @@ class AWSUtils(object):
 
     def create_client(self):
         """
-        Create an AWS client.
+        Create an AWS client with increased connection pool size to prevent
+        "Connection pool is full" warnings.
 
         Returns:
             client (boto3.client): An AWS client
         """
         session_token, secret_access_key, access_key_id = self.decompose_token()
+
+        # Configure client with larger connection pool to handle concurrent requests
+        config = Config(
+            max_pool_connections=50,  # Increase from default of 10
+            retries={"max_attempts": 3, "mode": "adaptive"},
+        )
+
         client = boto3.client(
             "s3",
             aws_access_key_id=access_key_id,
             aws_secret_access_key=secret_access_key,
             aws_session_token=session_token,
+            config=config,
         )
         return client
 
