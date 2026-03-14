@@ -50,6 +50,7 @@ class Collect_Observations(Entity):
         application: Application,
         const_capacity: float = 1.0,
         time_interval: float = 1.0,
+        # capacity_block_interval: int = 10,
         s3_variable = None,
         enable_uploads=None
     ):
@@ -60,6 +61,10 @@ class Collect_Observations(Entity):
         self.app = application
         self.constellation_capacity = const_capacity
         self.time_between_observations = int(time_interval)
+        self.capacity_block_interval = 10
+        # self.current_block = current_block
+        # self.current_block_state = current_block_state
+        self.capacity_block_cache = {}  # Cache for capacity block states
 
         if s3_variable is not None:
             self.s3_bucket = s3_variable
@@ -89,7 +94,7 @@ class Collect_Observations(Entity):
         self.master_data = None
         self.seed_value = 0 # Seed value for daily random value generation
         self.rng_cache = {}  # Cache for daily random values
-        self.daily_random_value = None  # Daily random value object
+        # self.daily_random_value = None  # Daily random value object
         # self.sim_stop_flag = False
         # Threading state variables
         self.master_file_processing = False
@@ -127,7 +132,8 @@ class Collect_Observations(Entity):
         # Converting simulation time and last observation time to naive datetime for comparison
         t1 = self.get_time().replace(tzinfo=None)
         t2 = self.last_observation_time.replace(tzinfo=None) + timedelta(seconds=self.time_between_observations)   
-        # logger.info("Current simulation time is %s, last observation time is %s, next possible observation time is %s", t1, self.last_observation_time, t2)    
+        # logger.info("Current simulation time is %s, last observation time is %s, next possible observation time is %s", t1, self.last_observation_time, t2)   
+         
 
         if t1 > t2:
 
@@ -145,18 +151,43 @@ class Collect_Observations(Entity):
                     # Generate or retrieve the daily random value
                     # Generate and cache the random value for the new day
 
-                    self.daily_random_value = Daily_random_value(
+                    # Check Current Capacity Block
+                    block_id = int(self._time.timestamp()) // self.capacity_block_interval
+
+                     # Initialize cache if not already created
+                    # if not hasattr(self, "capacity_block_cache"):
+                    #     self.capacity_block_cache = {}
+
+                    if block_id not in self.capacity_block_cache:
+
+                        block_random_value = Daily_random_value(
                         seed_value=self.seed_value,
                         min_value=0.0,
                         max_value=1.0,
                         rng_cache=self.rng_cache
-                    )
-                    if (
-                        self.daily_random_value <= self.constellation_capacity
-                    ): 
+                        )
+                        
+                        self.capacity_block_cache[block_id] = (
+                            block_random_value <= self.constellation_capacity
+                        )
+
+                    cc_on = self.capacity_block_cache[block_id]                         
+                  
+                    # Check if current block is ON, then collect observation
+                    # self.daily_random_value = Daily_random_value(
+                    #     seed_value=self.seed_value,
+                    #     min_value=0.0,
+                    #     max_value=1.0,
+                    #     rng_cache=self.rng_cache
+                    # )
+                    # if (
+                    #     self.daily_random_value <= self.constellation_capacity
+                    # ): 
+                        
+                    if cc_on:
 
                         self.observation_collected_flag = True
-                        logger.info("Daily random value is %f", self.daily_random_value)
+                        logger.info("Block random value is %f", block_random_value)
                         # logger.info("Constellation capacity is %f", self.constellation_capacity)
                         logger.info("Observation collected") 
                         # Simulate a x% chance of collecting an observation
