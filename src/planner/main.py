@@ -2007,51 +2007,53 @@ class DailyFreeze(Observer):
 
     def __init__(
         self,
-        # create the managed application
-        app = ManagedApplication(app_name="planner")
+        app: ManagedApplication,
+        freeze_enabled: bool = True,
+        freeze_mode: str = None,
+        freeze_duration: timedelta = None,
+    ):
+        """
+        Initialize the daily freeze observer.
 
-        # Read optional freeze configuration from sos.yaml
-        freeze_config = config.rc.application_configuration.get("scenario_day_freeze", None)
+        Args:
+            app (ManagedApplication): The managed application instance
+            freeze_enabled (bool): Whether to freeze on scenario day change (default True)
+            freeze_mode (str): Freeze mode - "timed" or "indefinite" (None when freeze disabled)
+            freeze_duration (timedelta): Duration to freeze for timed mode (None when freeze disabled)
+        """
+        self.app = app
+        self.freeze_enabled = freeze_enabled
+        self.freeze_mode = freeze_mode
+        self.freeze_duration = freeze_duration
 
-        if freeze_config is None:
-            freeze_enabled = False
-            freeze_mode = None
-            freeze_duration = None
-        else:
-            freeze_enabled = freeze_config.get("enabled", False)
-            if freeze_enabled:
-                freeze_mode = freeze_config.get("mode", None)
-                if "duration_seconds" in freeze_config:
-                    freeze_duration = timedelta(seconds=freeze_config.get("duration_seconds"))
-                elif "duration_minutes" in freeze_config:
-                    freeze_duration = timedelta(minutes=freeze_config.get("duration_minutes"))
-                else:
-                    freeze_duration = None
-            else:
-                freeze_mode = None
-                freeze_duration = None
+        # Validate freeze configuration only when freeze is enabled
+        if self.freeze_enabled:
+            if self.freeze_mode not in ["timed", "indefinite"]:
+                raise ValueError(
+                    f"Invalid freeze_mode '{self.freeze_mode}'. Must be 'timed' or 'indefinite'."
+                )
+            if self.freeze_mode == "timed" and self.freeze_duration is None:
+                raise ValueError(
+                    "freeze_duration must be specified when freeze_mode is 'timed'."
+                )
 
-        # Add the daily freeze observer with configured parameters
-        app.simulator.add_observer(
-            DailyFreeze(
-                app,
-                freeze_enabled=freeze_enabled,
-                freeze_mode=freeze_mode,
-                freeze_duration=freeze_duration,
-            )
-        )
+    def on_change(self, source, property_name, old_value, new_value):
+        """
+        Callback when simulation properties change.
 
-        # Determine budget value (support list or scalar in config)
-        budget_cfg = config.rc.application_configuration.get("budget", 50)
-        if isinstance(budget_cfg, (list, tuple)):
-            budget = budget_cfg[0]
-        else:
-            budget = budget_cfg
-
-        # add the environment observer to monitor simulation for switch to EXECUTING mode
-        app.simulator.add_observer(
-            Environment(app, budget=budget, freeze_enabled=freeze_enabled)
-        )
+        Args:
+            source: The object that changed
+            property_name (str): Name of the property that changed
+            old_value: Previous value
+            new_value: New value
+        """
+        # Only respond to time changes when simulation is executing
+        if (
+            property_name == Simulator.PROPERTY_TIME
+            and source.get_mode() == Mode.EXECUTING
+            and new_value is not None
+            and detect_level_change(new_value, old_value, "day")
+        ):
             # Only request freeze if freeze is enabled
             if not self.freeze_enabled:
                 # No freeze - Environment will trigger directly on day change
