@@ -60,6 +60,9 @@ class Collect_Observations(Entity):
         self.app = application
         self.constellation_capacity = const_capacity
         self.time_between_observations = int(time_interval)
+        self.capacity_block_interval = 10
+        self.capacity_block_cache = {}
+
 
         if s3_variable is not None:
             self.s3_bucket = s3_variable
@@ -89,7 +92,7 @@ class Collect_Observations(Entity):
         self.master_data = None
         self.seed_value = 0 # Seed value for daily random value generation
         self.rng_cache = {}  # Cache for daily random values
-        self.daily_random_value = None  # Daily random value object
+        # self.daily_random_value = None  # Daily random value object
         # self.sim_stop_flag = False
         # Threading state variables
         self.master_file_processing = False
@@ -145,15 +148,38 @@ class Collect_Observations(Entity):
                     # Generate or retrieve the daily random value
                     # Generate and cache the random value for the new day
 
-                    self.daily_random_value = Daily_random_value(
+                    block_id = int(self._time.timestamp()) // self.capacity_block_interval
+
+                    if block_id not in self.capacity_block_cache:
+
+                        logger.info("Time Changed, entering new block and generating new random value for block id %d", block_id)
+
+                        block_random_value = Daily_random_value(
                         seed_value=self.seed_value,
                         min_value=0.0,
                         max_value=1.0,
                         rng_cache=self.rng_cache
-                    )
-                    if (
-                        self.daily_random_value <= self.constellation_capacity
-                    ): 
+                        )
+
+                        self.capacity_block_cache[block_id] = (
+                                block_random_value <= self.constellation_capacity
+                            )
+                    
+                    cc_on = self.capacity_block_cache[block_id]
+
+                    # self.daily_random_value = Daily_random_value(
+                    #     seed_value=self.seed_value,
+                    #     min_value=0.0,
+                    #     max_value=1.0,
+                    #     rng_cache=self.rng_cache
+                    # )
+                    # if (
+                    #     self.daily_random_value <= self.constellation_capacity
+                    # ): 
+                    
+                    if cc_on:
+
+                        logger.info("Current capacity block id is %d and state is %f", block_id, cc_on)
 
                         self.observation_collected_flag = True
                         logger.info("Daily random value is %f", self.daily_random_value)
