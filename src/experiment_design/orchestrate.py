@@ -29,7 +29,7 @@ class OrchestrateObserver(Observer):
 
     def on_stop(self, ch, method, properties, body):
         logger.info("Received stop message. Stopping application.")
-        time.sleep(90)  # Wait for 1.5 minutes before proceeding
+        time.sleep(30)  # Wait for 1.5 minutes before proceeding
         self.shutdown_received = True
         return
     
@@ -68,7 +68,7 @@ class OrchestrateObserver(Observer):
         # --- Update values directly ---
         # Manager & application time scale factor
         time_scale = int(row["time scale factor"])
-        time_scale = 96  # TEMPORARY OVERRIDE FOR TESTING
+        # time_scale = 96  # TEMPORARY OVERRIDE FOR TESTING
         yaml_data["execution"]["manager"]["time_scale_factor"] = time_scale
         yaml_data["execution"]["managed_applications"]["planner"]["time_scale_factor"] = time_scale
         yaml_data["execution"]["managed_applications"]["simulator"]["time_scale_factor"] = time_scale
@@ -108,8 +108,8 @@ def main():
 
     # # print(df)
     app.add_message_callback("manager", "start", environment.on_start)
-    # app.add_message_callback("manager", "stop", environment.on_stop)
-    app.add_message_callback("simulator", "simulator_end", environment.on_stop)
+    app.add_message_callback("manager", "stop", environment.on_stop)
+    # app.add_message_callback("simulator", "simulator_end", environment.on_stop)
     logger.info("Exiting main function")
 
     # Ensure run_output directory exists

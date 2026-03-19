@@ -361,7 +361,8 @@ class Environment(Observer):
             body (bytes): The body of the message.
 
         """
-        logger.info("entering appender _on_simulator")    
+        logger.info("entering appender _on_simulator") 
+        master_output_copy = None   
         component_gdf = self.message_to_geojson(body)
 
         if component_gdf.empty:
@@ -399,10 +400,18 @@ class Environment(Observer):
         ]
         # logger.info("Updated master_components with %d groups based on planner_time", len(self.master_components))
 
+        # Decide what to write
+        if master_output_copy is None:
+            master_output_copy = gpd.GeoDataFrame(
+                {"geometry": gpd.GeoSeries([], dtype="geometry")},
+                geometry="geometry",
+                crs="EPSG:4326",
+            )
+
         # Write master_output_copy once; fallback to empty GeoJSON if write fails
         try:
             master_output_copy.to_file("outputs/master.geojson", driver="GeoJSON")
-            logger.info("Master geojson file created (rows: %d)", len(self.master_output_copy))
+            logger.info("Master geojson file created (rows: %d)", len(master_output_copy))
         except Exception:
             logger.exception("Failed to write master_output_copy; writing empty fallback.")
             empty = gpd.GeoDataFrame({"geometry": gpd.GeoSeries([], dtype="geometry")}, geometry="geometry", crs="EPSG:4326")

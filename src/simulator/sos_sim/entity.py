@@ -176,13 +176,15 @@ class Collect_Observations(Entity):
                     # if (
                     #     self.daily_random_value <= self.constellation_capacity
                     # ): 
+
+                    logger.info("Details of block id %d and state is %f", block_id, cc_on)
                     
                     if cc_on:
 
-                        logger.info("Current capacity block id is %d and state is %f", block_id, cc_on)
+                        logger.info("Capacity Available:Current capacity block id is %d and state is %f", block_id, cc_on)
 
                         self.observation_collected_flag = True
-                        logger.info("Daily random value is %f", self.daily_random_value)
+                        # logger.info("Daily random value is %f", self.daily_random_value)
                         # logger.info("Constellation capacity is %f", self.constellation_capacity)
                         logger.info("Observation collected") 
                         # Simulate a x% chance of collecting an observation
