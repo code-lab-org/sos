@@ -12,6 +12,10 @@ This repository contains the codebase for Snow Observing Strategy (SOS) applicat
 - [Execution](#execution)
   - [YAML](#yaml)
     - [Optional Freezes](#optional-freezes)
+  - [Configuration Parameters](#configuration-parameters)
+    - [Planner](#planner)
+    - [Appender](#appender)
+    - [Simulator](#simulator)
   - [.env](#env)
     - [Localhost](#localhost)
     - [Cloud-Hosted](#cloud-hosted)
@@ -395,7 +399,7 @@ Depending on whether the applications are running in isolation or in integration
   ```
 
 - **No Freeze**: Useful when running Planner, Appender, and Simulator applications separately from LIS (e.g., experimental or development purposes).
-  
+
   ```yaml
   configuration_parameters:
     scenario_day_freeze:
@@ -422,7 +426,7 @@ execution:
   manager:
     sim_start_time: "2019-03-01T23:59:59+00:00"
     sim_stop_time: "2019-03-10T23:59:59+00:00"
-    start_time: 
+    start_time:
     time_step: "0:00:01"
     time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
     time_scale_updates: []
@@ -475,6 +479,73 @@ execution:
       time_status_init: "2019-03-01T23:59:59+00:00"
       shut_down_when_terminated: True
       manager_app_name: "manager"
+```
+
+### Configuration Parameters
+
+Each managed application supports a `configuration_parameters` block in `sos.yaml` under `execution.managed_applications.<app_name>`. These parameters control application-specific behavior beyond the standard NOS-T timing configuration.
+
+#### Planner
+
+| Parameter | Type | Required | Default | Description |
+|:----------|:----:|:--------:|:-------:|:------------|
+| `budget` | int | Yes | 50 | Maximum number of observation cells the linear programming solver can select per planning cycle. Controls the trade-off between observation coverage and resource constraints. |
+| `norad_id` | int | Yes | — | NORAD catalog ID of the satellite used for orbit propagation (e.g., `38337` for GCOM W1). Used to fetch TLE data from Space-Track.org. |
+| `first_day_trigger` | bool | No | `false` | When `true`, triggers the planner on the first simulation time tick even if no scenario day change has occurred. Useful for ensuring the first simulation day is processed. |
+| `scenario_day_freeze` | object | No | *(disabled)* | Controls freeze behavior at scenario day boundaries. See [Optional Freezes](#optional-freezes) above for details. |
+
+Example:
+```yaml
+managed_applications:
+  planner:
+    # ... standard NOS-T timing parameters ...
+    configuration_parameters:
+      budget: 50
+      norad_id: 38337
+      first_day_trigger: True
+      scenario_day_freeze:
+        enabled: true
+        mode: "indefinite"
+```
+
+#### Appender
+
+| Parameter | Type | Required | Default | Description |
+|:----------|:----:|:--------:|:-------:|:------------|
+| `set_expiration_time` | list[bool] | Yes | — | Single-element list (e.g., `[true]`). When `true`, observations are assigned an expiration date based on `expiration_time`. When `false`, observations never expire (set to a far-future date). |
+| `expiration_time` | list[int] | Yes | — | Single-element list (e.g., `[7]`). Number of days after the planner's selection time before an observation expires. Expired observations are excluded from the active set sent to the simulator. Only meaningful when `set_expiration_time` is `[true]`. |
+
+> **Note:** These parameters use single-element lists due to the YAML parsing convention — values are accessed as `config.rc.application_configuration['set_expiration_time'][0]`.
+
+Example:
+```yaml
+managed_applications:
+  appender:
+    # ... standard NOS-T timing parameters ...
+    configuration_parameters:
+      set_expiration_time:
+        - true
+      expiration_time:
+        - 7
+```
+
+#### Simulator
+
+| Parameter | Type | Required | Default | Description |
+|:----------|:----:|:--------:|:-------:|:------------|
+| `constellation_capacity` | list[float] | Yes | — | Single-element list (e.g., `[1.0]`). Probability threshold (0.0–1.0) for collecting an observation. Each simulation day, a random value is generated; if it falls at or below this threshold, the satellite collects the observation. A value of `1.0` means observations are always collected; `0.5` means ~50% collection rate. |
+| `observation_interval` | list[int] | Yes | — | Single-element list (e.g., `[30]`). Minimum time interval in seconds between consecutive observation opportunities for a satellite. Controls how frequently the satellite can attempt collections along its ground track. |
+
+Example:
+```yaml
+managed_applications:
+  simulator:
+    # ... standard NOS-T timing parameters ...
+    configuration_parameters:
+      constellation_capacity:
+        - 1
+      observation_interval:
+        - 30
 ```
 
 ### .env
