@@ -318,14 +318,18 @@ servers:
 execution:
   general:
     prefix: sos
+    wallclock_offset_refresh_interval: 60
+    ntp_host: "pool.ntp.org"
   manager:
     sim_start_time: "2019-03-01T23:59:59+00:00"
     sim_stop_time: "2019-03-10T23:59:59+00:00"
-    start_time: 
+    start_time:
     time_step: "0:00:01"
+    is_scenario_time_step: True
     time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
     time_scale_updates: []
     time_status_step: "0:00:01" # 1 second * time scale factor
+    is_scenario_time_status_step: False
     time_status_init: "2019-03-01T23:59:59+00:00"
     command_lead: "0:00:05"
     required_apps:
@@ -337,31 +341,41 @@ execution:
     init_max_retry: 5
     set_offset: True
     shut_down_when_terminated: True
+    enable_file_logging: True
   managed_applications:
     planner:
       time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
       time_step: "0:00:01" # 1 second * time scale factor
+      is_scenario_time_step: True
       set_offset: True
       time_status_step: "0:00:10" # 10 seconds * time scale factor
+      is_scenario_time_status_step: False
       time_status_init: "2019-03-01T23:59:59+00:00"
       shut_down_when_terminated: True
       manager_app_name: "manager"
+      enable_file_logging: True
     appender:
       time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
       time_step: "0:00:01" # 1 second * time scale factor
+      is_scenario_time_step: True
       set_offset: True
       time_status_step: "0:00:10" # 10 seconds * time scale factor
+      is_scenario_time_status_step: False
       time_status_init: "2019-03-01T23:59:59+00:00"
       shut_down_when_terminated: True
       manager_app_name: "manager"
+      enable_file_logging: True
     simulator:
       time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
       time_step: "0:01:00" # 1 second * time scale factor
+      is_scenario_time_step: True
       set_offset: True
       time_status_step: "0:00:10" # 10 seconds * time scale factor
+      is_scenario_time_status_step: False
       time_status_init: "2019-03-01T23:59:59+00:00"
       shut_down_when_terminated: True
       manager_app_name: "manager"
+      enable_file_logging: True
 ```
 #### Optional Freezes
 
@@ -423,14 +437,18 @@ servers:
 execution:
   general:
     prefix: sos
+    wallclock_offset_refresh_interval: 60
+    ntp_host: "pool.ntp.org"
   manager:
     sim_start_time: "2019-03-01T23:59:59+00:00"
     sim_stop_time: "2019-03-10T23:59:59+00:00"
     start_time:
     time_step: "0:00:01"
+    is_scenario_time_step: True
     time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
     time_scale_updates: []
     time_status_step: "0:00:01" # 1 second * time scale factor
+    is_scenario_time_status_step: False
     time_status_init: "2019-03-01T23:59:59+00:00"
     command_lead: "0:00:05"
     required_apps:
@@ -442,43 +460,45 @@ execution:
     init_max_retry: 5
     set_offset: True
     shut_down_when_terminated: True
+    enable_file_logging: True
   managed_applications:
     planner:
       time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
       time_step: "0:00:01" # 1 second * time scale factor
+      is_scenario_time_step: True
       set_offset: True
       time_status_step: "0:00:10" # 10 seconds * time scale factor
+      is_scenario_time_status_step: False
       time_status_init: "2019-03-01T23:59:59+00:00"
       shut_down_when_terminated: True
       manager_app_name: "manager"
-      # configuration_parameters:
-        # Optional: Scenario day freeze configuration
-        # If this section is omitted, planner will default to no freeze behavior (freeze disabled)
-        # scenario_day_freeze:
-        #   enabled: true          # false = no freeze, true = enable freeze on scenario day change
-        #   mode: "indefinite"     # "timed" = resume after duration, "indefinite" = resume after S3 upload
-        # scenario_day_freeze:
-        #   enabled: true          # false = no freeze, true = enable freeze on scenario day change
-        #   mode: "timed"     # "timed" = resume after duration, "indefinite" = resume after S3 upload
-        #   duration: "0:02:00"    # duration for timed freeze (HH:MM:SS format)
-        # scenario_day_freeze:
-        #   enabled: false          # false = no freeze, true = enable freeze on scenario day change
+      enable_file_logging: True
+      configuration_parameters:
+        scenario_day_freeze:        # See "Optional Freezes" section above for all modes
+          enabled: true
+          mode: "indefinite"        # or "timed" with duration: "0:02:00"
     appender:
       time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
       time_step: "0:00:01" # 1 second * time scale factor
+      is_scenario_time_step: True
       set_offset: True
       time_status_step: "0:00:10" # 10 seconds * time scale factor
+      is_scenario_time_status_step: False
       time_status_init: "2019-03-01T23:59:59+00:00"
       shut_down_when_terminated: True
       manager_app_name: "manager"
+      enable_file_logging: True
     simulator:
       time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
       time_step: "0:01:00" # 1 second * time scale factor
+      is_scenario_time_step: True
       set_offset: True
       time_status_step: "0:00:10" # 10 seconds * time scale factor
+      is_scenario_time_status_step: False
       time_status_init: "2019-03-01T23:59:59+00:00"
       shut_down_when_terminated: True
       manager_app_name: "manager"
+      enable_file_logging: True
 ```
 
 ### Configuration Parameters
