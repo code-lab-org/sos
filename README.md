@@ -440,6 +440,11 @@ When the planner is configured with an indefinite freeze, an AWS Lambda function
 5. The Manager receives the resume request and resumes all frozen applications
 
 ```mermaid
+---
+config:
+  look: neo
+  theme: redux
+---
 sequenceDiagram
     participant LIS
     participant S3 as S3 Bucket
