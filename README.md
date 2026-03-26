@@ -467,7 +467,7 @@ Configure these in the AWS Lambda Console under your function's configuration:
 | Variable | Required | Default | Description |
 |:---------|:--------:|:-------:|:------------|
 | `NOST_PREFIX` | Yes | `nost_sos` | Execution namespace/prefix — must match the `prefix` in `sos.yaml` |
-| `NOST_CONFIG_YAML` | No | `sos.yaml` | Path to the YAML configuration file |
+| `NOST_CONFIG_YAML` | Yes | `sos.yaml` | Path to the YAML configuration file |
 | `SECRET_NAME` | No | — | Name of AWS Secrets Manager secret containing credentials (see below) |
 | `AWS_REGION` | No | `us-east-1` | AWS region for Secrets Manager |
 
