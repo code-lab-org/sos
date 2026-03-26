@@ -12,6 +12,7 @@ This repository contains the codebase for Snow Observing Strategy (SOS) applicat
 - [Execution](#execution)
   - [YAML](#yaml)
     - [Optional Freezes](#optional-freezes)
+      - [Lambda Resume Trigger](#lambda-resume-trigger)
   - [Configuration Parameters](#configuration-parameters)
     - [Planner](#planner)
     - [Appender](#appender)
@@ -419,6 +420,107 @@ Depending on whether the applications are running in isolation or in integration
     scenario_day_freeze:
       enabled: false
   ```
+
+##### Lambda Resume Trigger
+
+When the planner is configured with an indefinite freeze, an AWS Lambda function is used to resume the simulation after LIS uploads new data to S3. The source files are in the `lambda/` directory.
+
+| File | Description |
+|:-----|:------------|
+| `lambda/lambda_function_nost.py` | Lambda handler — connects to the event broker and sends a resume request |
+| `lambda/deploy_lambda.sh` | Packages the handler + dependencies into ZIP files for upload |
+| `lambda/requirements.txt` | Python dependencies for the Lambda environment |
+
+**How It Works**
+
+1. LIS uploads a NetCDF file to the S3 bucket under `inputs/LIS/assimilation/`
+2. The S3 upload event triggers the Lambda function
+3. Lambda extracts the timestamp from the filename (e.g., `LIS_HIST_202501020000.d01.nc` → `2025-01-02T00:00:00`)
+4. Lambda instantiates a NOS-T `Application`, connects to the event broker, and calls `request_resume`
+5. The Manager receives the resume request and resumes all frozen applications
+
+```mermaid
+---
+config:
+  look: neo
+  theme: redux
+---
+sequenceDiagram
+    participant LIS
+    participant S3 as S3 Bucket
+    participant Lambda as Lambda Function
+    participant EB as Event Broker
+    participant Manager
+
+    LIS->>S3: Upload NetCDF to inputs/LIS/assimilation/
+    S3->>Lambda: S3 upload event trigger
+    Note over Lambda: Extract timestamp from filename<br/>(e.g., LIS_HIST_202501020000.d01.nc<br/>→ 2025-01-02T00:00:00)
+    Lambda->>EB: Connect and send request_resume
+    EB->>Manager: Resume request
+    Manager->>Manager: Resume all frozen applications
+```
+
+**Environment Variables**
+
+Configure these in the AWS Lambda Console under your function's configuration:
+
+| Variable | Required | Default | Description |
+|:---------|:--------:|:-------:|:------------|
+| `NOST_PREFIX` | Yes | `nost_sos` | Execution namespace/prefix — must match the `prefix` in `sos.yaml` |
+| `NOST_CONFIG_YAML` | Yes | `sos.yaml` | Path to the YAML configuration file |
+| `SECRET_NAME` | No | — | Name of AWS Secrets Manager secret containing credentials (see below) |
+| `AWS_REGION` | No | `us-east-1` | AWS region for Secrets Manager |
+
+**Credentials**
+
+Lambda retrieves credentials from AWS Secrets Manager when `SECRET_NAME` is set. The secret must be a JSON object whose keys depend on the account type:
+
+- **Service Account** (currently used by the Lambda function):
+
+  ```json
+  {
+    "CLIENT_ID": "nost-client",
+    "CLIENT_SECRET_KEY": "your-client-secret-key"
+  }
+  ```
+
+- **User Account** (requires uncommenting `USERNAME`/`PASSWORD` in the Lambda handler):
+
+  ```json
+  {
+    "USERNAME": "nost-user",
+    "PASSWORD": "secure_password",
+    "CLIENT_ID": "nost-client",
+    "CLIENT_SECRET_KEY": "your-client-secret-key"
+  }
+  ```
+
+If `SECRET_NAME` is not set, credentials must be available via environment variables or a `.env` file.
+
+**Deployment**
+
+Package the Lambda function and layer:
+
+```bash
+./lambda/deploy_lambda.sh
+```
+
+This creates two packages in `lambda_package/`:
+- `lambda_layer.zip` — Python dependencies in Lambda Layer format
+- `lambda_function.zip` — handler code (`lambda_function.py`) + `sos.yaml`
+
+Upload both packages via the AWS Lambda Console:
+1. **Create layer**: Lambda → Layers → Create layer → Upload `lambda_layer.zip` → Set compatible runtime to Python 3.12
+2. **Upload function code**: Lambda → Your function → Code → Upload from → `.zip file` → Upload `lambda_function.zip`
+3. **Attach layer**: Lambda → Your function → Layers → Add a layer → Custom layers → Select the layer created in step 1
+
+**IAM Permissions**
+
+The Lambda execution role requires:
+- `secretsmanager:GetSecretValue` on the secret ARN (if using Secrets Manager)
+- `s3:GetObject` on the source bucket
+- CloudWatch Logs permissions (`logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents`)
+- VPC permissions if RabbitMQ is in a VPC (`ec2:CreateNetworkInterface`, `ec2:DescribeNetworkInterfaces`, `ec2:DeleteNetworkInterface`)
 
 Below is a complete example showing the various freeze modes implemented in the YAML configuration file:
 
