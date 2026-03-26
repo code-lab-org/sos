@@ -770,7 +770,19 @@ The SOS applications can be run using Docker compose.
     docker-compose up -d
     ```
 
-    > NOTE: To confirm Docker containers are running, run the command: ```docker ps```. You should see four containers listed: manager, planner, appender, and simulator.
+    > **Notes:**
+    > - To confirm Docker containers are running, run the command: `docker ps`. You should see four containers listed: manager, planner, appender, and simulator.
+    > - The manager container includes a health check (`pgrep` on its process, with a 15-second start period). The planner, appender, and simulator containers use `depends_on: condition: service_healthy`, so Docker Compose will wait until the manager is healthy before starting them.
+
+    **Environment Variables**
+
+    The following environment variables can be set per-container in the `environment` block of `docker-compose.yml`:
+
+    | Variable | Default | Description |
+    |:---------|:-------:|:------------|
+    | `ENABLE_UPLOADS` | `true` | Controls whether applications upload output files to the S3 bucket. Set to `false` to skip S3 uploads and only write files locally. The default `docker-compose.yml` sets this to `false` for all applications. Set to `true` when running with AWS access and you want outputs uploaded to S3. |
+    | `DOWNLOAD_CHECK_INTERVAL` | — | Interval in seconds between S3 download retry attempts (planner only). |
+    | `DOWNLOAD_MAX_ATTEMPTS` | — | Maximum number of S3 download retry attempts (planner only). |
 
 4. To shutdown the Docker containers:
 
