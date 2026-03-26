@@ -473,25 +473,27 @@ Configure these in the AWS Lambda Console under your function's configuration:
 
 **Credentials**
 
-Lambda retrieves credentials from AWS Secrets Manager when `SECRET_NAME` is set. The secret must be a JSON object with these keys:
+Lambda retrieves credentials from AWS Secrets Manager when `SECRET_NAME` is set. The secret must be a JSON object whose keys depend on the account type:
 
-Without Keycloak:
-```json
-{
-  "USERNAME": "admin",
-  "PASSWORD": "secure_password"
-}
-```
+- **Service Account** (currently used by the Lambda function):
 
-With Keycloak:
-```json
-{
-  "USERNAME": "nost-user",
-  "PASSWORD": "secure_password",
-  "CLIENT_ID": "nost-client",
-  "CLIENT_SECRET_KEY": "your-client-secret-key"
-}
-```
+  ```json
+  {
+    "CLIENT_ID": "nost-client",
+    "CLIENT_SECRET_KEY": "your-client-secret-key"
+  }
+  ```
+
+- **User Account** (requires uncommenting `USERNAME`/`PASSWORD` in the Lambda handler):
+
+  ```json
+  {
+    "USERNAME": "nost-user",
+    "PASSWORD": "secure_password",
+    "CLIENT_ID": "nost-client",
+    "CLIENT_SECRET_KEY": "your-client-secret-key"
+  }
+  ```
 
 If `SECRET_NAME` is not set, credentials must be available via environment variables or a `.env` file.
 
