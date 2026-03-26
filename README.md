@@ -439,6 +439,22 @@ When the planner is configured with an indefinite freeze, an AWS Lambda function
 4. Lambda instantiates a NOS-T `Application`, connects to the event broker, and calls `request_resume`
 5. The Manager receives the resume request and resumes all frozen applications
 
+```mermaid
+sequenceDiagram
+    participant LIS
+    participant S3 as S3 Bucket
+    participant Lambda as Lambda Function
+    participant EB as Event Broker
+    participant Manager
+
+    LIS->>S3: Upload NetCDF to inputs/LIS/assimilation/
+    S3->>Lambda: S3 upload event trigger
+    Note over Lambda: Extract timestamp from filename<br/>(e.g., LIS_HIST_202501020000.d01.nc<br/>→ 2025-01-02T00:00:00)
+    Lambda->>EB: Connect and send request_resume
+    EB->>Manager: Resume request
+    Manager->>Manager: Resume all frozen applications
+```
+
 **Environment Variables**
 
 Configure these in the AWS Lambda Console under your function's configuration:
