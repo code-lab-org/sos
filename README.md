@@ -770,8 +770,8 @@ The SOS applications can be run using Docker compose.
     docker-compose up -d
     ```
 
-    > NOTE: To confirm Docker containers are running, run the command: ```docker ps```. You should see four containers listed: manager, planner, appender, and simulator.
-
+    > **Note:** To confirm Docker containers are running, run the command: `docker ps`. You should see four containers listed: manager, planner, appender, and simulator.
+    >
     > **Startup ordering:** The manager container includes a health check (`pgrep` on its process, with a 15-second start period). The planner, appender, and simulator containers use `depends_on: condition: service_healthy`, so Docker Compose will wait until the manager is healthy before starting them.
 
     **Environment Variables**
