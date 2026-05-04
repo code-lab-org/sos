@@ -8,7 +8,6 @@ import sys
 import threading
 import time
 from datetime import timedelta
-
 import geopandas as gpd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -90,6 +89,7 @@ class Environment(Observer):
         freeze_enabled: bool = True,
         first_day_trigger: bool = False,
         norad_id=None,
+        lis_input_folder=None,
         sim_start=None,
         sim_stop=None,
     ):  # , planner_freeze):
@@ -101,6 +101,7 @@ class Environment(Observer):
         self.visualize_swe_change = False
         self.visualize_all_layers = False
         self.norad_id = norad_id
+        self.lis_input_folder_location = lis_input_folder
         self.sim_start = pd.to_datetime(sim_start)
         self.sim_stop = pd.to_datetime(sim_stop)
         self.cached_tles = None
@@ -1203,17 +1204,17 @@ class Environment(Observer):
 
         # Priority 2: open_loop
         for directory in directories:
-            if "open_loop" in directory:
-                logger.info(f"Looking into open_loop directory: {directory}")
-                pages = paginator.paginate(Bucket=bucket_name, Prefix=directory)
-                for page in pages:
-                    for obj in page.get("Contents", []):
-                        logger.debug(f"Found object in open_loop: {obj['Key']}")
-                        if obj["Key"].endswith(file_name_pattern):
-                            logger.info(
-                                f"Found matching file in open_loop: {obj['Key']}"
-                            )
-                            return obj["Key"]
+            # if "open_loop" in directory:
+            logger.info(f"Looking into open_loop directory: {directory}")
+            pages = paginator.paginate(Bucket=bucket_name, Prefix=directory)
+            for page in pages:
+                for obj in page.get("Contents", []):
+                    logger.debug(f"Found object in open_loop: {obj['Key']}")
+                    if obj["Key"].endswith(file_name_pattern):
+                        logger.info(
+                            f"Found matching file in open_loop: {obj['Key']}"
+                        )
+                        return obj["Key"]
 
         logger.warning(f"No matching file found for pattern: {file_name_pattern}")
         return None
@@ -1257,7 +1258,11 @@ class Environment(Observer):
 
         # Try assimilation first (wait up to max_attempts)
         assimilation_dirs = ["inputs/LIS/assimilation/"]
-        open_loop_dirs = ["inputs/LIS/open_loop_PMWonly/"]
+        # open_loop_dirs = ["inputs/LIS/open_loop_PMWonly/"]
+
+        logger.info("Content of the open_loop directory: %s and type %s", self.lis_input_folder_location, type(self.lis_input_folder_location))
+        # logger.info("Contents: %s", os.listdir(self.lis_input_folder_location))
+        open_loop_dirs = [self.lis_input_folder_location]
 
         file_key = None
         for attempt in range(max_attempts):
@@ -2131,6 +2136,7 @@ def main():
             freeze_enabled=freeze_enabled,
             first_day_trigger=config.rc.application_configuration.get("first_day_trigger", False),
             norad_id=config.rc.application_configuration["norad_id"],
+            lis_input_folder=config.rc.application_configuration["input_folder_location"],
             sim_start=config.rc.simulation_configuration.execution_parameters.manager.sim_start_time,
             sim_stop=config.rc.simulation_configuration.execution_parameters.manager.sim_stop_time,
         )
