@@ -286,15 +286,10 @@ class Environment(Observer):
         component_gdf = self.process_component(component_gdf)
         self.master_components.append(component_gdf)
         self.counter += len(component_gdf)
-        # min_value = component_gdf["simulator_id"].min()
-        # max_value = component_gdf["simulator_id"].max()
         self.master_gdf_all = pd.concat(self.master_components, ignore_index=True)
-        self.master_gdf_all = self.update_expiration(self.master_gdf_all)
-        # logger.info("Expiration status updated in master_gdf_all")
+        self.master_gdf_all = self.update_expiration(self.master_gdf_all)        
         self.master_gdf = self.remove_duplicates(self.master_gdf_all)           
-        self.master_gdf = self.master_gdf.sort_values(by="simulator_id").reset_index(drop=True)
-        # self.master_gdf = self.update_expiration(self.master_gdf)
-        # self.master_output_copy = self.master_gdf.copy()        
+        self.master_gdf = self.master_gdf.sort_values(by="simulator_id").reset_index(drop=True)       
         self.master_output_copy = self.master_gdf_all.copy()
         date = self.app.simulator.get_time()
         date_new_format = str(date.date()).replace("-", "")
@@ -305,6 +300,10 @@ class Environment(Observer):
         output_file = os.path.join(
             self.current_simulation_date, f"appender_master_{date_new_format}.geojson"
         )
+
+        # Converting polygon groundtrack to WKT format before saving to GeoJSON to avoid issues with complex geometries in GeoJSON
+        self.master_gdf["simulator_polygon_groundtrack"] = self.master_gdf["simulator_polygon_groundtrack"].to_wkt()
+        
         self.master_gdf.to_file(
             output_file,
             driver="GeoJSON",
@@ -331,10 +330,19 @@ class Environment(Observer):
         else:
             filtered_gdf = self.master_gdf.copy()
 
+        logger.info("Master gdf data length: %d", len(self.master_gdf))
         logger.info("Filtered gdf based on expiration: %d", len(filtered_gdf))
+
         filtered_gdf["simulator_completion_date"] = filtered_gdf["simulator_completion_date"].astype(str)
         filtered_gdf["simulator_expiration_date"] = filtered_gdf["simulator_expiration_date"].astype(str)
-        # selected_json_data = self.master_gdf.to_json()
+
+        # Filter rows that are Completed 
+        filtered_gdf = filtered_gdf[
+            filtered_gdf["simulator_simulation_status"] != "Completed"
+        ]
+
+        logger.info("Filtered gdf after removing Completed simulations: %d", len(filtered_gdf))
+        
         selected_json_data = filtered_gdf.to_json()
         self.app.send_message(
             self.app.app_name,
@@ -371,6 +379,9 @@ class Environment(Observer):
             self.master_gdf_all.set_index("simulator_id", inplace=True)
             component_gdf.set_index("simulator_id", inplace=True)
             # logger.info("Before update: master_gdf_combined has %d rows; component_gdf has %d rows", len(self.master_gdf_all), len(component_gdf))
+            component_gdf = component_gdf.rename_geometry(
+                "simulator_polygon_groundtrack"
+            )
             
             # Update #1 for the master list of components (this has duplicates)
             self.master_gdf_all.update(component_gdf)
@@ -401,6 +412,7 @@ class Environment(Observer):
 
         # Write master_output_copy once; fallback to empty GeoJSON if write fails
         try:
+            master_output_copy["simulator_polygon_groundtrack"] = master_output_copy["simulator_polygon_groundtrack"].to_wkt()            
             master_output_copy.to_file("outputs/master.geojson", driver="GeoJSON")
             logger.info("Master geojson file created (rows: %d)", len(self.master_output_copy))
         except Exception:
@@ -459,7 +471,6 @@ def main():
 
     while True:
         pass
-
 
 if __name__ == "__main__":
     main()
