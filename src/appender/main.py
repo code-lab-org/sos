@@ -100,7 +100,8 @@ class Environment(Observer):
         # Initializing all rows as "active" to avoid issues with NaN values during filtering
         gdf["simulator_expiration_status"] = "active"
         gdf["simulator_satellite"] = pd.Series(dtype="string")
-        gdf["simulator_polygon_groundtrack"] = np.nan  # None
+        # gdf["simulator_polygon_groundtrack"] = np.nan  # None
+        gdf["simulator_polygon_groundtrack"] = gpd.GeoSeries([None] * len(gdf))
         gdf["planner_latitude"] = gdf["planner_centroid"].y
         gdf["planner_longitude"] = gdf["planner_centroid"].x
         gdf["planner_centroid"] = gdf["planner_centroid"].to_wkt()      
@@ -300,6 +301,9 @@ class Environment(Observer):
         output_file = os.path.join(
             self.current_simulation_date, f"appender_master_{date_new_format}.geojson"
         )
+
+        # Logging the column names and data types before saving to GeoJSON
+        logger.info("Master GeoDataFrame columns and data types before saving to GeoJSON: %s", self.master_gdf.dtypes.to_dict())
 
         # Converting polygon groundtrack to WKT format before saving to GeoJSON to avoid issues with complex geometries in GeoJSON
         self.master_gdf["simulator_polygon_groundtrack"] = self.master_gdf["simulator_polygon_groundtrack"].to_wkt()
