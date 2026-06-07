@@ -191,4 +191,10 @@ outputs/simulation_config.csv
 run_output
 src/experiment_design/Output_analysis.xlsx
 src/experiment_design/experiment_run_data_backup.csv
+src/experiment_design/experiment_run_data.csv
+docker-compose_exec_1.yml
+docker-compose_exec_2.yml
+
+
+
 

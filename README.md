@@ -12,6 +12,11 @@ This repository contains the codebase for Snow Observing Strategy (SOS) applicat
 - [Execution](#execution)
   - [YAML](#yaml)
     - [Optional Freezes](#optional-freezes)
+      - [Lambda Resume Trigger](#lambda-resume-trigger)
+  - [Configuration Parameters](#configuration-parameters)
+    - [Planner](#planner)
+    - [Appender](#appender)
+    - [Simulator](#simulator)
   - [.env](#env)
     - [Localhost](#localhost)
     - [Cloud-Hosted](#cloud-hosted)
@@ -314,14 +319,18 @@ servers:
 execution:
   general:
     prefix: sos
+    wallclock_offset_refresh_interval: 60
+    ntp_host: "pool.ntp.org"
   manager:
     sim_start_time: "2019-03-01T23:59:59+00:00"
     sim_stop_time: "2019-03-10T23:59:59+00:00"
-    start_time: 
+    start_time:
     time_step: "0:00:01"
+    is_scenario_time_step: True
     time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
     time_scale_updates: []
     time_status_step: "0:00:01" # 1 second * time scale factor
+    is_scenario_time_status_step: False
     time_status_init: "2019-03-01T23:59:59+00:00"
     command_lead: "0:00:05"
     required_apps:
@@ -333,31 +342,41 @@ execution:
     init_max_retry: 5
     set_offset: True
     shut_down_when_terminated: True
+    enable_file_logging: True
   managed_applications:
     planner:
       time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
       time_step: "0:00:01" # 1 second * time scale factor
+      is_scenario_time_step: True
       set_offset: True
       time_status_step: "0:00:10" # 10 seconds * time scale factor
+      is_scenario_time_status_step: False
       time_status_init: "2019-03-01T23:59:59+00:00"
       shut_down_when_terminated: True
       manager_app_name: "manager"
+      enable_file_logging: True
     appender:
       time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
       time_step: "0:00:01" # 1 second * time scale factor
+      is_scenario_time_step: True
       set_offset: True
       time_status_step: "0:00:10" # 10 seconds * time scale factor
+      is_scenario_time_status_step: False
       time_status_init: "2019-03-01T23:59:59+00:00"
       shut_down_when_terminated: True
       manager_app_name: "manager"
+      enable_file_logging: True
     simulator:
       time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
       time_step: "0:01:00" # 1 second * time scale factor
+      is_scenario_time_step: True
       set_offset: True
       time_status_step: "0:00:10" # 10 seconds * time scale factor
+      is_scenario_time_status_step: False
       time_status_init: "2019-03-01T23:59:59+00:00"
       shut_down_when_terminated: True
       manager_app_name: "manager"
+      enable_file_logging: True
 ```
 #### Optional Freezes
 
@@ -395,12 +414,113 @@ Depending on whether the applications are running in isolation or in integration
   ```
 
 - **No Freeze**: Useful when running Planner, Appender, and Simulator applications separately from LIS (e.g., experimental or development purposes).
-  
+
   ```yaml
   configuration_parameters:
     scenario_day_freeze:
       enabled: false
   ```
+
+##### Lambda Resume Trigger
+
+When the planner is configured with an indefinite freeze, an AWS Lambda function is used to resume the simulation after LIS uploads new data to S3. The source files are in the `lambda/` directory.
+
+| File | Description |
+|:-----|:------------|
+| `lambda/lambda_function_nost.py` | Lambda handler — connects to the event broker and sends a resume request |
+| `lambda/deploy_lambda.sh` | Packages the handler + dependencies into ZIP files for upload |
+| `lambda/requirements.txt` | Python dependencies for the Lambda environment |
+
+**How It Works**
+
+1. LIS uploads a NetCDF file to the S3 bucket under `inputs/LIS/assimilation/`
+2. The S3 upload event triggers the Lambda function
+3. Lambda extracts the timestamp from the filename (e.g., `LIS_HIST_202501020000.d01.nc` → `2025-01-02T00:00:00`)
+4. Lambda instantiates a NOS-T `Application`, connects to the event broker, and calls `request_resume`
+5. The Manager receives the resume request and resumes all frozen applications
+
+```mermaid
+---
+config:
+  look: neo
+  theme: redux
+---
+sequenceDiagram
+    participant LIS
+    participant S3 as S3 Bucket
+    participant Lambda as Lambda Function
+    participant EB as Event Broker
+    participant Manager
+
+    LIS->>S3: Upload NetCDF to inputs/LIS/assimilation/
+    S3->>Lambda: S3 upload event trigger
+    Note over Lambda: Extract timestamp from filename<br/>(e.g., LIS_HIST_202501020000.d01.nc<br/>→ 2025-01-02T00:00:00)
+    Lambda->>EB: Connect and send request_resume
+    EB->>Manager: Resume request
+    Manager->>Manager: Resume all frozen applications
+```
+
+**Environment Variables**
+
+Configure these in the AWS Lambda Console under your function's configuration:
+
+| Variable | Required | Default | Description |
+|:---------|:--------:|:-------:|:------------|
+| `NOST_PREFIX` | Yes | `nost_sos` | Execution namespace/prefix — must match the `prefix` in `sos.yaml` |
+| `NOST_CONFIG_YAML` | Yes | `sos.yaml` | Path to the YAML configuration file |
+| `SECRET_NAME` | No | — | Name of AWS Secrets Manager secret containing credentials (see below) |
+| `AWS_REGION` | No | `us-east-1` | AWS region for Secrets Manager |
+
+**Credentials**
+
+Lambda retrieves credentials from AWS Secrets Manager when `SECRET_NAME` is set. The secret must be a JSON object whose keys depend on the account type:
+
+- **Service Account** (currently used by the Lambda function):
+
+  ```json
+  {
+    "CLIENT_ID": "nost-client",
+    "CLIENT_SECRET_KEY": "your-client-secret-key"
+  }
+  ```
+
+- **User Account** (requires uncommenting `USERNAME`/`PASSWORD` in the Lambda handler):
+
+  ```json
+  {
+    "USERNAME": "nost-user",
+    "PASSWORD": "secure_password",
+    "CLIENT_ID": "nost-client",
+    "CLIENT_SECRET_KEY": "your-client-secret-key"
+  }
+  ```
+
+If `SECRET_NAME` is not set, credentials must be available via environment variables or a `.env` file.
+
+**Deployment**
+
+Package the Lambda function and layer:
+
+```bash
+./lambda/deploy_lambda.sh
+```
+
+This creates two packages in `lambda_package/`:
+- `lambda_layer.zip` — Python dependencies in Lambda Layer format
+- `lambda_function.zip` — handler code (`lambda_function.py`) + `sos.yaml`
+
+Upload both packages via the AWS Lambda Console:
+1. **Create layer**: Lambda → Layers → Create layer → Upload `lambda_layer.zip` → Set compatible runtime to Python 3.12
+2. **Upload function code**: Lambda → Your function → Code → Upload from → `.zip file` → Upload `lambda_function.zip`
+3. **Attach layer**: Lambda → Your function → Layers → Add a layer → Custom layers → Select the layer created in step 1
+
+**IAM Permissions**
+
+The Lambda execution role requires:
+- `secretsmanager:GetSecretValue` on the secret ARN (if using Secrets Manager)
+- `s3:GetObject` on the source bucket
+- CloudWatch Logs permissions (`logs:CreateLogGroup`, `logs:CreateLogStream`, `logs:PutLogEvents`)
+- VPC permissions if RabbitMQ is in a VPC (`ec2:CreateNetworkInterface`, `ec2:DescribeNetworkInterfaces`, `ec2:DeleteNetworkInterface`)
 
 Below is a complete example showing the various freeze modes implemented in the YAML configuration file:
 
@@ -419,14 +539,18 @@ servers:
 execution:
   general:
     prefix: sos
+    wallclock_offset_refresh_interval: 60
+    ntp_host: "pool.ntp.org"
   manager:
     sim_start_time: "2019-03-01T23:59:59+00:00"
     sim_stop_time: "2019-03-10T23:59:59+00:00"
-    start_time: 
+    start_time:
     time_step: "0:00:01"
+    is_scenario_time_step: True
     time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
     time_scale_updates: []
     time_status_step: "0:00:01" # 1 second * time scale factor
+    is_scenario_time_status_step: False
     time_status_init: "2019-03-01T23:59:59+00:00"
     command_lead: "0:00:05"
     required_apps:
@@ -438,43 +562,112 @@ execution:
     init_max_retry: 5
     set_offset: True
     shut_down_when_terminated: True
+    enable_file_logging: True
   managed_applications:
     planner:
       time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
       time_step: "0:00:01" # 1 second * time scale factor
+      is_scenario_time_step: True
       set_offset: True
       time_status_step: "0:00:10" # 10 seconds * time scale factor
+      is_scenario_time_status_step: False
       time_status_init: "2019-03-01T23:59:59+00:00"
       shut_down_when_terminated: True
       manager_app_name: "manager"
-      # configuration_parameters:
-        # Optional: Scenario day freeze configuration
-        # If this section is omitted, planner will default to no freeze behavior (freeze disabled)
-        # scenario_day_freeze:
-        #   enabled: true          # false = no freeze, true = enable freeze on scenario day change
-        #   mode: "indefinite"     # "timed" = resume after duration, "indefinite" = resume after S3 upload
-        # scenario_day_freeze:
-        #   enabled: true          # false = no freeze, true = enable freeze on scenario day change
-        #   mode: "timed"     # "timed" = resume after duration, "indefinite" = resume after S3 upload
-        #   duration: "0:02:00"    # duration for timed freeze (HH:MM:SS format)
-        # scenario_day_freeze:
-        #   enabled: false          # false = no freeze, true = enable freeze on scenario day change
+      enable_file_logging: True
+      configuration_parameters:
+        scenario_day_freeze:        # See "Optional Freezes" section above for all modes
+          enabled: true
+          mode: "indefinite"        # or "timed" with duration: "0:02:00"
     appender:
       time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
       time_step: "0:00:01" # 1 second * time scale factor
+      is_scenario_time_step: True
       set_offset: True
       time_status_step: "0:00:10" # 10 seconds * time scale factor
+      is_scenario_time_status_step: False
       time_status_init: "2019-03-01T23:59:59+00:00"
       shut_down_when_terminated: True
       manager_app_name: "manager"
+      enable_file_logging: True
     simulator:
       time_scale_factor: 24 # 1 simulation day = 60 wallclock minutes
       time_step: "0:01:00" # 1 second * time scale factor
+      is_scenario_time_step: True
       set_offset: True
       time_status_step: "0:00:10" # 10 seconds * time scale factor
+      is_scenario_time_status_step: False
       time_status_init: "2019-03-01T23:59:59+00:00"
       shut_down_when_terminated: True
       manager_app_name: "manager"
+      enable_file_logging: True
+```
+
+### Configuration Parameters
+
+Each managed application supports a `configuration_parameters` block in `sos.yaml` under `execution.managed_applications.<app_name>`. These parameters control application-specific behavior beyond the standard NOS-T timing configuration.
+
+#### Planner
+
+| Parameter | Type | Required | Default | Description |
+|:----------|:----:|:--------:|:-------:|:------------|
+| `budget` | int | Yes | 50 | Maximum number of observation cells the linear programming solver can select per planning cycle. Controls the trade-off between observation coverage and resource constraints. |
+| `norad_id` | int | Yes | — | NORAD catalog ID of the satellite used for orbit propagation (e.g., `38337` for GCOM W1). Used to fetch TLE data from Space-Track.org. |
+| `first_day_trigger` | bool | No | `false` | When `true`, triggers the planner on the first simulation time tick even if no scenario day change has occurred. Useful for ensuring the first simulation day is processed. |
+| `scenario_day_freeze` | object | No | *(disabled)* | Controls freeze behavior at scenario day boundaries. See [Optional Freezes](#optional-freezes) above for details. |
+
+Example:
+```yaml
+managed_applications:
+  planner:
+    # ... standard NOS-T timing parameters ...
+    configuration_parameters:
+      budget: 50
+      norad_id: 38337
+      first_day_trigger: True
+      scenario_day_freeze:
+        enabled: true
+        mode: "indefinite"
+```
+
+#### Appender
+
+| Parameter | Type | Required | Default | Description |
+|:----------|:----:|:--------:|:-------:|:------------|
+| `set_expiration_time` | list[bool] | Yes | — | Single-element list (e.g., `[true]`). When `true`, observations are assigned an expiration date based on `expiration_time`. When `false`, observations never expire (set to a far-future date). |
+| `expiration_time` | list[int] | Yes | — | Single-element list (e.g., `[7]`). Number of days after the planner's selection time before an observation expires. Expired observations are excluded from the active set sent to the simulator. Only meaningful when `set_expiration_time` is `[true]`. |
+
+> **Note:** These parameters use single-element lists due to the YAML parsing convention — values are accessed as `config.rc.application_configuration['set_expiration_time'][0]`.
+
+Example:
+```yaml
+managed_applications:
+  appender:
+    # ... standard NOS-T timing parameters ...
+    configuration_parameters:
+      set_expiration_time:
+        - true
+      expiration_time:
+        - 7
+```
+
+#### Simulator
+
+| Parameter | Type | Required | Default | Description |
+|:----------|:----:|:--------:|:-------:|:------------|
+| `constellation_capacity` | list[float] | Yes | — | Single-element list (e.g., `[1.0]`). Probability threshold (0.0–1.0) for collecting an observation. Each simulation day, a random value is generated; if it falls at or below this threshold, the satellite collects the observation. A value of `1.0` means observations are always collected; `0.5` means ~50% collection rate. |
+| `observation_interval` | list[int] | Yes | — | Single-element list (e.g., `[30]`). Minimum time interval in seconds between consecutive observation opportunities for a satellite. Controls how frequently the satellite can attempt collections along its ground track. |
+
+Example:
+```yaml
+managed_applications:
+  simulator:
+    # ... standard NOS-T timing parameters ...
+    configuration_parameters:
+      constellation_capacity:
+        - 1
+      observation_interval:
+        - 30
 ```
 
 ### .env
@@ -577,7 +770,19 @@ The SOS applications can be run using Docker compose.
     docker-compose up -d
     ```
 
-    > NOTE: To confirm Docker containers are running, run the command: ```docker ps```. You should see four containers listed: manager, planner, appender, and simulator.
+    > **Notes:**
+    > - To confirm Docker containers are running, run the command: `docker ps`. You should see four containers listed: manager, planner, appender, and simulator.
+    > - The manager container includes a health check (`pgrep` on its process, with a 15-second start period). The planner, appender, and simulator containers use `depends_on: condition: service_healthy`, so Docker Compose will wait until the manager is healthy before starting them.
+
+    **Environment Variables**
+
+    The following environment variables can be set per-container in the `environment` block of `docker-compose.yml`:
+
+    | Variable | Default | Description |
+    |:---------|:-------:|:------------|
+    | `ENABLE_UPLOADS` | `true` | Controls whether applications upload output files to the S3 bucket. Set to `false` to skip S3 uploads and only write files locally. The default `docker-compose.yml` sets this to `false` for all applications. Set to `true` when running with AWS access and you want outputs uploaded to S3. |
+    | `DOWNLOAD_CHECK_INTERVAL` | — | Interval in seconds between S3 download retry attempts (planner only). |
+    | `DOWNLOAD_MAX_ATTEMPTS` | — | Maximum number of S3 download retry attempts (planner only). |
 
 4. To shutdown the Docker containers:
 
