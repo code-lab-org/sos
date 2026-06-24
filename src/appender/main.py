@@ -128,16 +128,21 @@ class Environment(Observer):
             (gdf["simulator_expiration_status"] != "expired")
         )
 
-        # filtered_gdf = gdf.loc[mask]
-        # logger.info(
-        #         "filtered dgf data : %s", filtered_gdf[[
-        #         "simulator_id",
-        #         "simulator_simulation_status",
-        #         "simulator_expiration_status"
-        #     ]].to_string(index=False)
-        #     )
+        # Count of rows in mask before update
+        masked_rows_count = mask.sum()
 
-    # Only mark expired; leave everything else as "active"
+
+        # Determine which requests will expire
+        expire_mask = (
+            mask &
+            (gdf["simulator_expiration_date"].dt.date < current_sim_time.date())
+        )
+
+        # Count expired requests
+        expired_requests_count = expire_mask.sum()
+
+
+        # Only mark expired; leave everything else as "active"
         gdf.loc[
             mask & (gdf["simulator_expiration_date"].dt.date < current_sim_time.date()),
             "simulator_expiration_status"
@@ -346,6 +351,9 @@ class Environment(Observer):
         ]
 
         logger.info("Filtered gdf after removing Completed simulations: %d", len(filtered_gdf))
+
+        # Count of row in filtered gdf
+        valid_rows_count = len(filtered_gdf)
         
         selected_json_data = filtered_gdf.to_json()
         self.app.send_message(
@@ -353,6 +361,7 @@ class Environment(Observer):
             "master",  # ["master", "selected"],
             VectorLayer(vector_layer=selected_json_data).model_dump_json(),
         )
+
         logger.info("Sent message to simulator. Length of data sent: %d", len(filtered_gdf))
         if self.visualize_selected:
             self.app.send_message(
