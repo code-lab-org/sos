@@ -1,3 +1,4 @@
+import csv
 from datetime import datetime, timedelta
 from typing import List
 import logging
@@ -62,6 +63,7 @@ class Collect_Observations(Entity):
         self.time_between_observations = int(time_interval)
         self.capacity_block_interval = 10
         self.capacity_block_cache = {}
+        self.count_geometrically_accessible = 0
 
 
         if s3_variable is not None:
@@ -96,6 +98,7 @@ class Collect_Observations(Entity):
         # self.sim_stop_flag = False
         # Threading state variables
         self.master_file_processing = False
+        self.all_reduced_observations = []
         self.processed_requests = None
         self.incomplete_requests_processed = None
         self.possible_observations_processed = None
@@ -275,15 +278,48 @@ class Collect_Observations(Entity):
             # Compute opportunities (this is also a heavy operation)
             # Computation time of this function
             start_time = _time.perf_counter()
-            possible_observations = compute_opportunity(
+
+            # possible_observations = compute_opportunity(
+            #     constellation_values,
+            #     current_time,
+            #     timedelta(days=1),
+            #     processed_requests,
+            # )
+
+            results = compute_opportunity(
                 constellation_values,
                 current_time,
                 timedelta(days=1),
                 processed_requests,
             )
+
+            if results is not None:
+                possible_observations, reduced_observations = results
+            else:
+                possible_observations = None
+                reduced_observations = None
+
+                
+
             end_time = _time.perf_counter()
             computation_time = end_time - start_time
             logger.info("Opportunity computation time: %.2f seconds", computation_time)
+
+
+
+            # # see the first five rowns of the possible_observations
+            # logger.info("First five possible observations: %s", possible_observations[:5])
+
+            unique_ids = possible_observations["point_id"].nunique()            
+            logger.info("Unique point_ids: %d", unique_ids)
+            self.count_geometrically_accessible = unique_ids   
+
+            #Appending reduced observations to the class variable for later use
+            
+            if reduced_observations is not None and not reduced_observations.empty:
+                self.all_reduced_observations.append(reduced_observations)
+                logger.info("Appended reduced observations to all_reduced_observations, current length is %d", len(self.all_reduced_observations))        
+            
 
             # logger.info("Computed %d possible observations", len(possible_observations))
 
@@ -370,6 +406,7 @@ class Collect_Observations(Entity):
                     logger.info("Number of requests after processing: %d", len(self.requests))
                     self.incomplete_requests = self.incomplete_requests_processed
                     self.possible_observations = self.possible_observations_processed
+                    self.write_values_to_metrics()
 
                     # Clear the processed results
                     self.processed_requests = None
@@ -383,6 +420,35 @@ class Collect_Observations(Entity):
         self.master_data = message_to_geojson(body)
         logger.info(f"Master data received with {len(self.master_data)} records and type {type(self.master_data)}")
         self.on_appender()
+
+
+    def write_values_to_metrics(self):
+        """
+        Write the current values to the metrics file.
+        """
+        directory = "outputs/metrics"
+        date = self.app.simulator.get_time()
+        date_new_format = str(date.date()).replace("-", "")
+        csv_path = os.path.join(directory, f"metrics_{date_new_format}.csv")
+        if os.path.exists(csv_path):
+                with open(csv_path, "a", newline="", encoding="utf-8") as f:
+                    writer = csv.writer(f)
+                    writer.writerow(["simulator", "geometrically_accessible", self.count_geometrically_accessible])
+
+    
+    def store_geometrically_accessible_details(self):
+        """
+        Append the geometrically accessible details in a CSV file.
+        """
+        directory = "outputs/metrics"       
+        # create file if it doesnt exist and append the details
+
+
+
+        
+
+
+
 
 
 class SatelliteVisualization(Entity):

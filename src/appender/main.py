@@ -39,6 +39,8 @@ class Environment(Observer):
         self.visualize_selected = False  # True
         self.set_expiration = set_expiration
         self.expiration_time = expiration_time
+        self.count_valid_requests = 0
+        self.count_expired_requests = 0        
 
         # Flag to control S3 uploads - check environment variable if not explicitly set
         if enable_uploads is None:
@@ -140,6 +142,7 @@ class Environment(Observer):
 
         # Count expired requests
         expired_requests_count = expire_mask.sum()
+        self.count_expired_requests = expired_requests_count
 
 
         # Only mark expired; leave everything else as "active"
@@ -285,6 +288,10 @@ class Environment(Observer):
         # Establish connection to S3
         s3 = AWSUtils().client
 
+        # date = self.app.simulator.get_time()
+        # date_new_format = str(date.date()).replace("-", "")
+        
+
         # Convert the message body to a GeoDataFrame
         component_gdf = self.message_to_geojson(body)
 
@@ -353,7 +360,9 @@ class Environment(Observer):
         logger.info("Filtered gdf after removing Completed simulations: %d", len(filtered_gdf))
 
         # Count of row in filtered gdf
-        valid_rows_count = len(filtered_gdf)
+        self.count_valid_requests = len(filtered_gdf)
+        # Writing the metrics to the metrics file
+        self.generate_metric_file(date_new_format)
         
         selected_json_data = filtered_gdf.to_json()
         self.app.send_message(
@@ -464,6 +473,32 @@ class Environment(Observer):
             )
 
 
+    def generate_metric_file(self, date_new_format):
+        """
+        Generates a metric file with counts of valid and expired requests, as well as geometrically accessible requests.
+
+        Returns:
+            None
+        """
+
+
+        metrics_data = [
+            {'component': 'appender', 'parameter': 'valid_requests', 'value': self.count_valid_requests},
+            {'component': 'appender', 'parameter': 'expired_requests', 'value': self.count_expired_requests}
+            # {'component': 'simulator', 'parameter': 'geometrically_accessible', 'value': 0}
+        ]
+
+        metrics_df = pd.DataFrame(metrics_data)
+
+        # Ensure the outputs directory exists
+        OUTPUT_DIRECTORY = "outputs/metrics"
+        os.makedirs(OUTPUT_DIRECTORY, exist_ok=True)
+
+        # Save DataFrame to CSV inside outputs folder
+        output_path = os.path.join(OUTPUT_DIRECTORY, f"metrics_{date_new_format}.csv")
+        metrics_df.to_csv(output_path, index=False)
+
+
 def main():
     # Load config
     config = ConnectionConfig(yaml_file="sos.yaml",app_name="appender")
@@ -490,6 +525,22 @@ def main():
     # Add a message callback to handle messages from the planner
     app.add_message_callback("planner", "selected_cells", environment.on_planner)
     app.add_message_callback("simulator", "simulator_daily", environment.on_simulator)
+
+
+    # Create the metric directory in the outputs folder if it doesn't exist and save the metrics to a CSV file
+
+    # config_rows = [
+    #     {'component': 'appender', 'parameter': 'valid_requests', 'value': 0},
+    #     {'component': 'appender', 'parameter': 'expired_requests', 'value': 0},
+    #     {'component': 'simulator', 'parameter': 'geometrically_accessible', 'value': 0}        
+    # ]
+
+    # # Create the DataFrame
+    # df = pd.DataFrame(config_rows)
+
+    # Ensure the outputs directory exists
+    OUTPUT_DIRECTORY = "outputs/metrics"
+    os.makedirs(OUTPUT_DIRECTORY, exist_ok=True)
 
     while True:
         pass

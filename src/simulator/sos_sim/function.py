@@ -15,7 +15,7 @@ import pandas as pd
 from boto3.s3.transfer import TransferConfig
 from joblib import Parallel, delayed
 from shapely import Geometry, wkt
-from tatc.analysis import collect_ground_track, collect_multi_observations
+from tatc.analysis import collect_ground_track, collect_multi_observations, aggregate_observations, reduce_observations
 from tatc.schemas import (
     Point,
     PointedInstrument,
@@ -149,6 +149,13 @@ def compute_opportunity(
             for request in filtered_requests
         )
 
+        def aggregate_and_reduce_observations(df):
+            if df.empty:
+                return df
+            aggregated = aggregate_observations(df)
+            reduced = reduce_observations(aggregated)
+            return reduced
+
         # # Remove any empty results
         observation_results_list = [df for df in observation_results_list if not df.empty]
 
@@ -158,6 +165,8 @@ def compute_opportunity(
             ).sort_values(by="epoch", ascending=True)
         else:
             observation_results = pd.DataFrame()
+
+        reduced_observations = aggregate_and_reduce_observations(observation_results)
 
         if observation_results is not None and not observation_results.empty:
 
@@ -171,7 +180,7 @@ def compute_opportunity(
 
             logger.info("Computed observation results length is %d", len(observation_results))
 
-            return observation_results
+            return observation_results, reduced_observations
         return None
     else:
         return None
