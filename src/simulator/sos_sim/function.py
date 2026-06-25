@@ -149,11 +149,25 @@ def compute_opportunity(
             for request in filtered_requests
         )
 
+        # Experiment : For metric computation
+
+        def first_access_time(df):
+            logger.info("The columns and types in df are: %s", df.dtypes)
+            if df.empty:
+                return df
+            first_access = df.groupby("point_id")["epoch"].min().reset_index()
+            first_access.rename(columns={"epoch": "first_access_time"}, inplace=True)
+            return first_access
+
         def aggregate_and_reduce_observations(df):
             if df.empty:
                 return df
             aggregated = aggregate_observations(df)
             reduced = reduce_observations(aggregated)
+            # get first access time and merge with reduced
+            first_access = first_access_time(df)
+            reduced = reduced.merge(first_access, on="point_id", how="left")
+
             return reduced
 
         # # Remove any empty results
