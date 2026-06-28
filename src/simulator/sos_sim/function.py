@@ -665,6 +665,11 @@ def write_back_to_appender(source, time):
     captured_sim_time = source.app.simulator._time
     # master_data = copy.deepcopy(source.master_data)
 
+    # Save the self.lost_simulation_time list of dataframes to a csv file in the metrics folder
+    if source.lost_simulation_time:
+        lost_time_df = pd.concat(source.lost_simulation_time, ignore_index=True)
+        lost_time_df.to_csv("outputs/metrics/lost_simulation_time.csv", index=False)
+
     logger.info(
         f"Capturing data for background thread: {len(captured_requests)} requests, sim_time: {captured_sim_time}"
     )

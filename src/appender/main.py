@@ -362,7 +362,7 @@ class Environment(Observer):
         # Count of row in filtered gdf
         self.count_valid_requests = len(filtered_gdf)
         # Writing the metrics to the metrics file
-        self.generate_metric_file(date_new_format)
+        # self.generate_metric_file(date_new_format)
         
         selected_json_data = filtered_gdf.to_json()
         self.app.send_message(

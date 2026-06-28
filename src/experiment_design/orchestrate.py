@@ -3,6 +3,7 @@ import shutil
 import time
 import os
 import pandas as pd
+import geopandas as gpd
 import subprocess
 import json
 import csv
@@ -153,19 +154,69 @@ def main():
 
         # Creating summary for the runs
         geojson_path = os.path.join(dest_folder, "master.geojson")
+        metrics_path = os.path.join(dest_folder, "metrics/geometrically_accessible_aggregated.csv")
         csv_path = os.path.join(dest_folder, "simulation_config.csv")
 
-        if os.path.exists(geojson_path):
+        if os.path.exists(geojson_path) and os.path.exists(metrics_path):
             with open(geojson_path, encoding="utf-8") as f:
                 feats = json.load(f).get("features", [])
             total = len(feats)
+            # Sum of all the 'planner_final_eta' values (total) for all features
+            eta_sum_total = sum(
+                f.get("properties", {}).get("planner_final_eta", 0)
+                for f in feats if isinstance(f.get("properties", {}).get("planner_final_eta"), (int, float))
+            )
+            # Sum of all the 'planner_final_eta' values for features with 'simulator_simulation_status' equal to 'Completed'
             completed = [f for f in feats if f.get("properties", {}).get("simulator_simulation_status") == "Completed"]
             eta_sum = sum(
                 f.get("properties", {}).get("planner_final_eta", 0)
                 for f in completed if isinstance(f.get("properties", {}).get("planner_final_eta"), (int, float))
             )
+            # Count of expired requests "expiration_status" equal to "Expired"
+
+            expired = [f for f in feats if f.get("properties", {}).get("simulator_expiration_status") == "expired"]
+            expired_count = len(expired)
+            # Sum of planner_final_eta for expired requests
+            eta_sum_expired = sum(
+                f.get("properties", {}).get("planner_final_eta", 0)
+                for f in expired if isinstance(f.get("properties", {}).get("planner_final_eta"), (int, float))
+            )
+            
+            # Calculate fraction of values
+            fraction_completed = len(completed) / total if total > 0 else 0
+            fraction_expired = expired_count / total if total > 0 else 0
+            fraction_eta_completed = eta_sum / eta_sum_total if eta_sum_total > 0 else 0
+            fraction_eta_expired = eta_sum_expired / eta_sum_total if eta_sum_total > 0 else 0
             avg_eta = eta_sum / len(completed) if completed else 0
             logger.info("Total=%d Completed=%d ETA_Sum=%.2f", total, len(completed), eta_sum)
+
+            # Metrics DataFrame to count unique 'point_id' values           
+            metrics_df = pd.read_csv(metrics_path)
+            # Count the number of unique 'point_id' values
+            unique_point_ids = metrics_df["point_id"].nunique()
+            # Fraction of unique geometrically accessible points relative to total points
+            fraction_unique_points = unique_point_ids / total if total > 0 else 0
+
+            # Join geojson_path and metrics_path to get 'first_access_time' for each 'point_id'(in metrics_df) and calculate average time to first access wrt to 'planner_time' in (geojson_path(gdf))
+            gdf = gpd.read_file(geojson_path)
+            # Compute time to completion 
+            gdf["planner_time"] = pd.to_datetime(gdf["planner_time"], utc=True, errors="coerce")
+            gdf["simulator_completion_date"] = pd.to_datetime(gdf["simulator_completion_date"], utc=True, errors="coerce")
+            gdf["time_to_completion"] = gdf["simulator_completion_date"] - gdf["planner_time"]
+            gdf["time_to_completion_hours"] = gdf["time_to_completion"].dt.total_seconds() / 3600
+            avg_completion_hours = gdf["time_to_completion_hours"].mean()
+            median_completion_hours = gdf["time_to_completion_hours"].median()
+
+            # Computing Time to first access
+            merged_df = pd.merge(gdf, metrics_df[["point_id", "first_access_time"]], on="point_id", how="left")
+            merged_df["planner_time"] = pd.to_datetime(merged_df["planner_time"], utc=True, errors="coerce")
+            merged_df["first_access_time"] = pd.to_datetime(merged_df["first_access_time"], utc=True, errors="coerce")
+            # Compute time from 'planner_time' to 'first_access_time' for each point_id
+            merged_df["time_to_first_access"] = merged_df["first_access_time"] - merged_df["planner_time"]
+            merged_df["time_to_first_access_hours"] = merged_df["time_to_first_access"].dt.total_seconds() / 3600
+            avg_hours = merged_df["time_to_first_access_hours"].mean()
+            median_hours = merged_df["time_to_first_access_hours"].median()
+
 
             if os.path.exists(csv_path):
                 with open(csv_path, "a", newline="", encoding="utf-8") as f:
@@ -174,6 +225,18 @@ def main():
                     writer.writerow(["summary", "completed_records", len(completed)])
                     writer.writerow(["summary", "eta_sum", eta_sum])
                     writer.writerow(["summary", "eta_avg", avg_eta])
+                    writer.writerow(["summary", "geometrically_accessible_points", unique_point_ids])
+                    writer.writerow(["summary", "fraction_unique_points", fraction_unique_points])
+                    writer.writerow(["summary", "fraction_completed", fraction_completed])
+                    writer.writerow(["summary", "expired_records", expired_count])
+                    writer.writerow(["summary", "fraction_expired", fraction_expired])
+                    writer.writerow(["summary", "reward_weighted_coverage", fraction_eta_completed])
+                    writer.writerow(["summary", "reward_weighted_expired", fraction_eta_expired])
+                    writer.writerow(["summary", "avg_time_to_first_access_hours", avg_hours])
+                    writer.writerow(["summary", "median_time_to_first_access_hours", median_hours])
+                    writer.writerow(["summary", "avg_time_to_completion_hours", avg_completion_hours])
+                    writer.writerow(["summary", "median_time_to_completion_hours", median_completion_hours])
+
                 logger.info("Appended summary rows to %s", csv_path)
             else:
                 logger.warning("CSV '%s' not found; skipping append.", csv_path)

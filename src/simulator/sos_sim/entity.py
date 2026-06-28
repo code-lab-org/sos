@@ -64,6 +64,7 @@ class Collect_Observations(Entity):
         self.capacity_block_interval = 10
         self.capacity_block_cache = {}
         self.count_geometrically_accessible = 0
+        self.lost_simulation_time = []
 
 
         if s3_variable is not None:
@@ -313,8 +314,8 @@ class Collect_Observations(Entity):
             self.count_geometrically_accessible = unique_ids   
 
             #Appending reduced observations to the class variable for later use
-            
-            self.store_geometrically_accessible_details(reduced_observations)            
+            # self.write_values_to_metrics(unique_ids)            
+            # self.store_geometrically_accessible_details(reduced_observations)            
 
             # logger.info("Computed %d possible observations", len(possible_observations))
 
@@ -401,7 +402,7 @@ class Collect_Observations(Entity):
                     logger.info("Number of requests after processing: %d", len(self.requests))
                     self.incomplete_requests = self.incomplete_requests_processed
                     self.possible_observations = self.possible_observations_processed
-                    self.write_values_to_metrics()
+                    # self.write_values_to_metrics()
 
                     # Clear the processed results
                     self.processed_requests = None
@@ -411,13 +412,24 @@ class Collect_Observations(Entity):
 
        
     def message_received_from_appender(self, ch, method, properties, body):
+        
         logger.info(f"Message succesfully received at {self.app.simulator._time}")
+        # Create a dataframe with date column, time received and the hour of the day in simulation
+        current_time = self.app.simulator.get_time()
+        lost_time_df = pd.DataFrame({
+            "date": [current_time.date()],
+            "time_received": [current_time],
+            "hours_lost": [current_time.hour + current_time.minute/60 + current_time.second/3600]
+        })
+
+        self.lost_simulation_time.append(lost_time_df)
+
         self.master_data = message_to_geojson(body)
         logger.info(f"Master data received with {len(self.master_data)} records and type {type(self.master_data)}")
         self.on_appender()
 
 
-    def write_values_to_metrics(self):
+    def write_values_to_metrics(self, unique_ids):
         """
         Write the current values to the metrics file.
         """
@@ -428,7 +440,7 @@ class Collect_Observations(Entity):
         if os.path.exists(csv_path):
                 with open(csv_path, "a", newline="", encoding="utf-8") as f:
                     writer = csv.writer(f)
-                    writer.writerow(["simulator", "geometrically_accessible", self.count_geometrically_accessible])
+                    writer.writerow(["simulator", "geometrically_accessible", unique_ids])
 
     
     def store_geometrically_accessible_details(self,reduced_observations):
