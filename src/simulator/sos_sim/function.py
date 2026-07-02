@@ -8,7 +8,6 @@ import threading
 import time as _time
 from datetime import datetime, timedelta, timezone
 from typing import List
-
 import geopandas as gpd
 import numpy as np
 import pandas as pd

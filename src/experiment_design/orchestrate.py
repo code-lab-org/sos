@@ -155,9 +155,10 @@ def main():
         # Creating summary for the runs
         geojson_path = os.path.join(dest_folder, "master.geojson")
         metrics_path = os.path.join(dest_folder, "metrics/geometrically_accessible_aggregated.csv")
+        lost_simulation_path = os.path.join(dest_folder, "metrics/lost_simulation_time.csv")
         csv_path = os.path.join(dest_folder, "simulation_config.csv")
 
-        if os.path.exists(geojson_path) and os.path.exists(metrics_path):
+        if os.path.exists(geojson_path) and os.path.exists(metrics_path) and os.path.exists(lost_simulation_path):
             with open(geojson_path, encoding="utf-8") as f:
                 feats = json.load(f).get("features", [])
             total = len(feats)
@@ -219,6 +220,11 @@ def main():
             avg_hours = merged_df["time_to_first_access_hours"].mean()
             median_hours = merged_df["time_to_first_access_hours"].median()
 
+            # Lost simulation time metrics
+            lost_simulation_df = pd.read_csv(lost_simulation_path)
+            # Average "hours_lost" for all records
+            avg_hours_lost = lost_simulation_df["hours_lost"].mean()
+
 
             if os.path.exists(csv_path):
                 with open(csv_path, "a", newline="", encoding="utf-8") as f:
@@ -238,7 +244,7 @@ def main():
                     writer.writerow(["summary", "median_time_to_first_access_hours", median_hours])
                     writer.writerow(["summary", "avg_time_to_completion_hours", avg_completion_hours])
                     writer.writerow(["summary", "median_time_to_completion_hours", median_completion_hours])
-
+                    writer.writerow(["summary", "avg_hours_lost", avg_hours_lost])
                 logger.info("Appended summary rows to %s", csv_path)
             else:
                 logger.warning("CSV '%s' not found; skipping append.", csv_path)
