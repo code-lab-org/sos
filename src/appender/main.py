@@ -362,7 +362,7 @@ class Environment(Observer):
         # Count of row in filtered gdf
         self.count_valid_requests = len(filtered_gdf)
         # Writing the metrics to the metrics file
-        # self.generate_metric_file(date_new_format)
+        self.generate_metric_file(date_new_format)
         
         selected_json_data = filtered_gdf.to_json()
         self.app.send_message(
@@ -400,7 +400,9 @@ class Environment(Observer):
         else:
             # This codes updates two files with daily simulator collected data, the output file saved as geojson and in the master_components list                
             self.master_gdf_all.set_index("simulator_id", inplace=True)
+            logger.info("Columns and data types in master_gdf_all before update: %s", self.master_gdf_all.dtypes.to_dict())
             component_gdf.set_index("simulator_id", inplace=True)
+            logger.info("Columns and data types in component_gdf before update: %s", component_gdf.dtypes.to_dict())
             # logger.info("Before update: master_gdf_combined has %d rows; component_gdf has %d rows", len(self.master_gdf_all), len(component_gdf))
             component_gdf = component_gdf.rename_geometry(
                 "simulator_polygon_groundtrack"
@@ -443,7 +445,8 @@ class Environment(Observer):
 
         # Write master_output_copy once; fallback to empty GeoJSON if write fails
         try:
-            master_output_copy["simulator_polygon_groundtrack"] = master_output_copy["simulator_polygon_groundtrack"].to_wkt()            
+            master_output_copy["simulator_polygon_groundtrack"] = master_output_copy["simulator_polygon_groundtrack"].to_wkt()   
+            master_output_copy = master_output_copy.reset_index()         
             master_output_copy.to_file("outputs/master.geojson", driver="GeoJSON")
             logger.info("Master geojson file created (rows: %d)", len(master_output_copy))
         except Exception:

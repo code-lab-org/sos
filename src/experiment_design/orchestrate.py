@@ -204,10 +204,12 @@ def main():
             gdf["simulator_completion_date"] = pd.to_datetime(gdf["simulator_completion_date"], utc=True, errors="coerce")
             gdf["time_to_completion"] = gdf["simulator_completion_date"] - gdf["planner_time"]
             gdf["time_to_completion_hours"] = gdf["time_to_completion"].dt.total_seconds() / 3600
+            
             avg_completion_hours = gdf["time_to_completion_hours"].mean()
             median_completion_hours = gdf["time_to_completion_hours"].median()
 
             # Computing Time to first access
+            gdf = gdf.rename(columns={"simulator_id": "point_id"})  # Ensure the column names match for merging
             merged_df = pd.merge(gdf, metrics_df[["point_id", "first_access_time"]], on="point_id", how="left")
             merged_df["planner_time"] = pd.to_datetime(merged_df["planner_time"], utc=True, errors="coerce")
             merged_df["first_access_time"] = pd.to_datetime(merged_df["first_access_time"], utc=True, errors="coerce")

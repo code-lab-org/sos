@@ -5,7 +5,6 @@ import logging
 import os
 import sys
 from datetime import timedelta
-
 from nost_tools.application_utils import ShutDownObserver
 from nost_tools.configuration import ConnectionConfig
 from nost_tools.managed_application import ManagedApplication
