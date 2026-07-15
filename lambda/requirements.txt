@@ -1,3 +1,9 @@
 # # Requirements for Lambda function deployment
 # # These packages need to be bundled with the Lambda function
-nost-tools==3.0.5
+nost-tools==3.1.0
+cryptography>=49.0.0,<50
+urllib3>=2.7.0,<3
+jwcrypto>=1.5.8,<2
+requests>=2.34.2,<3
+idna>=3.18,<4
+python-dotenv>=1.2.2,<2
