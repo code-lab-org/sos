@@ -7,7 +7,6 @@ import geopandas as gpd
 import subprocess
 import json
 import csv
-
 from nost_tools.application import Application
 from nost_tools.configuration import ConnectionConfig
 from nost_tools.observer import Observer
@@ -50,6 +49,7 @@ class OrchestrateObserver(Observer):
         while not self.shutdown_received:
             time.sleep(60)  # Sleep for 3 seconds before checking again
             logger.info("Still waiting for shutdown signal...")
+
         logger.info("Sleep complete, shutdown signal received.")
         self.shutdown_received = False
         logger.info("Setting docker compose down in nost environment.")
@@ -58,10 +58,9 @@ class OrchestrateObserver(Observer):
         time.sleep(20)
         print("Proceeding to next iteration.")
 
-
     def update_yaml_config(self, config, row):
-        logger.info("Opening YAML file: %s", config.yaml_file)
 
+        logger.info("Opening YAML file: %s", config.yaml_file)
         # Load YAML as a plain Python dict
         with open(config.yaml_file, "r", encoding="utf-8") as f:
             yaml_data = yaml.safe_load(f)
@@ -89,6 +88,7 @@ class OrchestrateObserver(Observer):
         time.sleep(5)
 
 def main():
+
     logger.info("Entering main function")
     config = ConnectionConfig(yaml_file="sos.yaml")
     # logger.info(f"Contents of config loaded: {config}")
@@ -106,8 +106,7 @@ def main():
 
     # Load CSV
     df = pd.read_csv("src/experiment_design/experiment_run_data.csv")
-
-    # # print(df)
+    
     app.add_message_callback("manager", "start", environment.on_start)
     app.add_message_callback("manager", "stop", environment.on_stop)
     # app.add_message_callback("simulator", "simulator_end", environment.on_stop)
@@ -127,7 +126,8 @@ def main():
         # -------------------------------------------
         # DELETE SIMULATOR SUBFOLDERS BEFORE EXECUTION
         # -------------------------------------------
-        simulator_root = os.path.join("outputs", "simulator")
+        # simulator_root = os.path.join("outputs", "simulator")
+        simulator_root = "outputs"
         if os.path.exists(simulator_root):
             for item in os.listdir(simulator_root):
                 item_path = os.path.join(simulator_root, item)
@@ -205,19 +205,23 @@ def main():
             gdf["simulator_completion_date"] = pd.to_datetime(gdf["simulator_completion_date"], utc=True, errors="coerce")
             gdf["time_to_completion"] = gdf["simulator_completion_date"] - gdf["planner_time"]
             gdf["time_to_completion_hours"] = gdf["time_to_completion"].dt.total_seconds() / 3600
-            
+
+            # Computing aggregate metrics for all requests within the entire simulation run
             avg_completion_hours = gdf["time_to_completion_hours"].mean()
             median_completion_hours = gdf["time_to_completion_hours"].median()
 
             # Computing Time to first access
             gdf = gdf.rename(columns={"simulator_id": "point_id"})  # Ensure the column names match for merging
             logger.info(" Columns in both the GeoDataFrame and metrics DataFrame: %s, %s", gdf.columns.tolist(), metrics_df.columns.tolist())
+            # Getting the first access time for each point_id from metrics_df and merging it with gdf
             merged_df = pd.merge(gdf, metrics_df[["point_id", "first_access_time"]], on="point_id", how="left")
+
             merged_df["planner_time"] = pd.to_datetime(merged_df["planner_time"], utc=True, errors="coerce")
             merged_df["first_access_time"] = pd.to_datetime(merged_df["first_access_time"], utc=True, errors="coerce")
             # Compute time from 'planner_time' to 'first_access_time' for each point_id
             merged_df["time_to_first_access"] = merged_df["first_access_time"] - merged_df["planner_time"]
             merged_df["time_to_first_access_hours"] = merged_df["time_to_first_access"].dt.total_seconds() / 3600
+
             avg_hours = merged_df["time_to_first_access_hours"].mean()
             median_hours = merged_df["time_to_first_access_hours"].median()
 
