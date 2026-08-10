@@ -39,8 +39,8 @@ echo "Creating Lambda Function package (just code + config)..."
 cp ../lambda_function_nost.py lambda_function.py
 
 # Copy the YAML configuration file if it exists
-if [ -f ../sos/sos.yaml ]; then
-    cp ../sos/sos.yaml .
+if [ -f ../../sos.yaml ]; then
+    cp ../../sos.yaml .
     echo "sos.yaml copied"
 else
     echo "Warning: sos.yaml not found, you'll need to configure it separately"
