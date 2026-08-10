@@ -446,7 +446,8 @@ class Environment(Observer):
         # Write master_output_copy once; fallback to empty GeoJSON if write fails
         try:
             master_output_copy["simulator_polygon_groundtrack"] = master_output_copy["simulator_polygon_groundtrack"].to_wkt()   
-            master_output_copy = master_output_copy.reset_index()         
+            master_output_copy = master_output_copy.reset_index()  
+            # reseting index to avoid index column being saved in the geojson file, which was causing issues with the simulator       
             master_output_copy.to_file("outputs/master.geojson", driver="GeoJSON")
             logger.info("Master geojson file created (rows: %d)", len(master_output_copy))
         except Exception:
