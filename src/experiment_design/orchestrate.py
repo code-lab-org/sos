@@ -211,6 +211,7 @@ def main():
 
             # Computing Time to first access
             gdf = gdf.rename(columns={"simulator_id": "point_id"})  # Ensure the column names match for merging
+            logger.info(" Columns in both the GeoDataFrame and metrics DataFrame: %s, %s", gdf.columns.tolist(), metrics_df.columns.tolist())
             merged_df = pd.merge(gdf, metrics_df[["point_id", "first_access_time"]], on="point_id", how="left")
             merged_df["planner_time"] = pd.to_datetime(merged_df["planner_time"], utc=True, errors="coerce")
             merged_df["first_access_time"] = pd.to_datetime(merged_df["first_access_time"], utc=True, errors="coerce")
