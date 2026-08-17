@@ -300,13 +300,11 @@ def process_master_file(new_request,existing_completed_request) -> List[dict]:
         if req.get("simulator_simulation_status") == "Completed"
     ]
 
-    # for proc in master_processed:
-    #     logger.info("Processed simulator_id is %s", proc.get("simulator_id"))
-
     master_unprocessed = [
         req for req in master
         if req.get("simulator_simulation_status") != "Completed"
     ]
+    
     # Build a quick lookup for existing requests by id
 
     by_id = {d["simulator_id"]: d for d in existing_completed_request if "simulator_id" in d}

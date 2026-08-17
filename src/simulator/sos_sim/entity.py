@@ -156,7 +156,7 @@ class Collect_Observations(Entity):
 
                     if block_id not in self.capacity_block_cache:
 
-                        logger.info("Time Changed, entering new block and generating new random value for block id %d", block_id)
+                        # logger.info("Time Changed, entering new block and generating new random value for block id %d", block_id)
 
                         block_random_value = Daily_random_value(
                         seed_value=self.seed_value,
@@ -181,11 +181,11 @@ class Collect_Observations(Entity):
                     #     self.daily_random_value <= self.constellation_capacity
                     # ): 
 
-                    logger.info("Details of block id %d and state is %f", block_id, cc_on)
+                    # logger.info("Details of block id %d and state is %f", block_id, cc_on)
                     
                     if cc_on:
 
-                        logger.info("Capacity Available:Current capacity block id is %d and state is %f", block_id, cc_on)
+                        # logger.info("Capacity Available:Current capacity block id is %d and state is %f", block_id, cc_on)
 
                         self.observation_collected_flag = True
                         # logger.info("Daily random value is %f", self.daily_random_value)

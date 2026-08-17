@@ -305,6 +305,12 @@ class Environment(Observer):
         self.master_gdf = self.master_gdf.sort_values(by="simulator_id").reset_index(drop=True)       
         self.master_output_copy = self.master_gdf_all.copy()
         date = self.app.simulator.get_time()
+        logger.info(
+            "Simulator time: value=%r, type=%s",
+            date,
+            type(date).__name__,
+        )
+
         date_new_format = str(date.date()).replace("-", "")
         self.current_simulation_date = os.path.join(
             self.output_directory, str(date.date())
@@ -398,7 +404,8 @@ class Environment(Observer):
         if component_gdf.empty:
             logger.warning("Received empty message from simulator. Skipping update.")
         else:
-            # This codes updates two files with daily simulator collected data, the output file saved as geojson and in the master_components list                
+            # This codes updates two files with daily simulator collected data, the output file saved as geojson and in the master_components list
+            logger.info("Column and data before setting index: %s", component_gdf.dtypes.to_dict())                
             self.master_gdf_all.set_index("simulator_id", inplace=True)
             logger.info("Columns and data types in master_gdf_all before update: %s", self.master_gdf_all.dtypes.to_dict())
             component_gdf.set_index("simulator_id", inplace=True)
@@ -410,21 +417,22 @@ class Environment(Observer):
             
             # Update #1 for the master list of components (this has duplicates)
             self.master_gdf_all.update(component_gdf)
-            # The below geodataframe removes the duplicates after update
-            # This was done to capture the exceptional case where a observation
-            # is collected in the meantime between two runs and gets deleted
-            # during duplicate removal
-            master_output_copy = self.master_gdf_all.copy()
-            master_output_copy = self.remove_duplicates(master_output_copy)
-            # self.master_output_copy = self.master_output_copy.set_index("simulator_id")
-            
-            # Update #2 for the master output file in geojson
-            # self.master_output_copy.update(component_gdf)
-            # self.master_output_copy = self.master_output_copy.reset_index()
             self.master_gdf_all.reset_index(inplace=True)
             component_gdf.reset_index(inplace=True)
 
+        # The below geodataframe removes the duplicates after update
+        # This was done to capture the exceptional case where a observation
+        # is collected in the meantime between two runs and gets deleted
+        # during duplicate removal
+              
+        master_output_copy = self.master_gdf_all.copy()
+        logger.info("Column and data before removing duplicates: %s", master_output_copy.dtypes.to_dict())
+        master_output_copy = self.remove_duplicates(master_output_copy)
+
+        logger.info("Writing updated master_gdf_all to outputs/master.geojson")
+
         # Saving the updated master_components as list of GeoDataFrames
+        # Geometry here is the planner geometry
         self.master_components = [
             gpd.GeoDataFrame(
                 group.sort_values("simulator_id"),  # sort within each group
@@ -433,28 +441,60 @@ class Environment(Observer):
             ).reset_index(drop=True)
             for _, group in self.master_gdf_all.groupby("planner_time")
         ]
-        # logger.info("Updated master_components with %d groups based on planner_time", len(self.master_components))
 
-        # Decide what to write
-        if master_output_copy is None:
-            master_output_copy = gpd.GeoDataFrame(
-                {"geometry": gpd.GeoSeries([], dtype="geometry")},
-                geometry="geometry",
-                crs="EPSG:4326",
+        # logger.info("Updated master_components with %d groups based on planner_time", len(self.master_components))
+        # # Decide what to write
+        # if master_output_copy is None:
+        #     master_output_copy = gpd.GeoDataFrame(
+        #         {"geometry": gpd.GeoSeries([], dtype="geometry")},
+        #         geometry="geometry",
+        #         crs="EPSG:4326",
+        #     )
+
+        try:
+            if "simulator_polygon_groundtrack" not in master_output_copy.columns:
+                raise ValueError(
+                    f"Missing simulator_polygon_groundtrack. "
+                    f"Columns: {master_output_copy.columns.tolist()}"
+                )
+
+            master_output_copy["simulator_polygon_groundtrack"] = (
+                master_output_copy["simulator_polygon_groundtrack"].to_wkt()
             )
 
-        # Write master_output_copy once; fallback to empty GeoJSON if write fails
-        try:
-            master_output_copy["simulator_polygon_groundtrack"] = master_output_copy["simulator_polygon_groundtrack"].to_wkt()   
-            master_output_copy = master_output_copy.reset_index()  
-            # reseting index to avoid index column being saved in the geojson file, which was causing issues with the simulator       
-            master_output_copy.to_file("outputs/master.geojson", driver="GeoJSON")
-            logger.info("Master geojson file created (rows: %d)", len(master_output_copy))
+            master_output_copy = master_output_copy.sort_values(
+                "simulator_id"
+            ).reset_index(drop=True)
+
+            # master_output_copy = master_output_copy.reset_index(drop=True)
+
+            master_output_copy.to_file(
+                "outputs/master.geojson",
+                driver="GeoJSON",
+            )
+
+            logger.info(
+                "Master geojson created successfully (rows: %d)",
+                len(master_output_copy),
+            )
+
         except Exception:
-            logger.exception("Failed to write master_output_copy; writing empty fallback.")
-            empty = gpd.GeoDataFrame({"geometry": gpd.GeoSeries([], dtype="geometry")}, geometry="geometry", crs="EPSG:4326")
-            empty.to_file("outputs/master.geojson", driver="GeoJSON")
-            logger.info("Empty master geojson file saved as fallback.")
+            logger.exception(
+                "Failed to write master.geojson; preserving existing file."
+            )
+
+        # # Write master_output_copy once; fallback to empty GeoJSON if write fails
+        # try:
+        #     master_output_copy["simulator_polygon_groundtrack"] = master_output_copy["simulator_polygon_groundtrack"].to_wkt()   
+        #     master_output_copy = master_output_copy.reset_index()  
+        #     # reseting index to avoid index column being saved in the geojson file, which was causing issues with the simulator       
+        #     master_output_copy.to_file("outputs/master.geojson", driver="GeoJSON")
+        #     logger.info("Master geojson file created (rows: %d)", len(master_output_copy))
+        # except Exception:
+        #     logger.exception("Failed to write master_output_copy; writing empty fallback.")
+        #     empty = gpd.GeoDataFrame({"geometry": gpd.GeoSeries([], dtype="geometry")}, geometry="geometry", crs="EPSG:4326")
+        #     empty.to_file("outputs/master.geojson", driver="GeoJSON")
+        #     logger.info("Empty master geojson file saved as fallback.")
             
 
     def on_change(self, source, property_name, old_value, new_value):
@@ -483,8 +523,8 @@ class Environment(Observer):
 
         Returns:
             None
+        
         """
-
 
         metrics_data = [
             {'component': 'appender', 'parameter': 'valid_requests', 'value': self.count_valid_requests},

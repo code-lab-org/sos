@@ -54,8 +54,8 @@ class OrchestrateObserver(Observer):
         self.shutdown_received = False
         logger.info("Setting docker compose down in nost environment.")
         subprocess.run("docker compose down", shell=True, check=True, capture_output=True, text=True)
-        logger.info("Sleeping for 120 seconds to ensure proper shutdown.")
-        time.sleep(20)
+        logger.info("Sleeping for 60 seconds to ensure proper shutdown.")
+        time.sleep(60)
         print("Proceeding to next iteration.")
 
     def update_yaml_config(self, config, row):
@@ -89,12 +89,21 @@ class OrchestrateObserver(Observer):
 
 def main():
 
-    logger.info("Entering main function")
+    logger.info("Entering main function")    
+
+    # os.environ.pop("USERNAME", None)
+    # os.environ.pop("PASSWORD", None)
+
+    # Option 1: Delete the USERNAME variable entirely from the process environment
+    if "USERNAME" in os.environ:
+        del os.environ["USERNAME"] 
+
     config = ConnectionConfig(yaml_file="sos.yaml")
     # logger.info(f"Contents of config loaded: {config}")
     app = Application(app_name="orchestrate")
     environment = OrchestrateObserver(app)
     app.simulator.add_observer(environment)
+
     app.start_up(
     config.rc.simulation_configuration.execution_parameters.general.prefix,
     config,
@@ -102,7 +111,7 @@ def main():
     )
 
     # logger.info("Config loaded: %s", config)
-    logger.info("comfig yaml content: %s", config.yaml_config)
+    logger.info("config yaml content: %s", config.yaml_config)
 
     # Load CSV
     df = pd.read_csv("src/experiment_design/experiment_run_data.csv")
@@ -229,7 +238,6 @@ def main():
             lost_simulation_df = pd.read_csv(lost_simulation_path)
             # Average "hours_lost" for all records
             avg_hours_lost = lost_simulation_df["hours_lost"].mean()
-
 
             if os.path.exists(csv_path):
                 with open(csv_path, "a", newline="", encoding="utf-8") as f:
