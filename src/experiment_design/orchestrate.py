@@ -135,8 +135,8 @@ def main():
         # -------------------------------------------
         # DELETE SIMULATOR SUBFOLDERS BEFORE EXECUTION
         # -------------------------------------------
-        # simulator_root = os.path.join("outputs", "simulator")
-        simulator_root = "outputs"
+        simulator_root = os.path.join("outputs", "simulator")
+        # simulator_root = "outputs"
         if os.path.exists(simulator_root):
             for item in os.listdir(simulator_root):
                 item_path = os.path.join(simulator_root, item)
