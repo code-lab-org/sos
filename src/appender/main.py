@@ -1,6 +1,7 @@
 import json
 import logging
 import os
+import signal
 import sys
 from datetime import timedelta,datetime
 import geopandas as gpd
@@ -473,8 +474,11 @@ def main():
     app.add_message_callback("planner", "selected_cells", environment.on_planner)
     app.add_message_callback("simulator", "simulator_daily", environment.on_simulator)
 
-    while True:
-        pass
+    # Wait for a signal rather than spinning. A bare `while True: pass` burns a
+    # CPU core for the whole run and cannot be interrupted, so the application
+    # could only ever be killed; signal.pause() returns once the shutdown
+    # handler has run, letting the process exit on its own.
+    signal.pause()
 
 if __name__ == "__main__":
     main()
