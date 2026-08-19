@@ -3,6 +3,7 @@
 
 import logging
 import os
+import signal
 import sys
 from datetime import timedelta
 
@@ -87,8 +88,11 @@ def main():
     #     )
     # )
 
-    while True:
-        pass
+    # Wait for a signal rather than spinning. A bare `while True: pass` burns a
+    # CPU core for the whole run and cannot be interrupted, so the application
+    # could only ever be killed; signal.pause() returns once the shutdown
+    # handler has run, letting the process exit on its own.
+    signal.pause()
 
 
 if __name__ == "__main__":
