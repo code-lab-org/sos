@@ -315,7 +315,7 @@ class Collect_Observations(Entity):
 
             #Appending reduced observations to the class variable for later use
             # self.write_values_to_metrics(unique_ids)            
-            # self.store_geometrically_accessible_details(reduced_observations)            
+            self.store_geometrically_accessible_details(reduced_observations)            
 
             # logger.info("Computed %d possible observations", len(possible_observations))
 

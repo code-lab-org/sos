@@ -168,6 +168,7 @@ def main():
         csv_path = os.path.join(dest_folder, "simulation_config.csv")
 
         if os.path.exists(geojson_path) and os.path.exists(metrics_path) and os.path.exists(lost_simulation_path):
+            logger.info("Entering summary generation for run %s", row['Run'])
             with open(geojson_path, encoding="utf-8") as f:
                 feats = json.load(f).get("features", [])
             total = len(feats)
@@ -240,6 +241,7 @@ def main():
             avg_hours_lost = lost_simulation_df["hours_lost"].mean()
 
             if os.path.exists(csv_path):
+                logger.info("CSV path exists: %s. Appending summary rows.", csv_path)
                 with open(csv_path, "a", newline="", encoding="utf-8") as f:
                     writer = csv.writer(f)
                     writer.writerow(["summary", "total_records", total])
@@ -259,6 +261,7 @@ def main():
                     writer.writerow(["summary", "median_time_to_completion_hours", median_completion_hours])
                     writer.writerow(["summary", "avg_hours_lost", avg_hours_lost])
                 logger.info("Appended summary rows to %s", csv_path)
+                logger.info("Execution completed for run %s. Summary metrics appended to CSV.", row['Run'])
             else:
                 logger.warning("CSV '%s' not found; skipping append.", csv_path)
         else:
