@@ -164,10 +164,11 @@ def main():
         # Creating summary for the runs
         geojson_path = os.path.join(dest_folder, "master.geojson")
         metrics_path = os.path.join(dest_folder, "metrics/geometrically_accessible_aggregated.csv")
+        metrics_nolatency_path = os.path.join(dest_folder, "metrics/geometrically_accessible_aggregated_no_latency.csv") 
         lost_simulation_path = os.path.join(dest_folder, "metrics/lost_simulation_time.csv")
         csv_path = os.path.join(dest_folder, "simulation_config.csv")
 
-        if os.path.exists(geojson_path) and os.path.exists(metrics_path) and os.path.exists(lost_simulation_path):
+        if os.path.exists(geojson_path) and os.path.exists(metrics_path) and os.path.exists(metrics_nolatency_path) and os.path.exists(lost_simulation_path):
             logger.info("Entering summary generation for run %s", row['Run'])
             with open(geojson_path, encoding="utf-8") as f:
                 feats = json.load(f).get("features", [])
@@ -177,7 +178,7 @@ def main():
                 f.get("properties", {}).get("planner_final_eta", 0)
                 for f in feats if isinstance(f.get("properties", {}).get("planner_final_eta"), (int, float))
             )
-            
+
             # Sum of all the 'planner_final_eta' values for features with 'simulator_simulation_status' equal to 'Completed'
             completed = [f for f in feats if f.get("properties", {}).get("simulator_simulation_status") == "Completed"]
             eta_sum = sum(
@@ -204,8 +205,11 @@ def main():
 
             # Metrics DataFrame to count unique 'point_id' values           
             metrics_df = pd.read_csv(metrics_path)
+            metrics_nolatency_df = pd.read_csv(metrics_nolatency_path)
             # Count the number of unique 'point_id' values
             unique_point_ids = metrics_df["point_id"].nunique()
+            unique_point_ids_nolatency = metrics_nolatency_df["point_id"].nunique()
+            difference_unique_points = unique_point_ids_nolatency - unique_point_ids
             # Fraction of unique geometrically accessible points relative to total points
             fraction_unique_points = unique_point_ids / total if total > 0 else 0
 
@@ -252,6 +256,8 @@ def main():
                     writer.writerow(["summary", "geometrically_accessible_points", unique_point_ids])
                     writer.writerow(["summary", "fraction_unique_points", fraction_unique_points])
                     writer.writerow(["summary", "fraction_completed", fraction_completed])
+                    writer.writerow(["summary", "unique_points_nolatency", unique_point_ids_nolatency])
+                    writer.writerow(["summary", "lost_access_latency", difference_unique_points])
                     writer.writerow(["summary", "expired_records", expired_count])
                     writer.writerow(["summary", "fraction_expired", fraction_expired])
                     writer.writerow(["summary", "reward_weighted_coverage", fraction_eta_completed])
