@@ -177,14 +177,15 @@ def main():
                 f.get("properties", {}).get("planner_final_eta", 0)
                 for f in feats if isinstance(f.get("properties", {}).get("planner_final_eta"), (int, float))
             )
+            
             # Sum of all the 'planner_final_eta' values for features with 'simulator_simulation_status' equal to 'Completed'
             completed = [f for f in feats if f.get("properties", {}).get("simulator_simulation_status") == "Completed"]
             eta_sum = sum(
                 f.get("properties", {}).get("planner_final_eta", 0)
                 for f in completed if isinstance(f.get("properties", {}).get("planner_final_eta"), (int, float))
             )
-            # Count of expired requests "expiration_status" equal to "Expired"
 
+            # Count of expired requests "expiration_status" equal to "Expired"
             expired = [f for f in feats if f.get("properties", {}).get("simulator_expiration_status") == "expired"]
             expired_count = len(expired)
             # Sum of planner_final_eta for expired requests

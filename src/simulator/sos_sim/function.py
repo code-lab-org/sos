@@ -118,8 +118,12 @@ def compute_opportunity(
     # start_time = _time.perf_counter()
     logger.info("Computing observation opportunities")
     filtered_requests = requests
-    time = time.replace(tzinfo=timezone.utc)
-    end = (time + duration).replace(tzinfo=timezone.utc)
+
+    # To check the opportunites lost due to latency, we start from midnight start time 
+    
+    current_time = time.replace(tzinfo=timezone.utc)
+    midnight_time = current_time.replace(hour=0, minute=0, second=0, microsecond=0)
+    end = (current_time + duration).replace(tzinfo=timezone.utc)
 
     filtered_requests = [
         request
@@ -138,7 +142,7 @@ def compute_opportunity(
 
         def collect_observations_for_request(request):
             try:
-                return collect_multi_observations(request["point"], const, time, end)
+                return collect_multi_observations(request["point"], const, midnight_time, end)
             except Exception as e:
                 print(f"Error processing request {request}: {e}")
                 return pd.DataFrame()
@@ -159,8 +163,10 @@ def compute_opportunity(
             return first_access
 
         def aggregate_and_reduce_observations(df):
+
             if df.empty:
                 return df
+            
             aggregated = aggregate_observations(df)
             reduced = reduce_observations(aggregated)
             # get first access time and merge with reduced
@@ -173,15 +179,34 @@ def compute_opportunity(
         observation_results_list = [df for df in observation_results_list if not df.empty]
 
         if observation_results_list:
-            observation_results = pd.concat(
+            midnight_observation_results = pd.concat(
                 observation_results_list, ignore_index=True
             ).sort_values(by="epoch", ascending=True)
         else:
-            observation_results = pd.DataFrame()
+            midnight_observation_results = pd.DataFrame()
 
+        # Regular/current observation results: only observations still available
+        # after the actual simulator time.
+        
+        if not midnight_observation_results.empty:
+            observation_results = midnight_observation_results[
+                midnight_observation_results["epoch"] >= current_time
+            ].copy()
+        else:
+            observation_results = pd.DataFrame()
+        
+
+        # if observation_results_list:
+        #     observation_results = pd.concat(
+        #         observation_results_list, ignore_index=True
+        #     ).sort_values(by="epoch", ascending=True)
+        # else:
+        #     observation_results = pd.DataFrame()
+
+        midnight_reduced_observations = aggregate_and_reduce_observations(midnight_observation_results)
         reduced_observations = aggregate_and_reduce_observations(observation_results)
 
-        if observation_results is not None and not observation_results.empty:
+        if midnight_observation_results is not None and not midnight_observation_results.empty:
 
             id_to_eta = {
                 request["point"].id: request["planner_final_eta"]
@@ -193,7 +218,7 @@ def compute_opportunity(
 
             logger.info("Computed observation results length is %d", len(observation_results))
 
-            return observation_results, reduced_observations
+            return observation_results, reduced_observations, midnight_reduced_observations
         return None
     else:
         return None

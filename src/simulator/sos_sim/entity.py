@@ -99,7 +99,8 @@ class Collect_Observations(Entity):
         # self.sim_stop_flag = False
         # Threading state variables
         self.master_file_processing = False
-        self.all_reduced_observations = []
+        self.all_reduced_observations_latency = []
+        self.all_reduced_observations_no_latency = []
         self.processed_requests = None
         self.incomplete_requests_processed = None
         self.possible_observations_processed = None
@@ -295,12 +296,14 @@ class Collect_Observations(Entity):
             )
 
             if results is not None:
-                possible_observations, reduced_observations = results
+                possible_observations, reduced_observations, midnight_reduced_observations = results
                 # Add a column in reduced observation to indicate date(from current time )
                 reduced_observations["date"] = current_time.date()
+                midnight_reduced_observations["date"] = current_time.date()
             else:
                 possible_observations = None
-                reduced_observations = None                
+                reduced_observations = None
+                midnight_reduced_observations = None
 
             end_time = _time.perf_counter()
             computation_time = end_time - start_time
@@ -313,9 +316,18 @@ class Collect_Observations(Entity):
             logger.info("Unique point_ids: %d", unique_ids)
             self.count_geometrically_accessible = unique_ids   
 
-            #Appending reduced observations to the class variable for later use
-            # self.write_values_to_metrics(unique_ids)            
-            self.store_geometrically_accessible_details(reduced_observations)            
+            # Appending reduced observations to the class variable for later use
+            # self.write_values_to_metrics(unique_ids) 
+            
+            self.store_geometrically_accessible_details(
+                reduced_observations,
+                access_type="latency",
+            )
+
+            self.store_geometrically_accessible_details(
+                midnight_reduced_observations,
+                access_type="no_latency",
+            )     
 
             # logger.info("Computed %d possible observations", len(possible_observations))
 
@@ -442,39 +454,103 @@ class Collect_Observations(Entity):
                     writer = csv.writer(f)
                     writer.writerow(["simulator", "geometrically_accessible", unique_ids])
 
-    
-    def store_geometrically_accessible_details(self,reduced_observations):
+
+    def store_geometrically_accessible_details(self, reduced_observations, access_type="latency"):
         """
-        Append the geometrically accessible details in a CSV file.
+        Append geometrically accessible details and write datewise + aggregated CSVs.
+
+        access_type:
+            "latency"    -> current simulator window
+            "no_latency" -> midnight-start diagnostic window
         """
         directory = "outputs/metrics"
+        os.makedirs(directory, exist_ok=True)
 
-        # create file if it doesnt exist and append the details
+        if access_type == "no_latency":
+            storage = self.all_reduced_observations_no_latency
+            csv_path = os.path.join(
+                directory,
+                "geometrically_accessible_datewise_no_latency.csv",
+            )
+            csv_path2 = os.path.join(
+                directory,
+                "geometrically_accessible_aggregated_no_latency.csv",
+            )
+        else:
+            storage = self.all_reduced_observations_latency
+            csv_path = os.path.join(
+                directory,
+                "geometrically_accessible_datewise.csv",
+            )
+            csv_path2 = os.path.join(
+                directory,
+                "geometrically_accessible_aggregated.csv",
+            )
+
         if reduced_observations is not None and not reduced_observations.empty:
-            self.all_reduced_observations.append(reduced_observations)
-            logger.info("Appended reduced observations to all_reduced_observations, current length is %d", len(self.all_reduced_observations))
+            storage.append(reduced_observations)
+            logger.info(
+                "Appended %s reduced observations, current length is %d",
+                access_type,
+                len(storage),
+            )
 
-        # Now concatenate all reduced observations and write to CSV
-        if self.all_reduced_observations:
-            all_reduced_df = pd.concat(self.all_reduced_observations, ignore_index=True)           
-            csv_path = os.path.join(directory, "geometrically_accessible_datewise.csv")
+        if storage:
+            all_reduced_df = pd.concat(storage, ignore_index=True)
+
             all_reduced_df.to_csv(csv_path, index=False)
             logger.info("Stored geometrically accessible details to %s", csv_path)
 
-            # Now process and group by point id and save another csv file
-           
             grouped_df = (
                 all_reduced_df.groupby("point_id", as_index=False)
                 .agg({
                     "geometry": "first",
                     "access": "sum",
-                    "first_access_time": "min"
-                    # "date": "min",   # or remove this if not needed in the summary
+                    "first_access_time": "min",
                 })
             )
 
-            csv_path2 = os.path.join(directory, "geometrically_accessible_aggregated.csv")
             grouped_df.to_csv(csv_path2, index=False)
+            logger.info("Stored aggregated geometrically accessible details to %s", csv_path2)
+
+    
+    # def store_geometrically_accessible_details(self,reduced_observations, type="latency"):
+    #     """
+    #     Append the geometrically accessible details in a CSV file.
+    #     """
+    #     directory = "outputs/metrics"
+
+    #     # create file if it doesnt exist and append the details
+    #     if reduced_observations is not None and not reduced_observations.empty:
+    #         self.all_reduced_observations.append(reduced_observations)
+    #         logger.info("Appended reduced observations to all_reduced_observations, current length is %d", len(self.all_reduced_observations))
+
+    #     # Now concatenate all reduced observations and write to CSV
+    #     if self.all_reduced_observations:
+    #         all_reduced_df = pd.concat(self.all_reduced_observations, ignore_index=True)
+    #         if type == "no_latency":
+    #             csv_path = os.path.join(directory, "geometrically_accessible_datewise_no_latency.csv")
+    #             csv_path2 = os.path.join(directory, "geometrically_accessible_aggregated_no_latency.csv")
+    #         else:       
+    #             csv_path = os.path.join(directory, "geometrically_accessible_datewise.csv")
+    #             csv_path2 = os.path.join(directory, "geometrically_accessible_aggregated.csv")
+
+    #         all_reduced_df.to_csv(csv_path, index=False)
+    #         logger.info("Stored geometrically accessible details to %s", csv_path)
+
+    #         # Now process and group by point id and save another csv file
+           
+    #         grouped_df = (
+    #             all_reduced_df.groupby("point_id", as_index=False)
+    #             .agg({
+    #                 "geometry": "first",
+    #                 "access": "sum",
+    #                 "first_access_time": "min"
+    #                 # "date": "min",   # or remove this if not needed in the summary
+    #             })
+    #         )
+            
+    #         grouped_df.to_csv(csv_path2, index=False)
 
 class SatelliteVisualization(Entity):
     """
