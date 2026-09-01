@@ -126,7 +126,7 @@ class Environment(Observer):
 
         # Build mask: only update rows that are NOT completed and NOT expired
         mask = (
-            (gdf["simulator_simulation_status"] != "completed") &
+            (gdf["simulator_simulation_status"] != "Completed") &
             (gdf["simulator_expiration_status"] != "expired")
         )
 
