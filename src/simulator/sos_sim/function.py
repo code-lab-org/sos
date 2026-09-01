@@ -175,6 +175,31 @@ def compute_opportunity(
 
             return reduced
 
+
+        def add_planner_geometry(reduced_df, filtered_requests):
+            """
+            Add original planner geometry to reduced observations using point_id.
+
+            reduced_df:
+                Output from reduce_observations / aggregate_and_reduce_observations.
+
+            filtered_requests:
+                Requests list created by process_master_file().
+                Each request should have request["point"].id and request["planner_geometry"].
+            """
+            if reduced_df is None or reduced_df.empty:
+                return reduced_df
+
+            id_to_planner_geometry = {
+                request["point"].id: request.get("planner_geometry")
+                for request in filtered_requests
+            }
+
+            reduced_df = reduced_df.copy()
+            reduced_df["planner_geometry"] = reduced_df["point_id"].map(id_to_planner_geometry)
+
+            return reduced_df
+
         # # Remove any empty results
         observation_results_list = [df for df in observation_results_list if not df.empty]
 
@@ -205,6 +230,15 @@ def compute_opportunity(
 
         midnight_reduced_observations = aggregate_and_reduce_observations(midnight_observation_results)
         reduced_observations = aggregate_and_reduce_observations(observation_results)
+        midnight_reduced_observations = add_planner_geometry(
+            midnight_reduced_observations,
+            filtered_requests,
+        )
+
+        reduced_observations = add_planner_geometry(
+            reduced_observations,
+            filtered_requests,
+        )
 
         if midnight_observation_results is not None and not midnight_observation_results.empty:
 

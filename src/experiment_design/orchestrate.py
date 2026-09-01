@@ -7,6 +7,7 @@ import geopandas as gpd
 import subprocess
 import json
 import csv
+from shapely import wkt
 from nost_tools.application import Application
 from nost_tools.configuration import ConnectionConfig
 from nost_tools.observer import Observer
@@ -87,12 +88,28 @@ class OrchestrateObserver(Observer):
         logger.info("YAML configuration updated with new parameters. Sleeping for 10 seconds.")
         time.sleep(5)
 
+
+
 def main():
 
-    logger.info("Entering main function")    
+    def geom_key(g):
+        if isinstance(g, str):
+            g = wkt.loads(g)
+        return g.wkt
 
-    # os.environ.pop("USERNAME", None)
-    # os.environ.pop("PASSWORD", None)
+    def add_access_flag(gdf, metrics_df, flag_col):
+        gdf[flag_col] = gdf["simulator_id"].isin(set(metrics_df["point_id"]))
+
+        remaining = ~gdf[flag_col]
+        metric_polys = set(metrics_df["planner_geometry"].apply(geom_key))
+
+        gdf.loc[remaining, flag_col] = (
+            gdf.loc[remaining, "geometry"].apply(geom_key).isin(metric_polys)
+        )
+
+        return gdf 
+
+    logger.info("Entering main function")
 
     # Option 1: Delete the USERNAME variable entirely from the process environment
     if "USERNAME" in os.environ:
@@ -194,6 +211,12 @@ def main():
                 f.get("properties", {}).get("planner_final_eta", 0)
                 for f in expired if isinstance(f.get("properties", {}).get("planner_final_eta"), (int, float))
             )
+
+            # Count and fraction of values where 'simulation_simulation_status' is "pending"
+            pending = [f for f in feats if f.get("properties", {}).get("simulator_simulation_status") == "Pending"]
+            pending_count = len(pending)
+            fraction_pending = pending_count / total if total > 0 else 0
+
             
             # Calculate fraction of values
             fraction_completed = len(completed) / total if total > 0 else 0
@@ -203,19 +226,26 @@ def main():
             avg_eta = eta_sum / len(completed) if completed else 0
             logger.info("Total=%d Completed=%d ETA_Sum=%.2f", total, len(completed), eta_sum)
 
+            # Join geojson_path and metrics_path to get 'first_access_time' for each 'point_id'(in metrics_df) and calculate average time to first access wrt to 'planner_time' in (geojson_path(gdf))
+            gdf = gpd.read_file(geojson_path)
+
             # Metrics DataFrame to count unique 'point_id' values           
             metrics_df = pd.read_csv(metrics_path)
             metrics_nolatency_df = pd.read_csv(metrics_nolatency_path)
-            # Count the number of unique 'point_id' values
-            unique_point_ids = metrics_df["point_id"].nunique()
-            unique_point_ids_nolatency = metrics_nolatency_df["point_id"].nunique()
-            difference_unique_points = unique_point_ids_nolatency - unique_point_ids
-            # Fraction of unique geometrically accessible points relative to total points
-            fraction_unique_points = unique_point_ids / total if total > 0 else 0
 
-            # Join geojson_path and metrics_path to get 'first_access_time' for each 'point_id'(in metrics_df) and calculate average time to first access wrt to 'planner_time' in (geojson_path(gdf))
-            gdf = gpd.read_file(geojson_path)
-            # Compute time to completion 
+            # Add access flag to indicate whether each point in the GeoDataFrame has been accessed according to the metrics DataFrame
+            gdf = add_access_flag(gdf, metrics_df, "accessible_with_latency")
+            gdf = add_access_flag(gdf, metrics_nolatency_df, "accessible_without_latency")
+    
+            # Count the number of unique 'point_id' values (calculates whether they are accessible)
+            unique_point_ids = gdf["accessible_with_latency"].sum()
+            unique_point_ids_nolatency = gdf["accessible_without_latency"].sum()
+            difference_unique_points = unique_point_ids_nolatency - unique_point_ids
+            fraction_unique_points = unique_point_ids / total if total > 0 else 0
+            fraction_never_accessible = 1 - fraction_unique_points if total > 0 else 0
+
+
+            # Compute time to completion within the master file
             gdf["planner_time"] = pd.to_datetime(gdf["planner_time"], utc=True, errors="coerce")
             gdf["simulator_completion_date"] = pd.to_datetime(gdf["simulator_completion_date"], utc=True, errors="coerce")
             gdf["time_to_completion"] = gdf["simulator_completion_date"] - gdf["planner_time"]
@@ -228,7 +258,7 @@ def main():
             # Computing Time to first access
             gdf = gdf.rename(columns={"simulator_id": "point_id"})  # Ensure the column names match for merging
             logger.info(" Columns in both the GeoDataFrame and metrics DataFrame: %s, %s", gdf.columns.tolist(), metrics_df.columns.tolist())
-            # Getting the first access time for each point_id from metrics_df and merging it with gdf
+            # Getting the first access time for each point_id from metrics_df(with latency) and merging it with gdf(master.geojson)
             merged_df = pd.merge(gdf, metrics_df[["point_id", "first_access_time"]], on="point_id", how="left")
 
             merged_df["planner_time"] = pd.to_datetime(merged_df["planner_time"], utc=True, errors="coerce")
@@ -236,6 +266,18 @@ def main():
             # Compute time from 'planner_time' to 'first_access_time' for each point_id
             merged_df["time_to_first_access"] = merged_df["first_access_time"] - merged_df["planner_time"]
             merged_df["time_to_first_access_hours"] = merged_df["time_to_first_access"].dt.total_seconds() / 3600
+
+            merged_output_path = os.path.join(
+                dest_folder,
+                "metrics/master_with_geometric_access_check.csv",
+            )
+
+            merged_df.to_csv(merged_output_path, index=False)
+
+            logger.info(
+                "Saved master geometric access check file to %s",
+                merged_output_path,
+            )
 
             avg_hours = merged_df["time_to_first_access_hours"].mean()
             median_hours = merged_df["time_to_first_access_hours"].median()
@@ -245,21 +287,28 @@ def main():
             # Average "hours_lost" for all records
             avg_hours_lost = lost_simulation_df["hours_lost"].mean()
 
+            # Acquisition efficiency (completed/accessible)
+            acquisition_efficiency = len(completed) / unique_point_ids if unique_point_ids > 0 else 0
+
             if os.path.exists(csv_path):
                 logger.info("CSV path exists: %s. Appending summary rows.", csv_path)
                 with open(csv_path, "a", newline="", encoding="utf-8") as f:
                     writer = csv.writer(f)
                     writer.writerow(["summary", "total_records", total])
                     writer.writerow(["summary", "completed_records", len(completed)])
+                    writer.writerow(["summary", "fraction_completed", fraction_completed])
                     writer.writerow(["summary", "eta_sum", eta_sum])
                     writer.writerow(["summary", "eta_avg", avg_eta])
                     writer.writerow(["summary", "geometrically_accessible_points", unique_point_ids])
-                    writer.writerow(["summary", "fraction_unique_points", fraction_unique_points])
-                    writer.writerow(["summary", "fraction_completed", fraction_completed])
-                    writer.writerow(["summary", "unique_points_nolatency", unique_point_ids_nolatency])
+                    writer.writerow(["summary", "access_fraction", fraction_unique_points])
+                    writer.writerow(["summary", "fraction_never_accessible", fraction_never_accessible])                    
+                    writer.writerow(["summary", "acquisition_efficiency", acquisition_efficiency])
+                    writer.writerow(["summary", "geometrically_accessible_points_nolatency", unique_point_ids_nolatency])
                     writer.writerow(["summary", "lost_access_latency", difference_unique_points])
                     writer.writerow(["summary", "expired_records", expired_count])
                     writer.writerow(["summary", "fraction_expired", fraction_expired])
+                    writer.writerow(["summary", "pending_records", pending_count])
+                    writer.writerow(["summary", "fraction_pending", fraction_pending])
                     writer.writerow(["summary", "reward_weighted_coverage", fraction_eta_completed])
                     writer.writerow(["summary", "reward_weighted_expired", fraction_eta_expired])
                     writer.writerow(["summary", "avg_time_to_first_access_hours", avg_hours])
