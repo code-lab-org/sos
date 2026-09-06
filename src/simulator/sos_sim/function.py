@@ -726,6 +726,8 @@ def write_back_to_appender(source, time):
         lost_time_df = pd.concat(source.lost_simulation_time, ignore_index=True)
         lost_time_df.to_csv("outputs/metrics/lost_simulation_time.csv", index=False)
 
+    source.write_capacity_rejections_to_metrics()
+
     logger.info(
         f"Capturing data for background thread: {len(captured_requests)} requests, sim_time: {captured_sim_time}"
     )

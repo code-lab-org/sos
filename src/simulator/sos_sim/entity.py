@@ -65,6 +65,7 @@ class Collect_Observations(Entity):
         self.capacity_block_cache = {}
         self.count_geometrically_accessible = 0
         self.lost_simulation_time = []
+        self.capacity_rejected_log = []
 
 
         if s3_variable is not None:
@@ -231,6 +232,16 @@ class Collect_Observations(Entity):
                                 "selected",
                                 VectorLayer(vector_layer=vector_data_json).model_dump_json(),
                             )
+                    else:
+                        logger.info(
+                            "Observation for point id %s rejected due to constellation capacity",
+                            self.observation_collected["point_id"],
+                        )
+                        self.capacity_rejected_log.append({
+                            "point_id": self.observation_collected["point_id"],
+                            "epoch": self.observation_collected["epoch"],
+                            "satellite": self.observation_collected["satellite"],
+                        })
                     # logger.info("(SELECTED) Publishing message successfully completed.")
                 # else:
                 #     self.observation_collected = None
@@ -500,7 +511,37 @@ class Collect_Observations(Entity):
             )
 
             grouped_df.to_csv(csv_path2, index=False)
-            logger.info("Stored aggregated geometrically accessible details to %s", csv_path2)   
+            logger.info("Stored aggregated geometrically accessible details to %s", csv_path2)
+
+    def write_capacity_rejections_to_metrics(self):
+        """
+        Write the log of observations rejected due to constellation capacity, plus
+        an aggregated count of rejections per point_id.
+        """
+        if not self.capacity_rejected_log:
+            return
+
+        directory = "outputs/metrics"
+        os.makedirs(directory, exist_ok=True)
+
+        log_df = pd.DataFrame(self.capacity_rejected_log)
+        log_df.to_csv(
+            os.path.join(directory, "capacity_rejected_log.csv"), index=False
+        )
+        logger.info(
+            "Stored capacity-rejected observation log with %d entries", len(log_df)
+        )
+
+        counts_df = log_df.groupby("point_id", as_index=False).agg(
+            rejection_count=("point_id", "size"),
+            distinct_satellites=("satellite", "nunique"),
+        )
+        counts_df.to_csv(
+            os.path.join(directory, "capacity_rejected_counts.csv"), index=False
+        )
+        logger.info(
+            "Stored capacity-rejected counts for %d point_ids", len(counts_df)
+        )
 
 
 class SatelliteVisualization(Entity):
