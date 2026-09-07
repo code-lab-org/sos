@@ -239,7 +239,7 @@ class Collect_Observations(Entity):
                         )
                         self.capacity_rejected_log.append({
                             "point_id": self.observation_collected["point_id"],
-                            "epoch": self.observation_collected["epoch"],
+                            "time": self._time,
                             "satellite": self.observation_collected["satellite"],
                         })
                     # logger.info("(SELECTED) Publishing message successfully completed.")
