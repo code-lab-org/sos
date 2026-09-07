@@ -227,8 +227,12 @@ def main():
                 for f in expired if isinstance(f.get("properties", {}).get("planner_final_eta"), (int, float))
             )
 
-            # Count and fraction of values where 'simulation_simulation_status' is "pending"
-            pending = [f for f in feats if f.get("properties", {}).get("simulator_simulation_status") == "Pending"]
+            # Count and fraction of values where 'simulation_simulation_status' is "pending" and not expired
+            pending = [
+                f for f in feats
+                if f.get("properties", {}).get("simulator_simulation_status") == "pending"
+                and f.get("properties", {}).get("simulator_expiration_status") != "expired"
+            ]
             pending_count = len(pending)
             fraction_pending = pending_count / total if total > 0 else 0
 
