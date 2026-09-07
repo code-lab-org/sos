@@ -150,6 +150,21 @@ def main():
 
         logger.info("Processing row: %s", row.to_dict())
         # -------------------------------------------
+        # RECLAIM OWNERSHIP OF CONTAINER-WRITTEN OUTPUT (containers run as root)
+        # -------------------------------------------
+        outputs_root = os.path.abspath("outputs")
+        if os.path.exists(outputs_root):
+            subprocess.run(
+                [
+                    "docker", "run", "--rm",
+                    "-v", f"{outputs_root}:/data",
+                    "ubuntu", "chown", "-R", f"{os.getuid()}:{os.getgid()}", "/data",
+                ],
+                check=True, capture_output=True, text=True,
+            )
+            logger.info("Reclaimed ownership of %s", outputs_root)
+
+        # -------------------------------------------
         # DELETE SIMULATOR SUBFOLDERS BEFORE EXECUTION
         # -------------------------------------------
         simulator_root = os.path.join("outputs", "simulator")
