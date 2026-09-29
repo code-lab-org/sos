@@ -131,13 +131,6 @@ def compute_opportunity(
         if request.get("simulator_simulation_status") != "Completed"
     ]
 
-    # filtered_requests = [
-    #     request
-    #     for request in requests
-    #     if request.get("simulator_simulation_status") is None
-    #     or pd.isna(request.get("simulator_simulation_status"))
-    # ]
-
     if filtered_requests:
 
         def collect_observations_for_request(request):
