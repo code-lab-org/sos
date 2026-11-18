@@ -935,11 +935,15 @@ class Environment(Observer):
         )
         logger.info("Creating masks for ground tracks successfully completed.")
         logger.info("Computing final efficiency values.")
-        final_eta = xr.full_like(snowglobe_eta, np.nan)
-        final_eta = final_eta.where(snowglobe_mask)
-        final_eta = final_eta.where(~gcom_mask, snowglobe_eta - gcom_eta)
-        final_eta = final_eta.where(~snowglobe_mask, snowglobe_eta)
-        final_eta = final_eta.where(snowglobe_mask, np.nan)
+        # Start from the SnowGlobe (SAR) reward on SAR ground-track cells only,
+        # then subtract GCOM where AMSR2 also observes. Order matters: the
+        # subtraction must be applied last so it is not overwritten.
+        final_eta = snowglobe_eta.where(snowglobe_mask)
+        final_eta = xr.where(
+            snowglobe_mask & gcom_mask,
+            (snowglobe_eta - gcom_eta).clip(min=0),  # cap negatives at zero
+            final_eta,
+        )
         final_last_date = snowglobe_eta["time"].values
         final_eta = final_eta.assign_coords(time=final_last_date)
         final_eta_df = final_eta.to_dataframe(name="final_eta").reset_index()
@@ -986,6 +990,8 @@ class Environment(Observer):
             [np.inf, -np.inf], np.nan
         )
         final_eta_gdf = final_eta_gdf.dropna(subset=["final_eta"])
+        # Drop zero-reward cells so they never enter the optimization
+        final_eta_gdf = final_eta_gdf[final_eta_gdf["final_eta"] > 0]
         model = LpProblem("Final_Eta_Optimization", LpMaximize)
         x = {i: LpVariable(f"x_{i}", cat="Binary") for i in final_eta_gdf.index}
         objective = lpSum(
